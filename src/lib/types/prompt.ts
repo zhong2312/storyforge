@@ -36,6 +36,40 @@ export type PromptModuleKey =
   | 'import.parse-worldview'
   | 'import.parse-outline'
 
+/** 模板可调参数定义（Phase 12） */
+export interface PromptParameter {
+  /** 在模板里用 {{key}} 插入；usesXxx 用于条件块 */
+  key: string
+  /** UI 显示名 */
+  label: string
+  /** 类型：select 下拉 / slider 滑块 / number 数字 / text 文本 / boolean 开关 */
+  type: 'select' | 'slider' | 'number' | 'text' | 'boolean'
+  /** select 类型的可选项（label 与 value 同） */
+  options?: string[]
+  /** slider/number 范围 */
+  min?: number
+  max?: number
+  step?: number
+  /** 默认值（按 type 决定） */
+  default: string | number | boolean
+  /** 短描述（鼠标悬停或副标题展示） */
+  description?: string
+  /** 用户是否可关闭（关闭后不传给 AI，对应 {{#if usesXxx}} 条件） */
+  optional?: boolean
+}
+
+/** 单条示例（Phase 12 加，P15 启用 UI） */
+export interface PromptExample {
+  id: string
+  text: string
+  /** 1-5 评分；用户标记的好/坏程度 */
+  rating?: number
+  source: 'system' | 'ai-generated' | 'user-marked'
+  /** 备注 */
+  note?: string
+  createdAt: number
+}
+
 /** 提示词模板表行 */
 export interface PromptTemplate {
   id?: number
@@ -53,6 +87,22 @@ export interface PromptTemplate {
   }
   parentId?: number
   isActive: boolean
+
+  // ── Phase 12 新增字段（全部可选，向后兼容） ────────────────────────────
+  /** 是否标记为"默认推荐" — UI 显示徽章 */
+  isDefault?: boolean
+  /** 所属题材包（如 ['xuanhuan'] ['yanqing']）；空则为通用包 */
+  genres?: string[]
+  /** 模板可调参数（滑块 / 选项 / 数字 等） */
+  parameters?: PromptParameter[]
+  /** 好例子 / 坏例子（few-shot 用，P15 启用 UI） */
+  examples?: {
+    good?: PromptExample[]
+    bad?: PromptExample[]
+  }
+  /** 短篇模式标识（短篇 / 中篇 / 长篇）— 影响默认参数 */
+  lengthMode?: 'short' | 'medium' | 'long'
+
   createdAt: number
   updatedAt: number
 }

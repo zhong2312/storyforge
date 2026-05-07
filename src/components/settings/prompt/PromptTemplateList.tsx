@@ -145,6 +145,11 @@ function TemplateRow({
         </div>
       </div>
 
+      {template.isDefault && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning flex-shrink-0">
+          默认
+        </span>
+      )}
       {template.isActive && (
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success flex-shrink-0">
           激活

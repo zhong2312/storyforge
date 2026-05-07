@@ -35,29 +35,51 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
   init: async () => {
     if (get().loaded) return
     const existing = await db.promptTemplates.toArray()
+    const now = Date.now()
+
     if (existing.length === 0) {
-      const now = Date.now()
+      // 全新库：注入全部 seed
       const rows: PromptTemplate[] = SYSTEM_PROMPT_SEEDS.map(seed => ({
         ...seed,
         createdAt: now,
         updatedAt: now,
       }))
       await db.promptTemplates.bulkAdd(rows)
-      const reloaded = await db.promptTemplates.toArray()
-      set({ templates: reloaded, loaded: true })
     } else {
-      // 增量补 seed：DB 已有但缺某些 moduleKey 的（迁移到新版本时友好）
-      const existingKeys = new Set(existing.filter(t => t.scope === 'system').map(t => t.moduleKey))
-      const missing = SYSTEM_PROMPT_SEEDS.filter(s => !existingKeys.has(s.moduleKey))
-      if (missing.length > 0) {
-        const now = Date.now()
-        await db.promptTemplates.bulkAdd(
-          missing.map(seed => ({ ...seed, createdAt: now, updatedAt: now })),
-        )
+      // 已有库：补缺 seed + 更新现有 system seed 的内容（保留用户的 isActive 选择）
+      const existingSystemMap = new Map(
+        existing.filter(t => t.scope === 'system').map(t => [t.moduleKey, t])
+      )
+
+      for (const seed of SYSTEM_PROMPT_SEEDS) {
+        const old = existingSystemMap.get(seed.moduleKey)
+        if (!old) {
+          // 缺 → 补
+          await db.promptTemplates.add({ ...seed, createdAt: now, updatedAt: now })
+        } else {
+          // 已有 → 用代码里的最新内容刷新（除了 isActive，保留用户的激活选择）
+          const refreshed: Partial<PromptTemplate> = {
+            name: seed.name,
+            description: seed.description,
+            systemPrompt: seed.systemPrompt,
+            userPromptTemplate: seed.userPromptTemplate,
+            variables: seed.variables,
+            promptType: seed.promptType,
+            modelOverride: seed.modelOverride,
+            isDefault: seed.isDefault,
+            genres: seed.genres,
+            parameters: seed.parameters,
+            examples: seed.examples,
+            lengthMode: seed.lengthMode,
+            updatedAt: now,
+          }
+          await db.promptTemplates.update(old.id!, refreshed)
+        }
       }
-      const all = await db.promptTemplates.toArray()
-      set({ templates: all, loaded: true })
     }
+
+    const reloaded = await db.promptTemplates.toArray()
+    set({ templates: reloaded, loaded: true })
   },
 
   getActive: (key: PromptModuleKey): PromptTemplate => {

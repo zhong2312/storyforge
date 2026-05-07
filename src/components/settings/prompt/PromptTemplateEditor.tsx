@@ -5,8 +5,9 @@ import {
 import { usePromptStore } from '../../../stores/prompt'
 import { renderPrompt } from '../../../lib/ai/prompt-engine'
 import { PREVIEW_VARS } from '../../../lib/ai/prompt-preview-vars'
-import type { PromptTemplate, PromptModuleKey } from '../../../lib/types/prompt'
+import type { PromptTemplate, PromptModuleKey, PromptParameter } from '../../../lib/types/prompt'
 import { db } from '../../../lib/db/schema'
+import PromptParametersEditor from './PromptParametersEditor'
 
 const ALL_MODULE_KEYS: { value: PromptModuleKey; label: string }[] = [
   { value: 'worldview.dimension',         label: '世界观 · 维度生成' },
@@ -140,6 +141,9 @@ export default function PromptTemplateEditor({ template, onChanged, onDeleted }:
                 <Lock className="w-4 h-4 text-text-muted" />
                 <h3 className="text-base font-semibold text-text-primary truncate">{draft.name}</h3>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">系统</span>
+                {draft.isDefault && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">★ 默认</span>
+                )}
                 {draft.isActive && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">激活</span>
                 )}
@@ -264,6 +268,13 @@ export default function PromptTemplateEditor({ template, onChanged, onDeleted }:
           }`}
         />
       </div>
+
+      {/* 可调参数 */}
+      <PromptParametersEditor
+        parameters={draft.parameters || []}
+        onChange={(params: PromptParameter[]) => update({ parameters: params })}
+        readOnly={isSystem}
+      />
 
       {/* 变量列表 */}
       <div className="bg-bg-surface border border-border rounded-xl p-4">
