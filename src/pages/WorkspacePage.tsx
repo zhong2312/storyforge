@@ -25,6 +25,8 @@ import DataManagementPanel from '../components/data/DataManagementPanel'
 import WorldviewPanel from '../components/worldview/WorldviewPanel'
 import StoryCorePanel from '../components/worldview/StoryCorePanel'
 import PowerSystemPanel from '../components/worldview/PowerSystemPanel'
+import WorldviewOriginPanel from '../components/worldview/WorldviewOriginPanel'
+import WorldviewNaturalPanel from '../components/worldview/WorldviewNaturalPanel'
 import CharacterPanel from '../components/character/CharacterPanel'
 import FactionPanel from '../components/faction/FactionPanel'
 import OutlinePanel from '../components/outline/OutlinePanel'
@@ -110,17 +112,9 @@ export default function WorkspacePage() {
 
       // ── 设定库 - 世界观（v3 §2.1，三个新子模块）─────────────────────
       case 'worldview-origin':
-        return <PlaceholderPanel
-          title="世界起源"
-          phase="将在 Phase 5 实施（含 AI 一键生成）"
-          description="设定世界来源、力量层次、神明体系等创世纪信息。"
-        />
+        return <WorldviewOriginPanel project={project} />
       case 'worldview-natural':
-        return <PlaceholderPanel
-          title="自然环境"
-          phase="将在 Phase 5 实施（含 AI 一键生成）"
-          description="世界结构 / 大陆分布 / 山川河流 / 气候 / 自然资源（珍禽异兽、灵药矿石）。"
-        />
+        return <WorldviewNaturalPanel project={project} />
       case 'worldview-humanity':
         return <PlaceholderPanel
           title="人文环境"
