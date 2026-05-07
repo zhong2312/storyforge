@@ -1,4 +1,7 @@
-import { Square, Check, RotateCcw, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Square, Check, RotateCcw, Loader2, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { usePromptStore } from '../../stores/prompt'
+import type { PromptModuleKey, PromptExample } from '../../lib/types/prompt'
 
 interface AIStreamOutputProps {
   /** 流式输出的文本 */
@@ -15,6 +18,8 @@ interface AIStreamOutputProps {
   onRetry: () => void
   /** 占位提示 */
   placeholder?: string
+  /** P15：传入则显示「⭐ 好示例 / 💩 坏示例」标记按钮，写入对应模板的 examples */
+  moduleKey?: PromptModuleKey
 }
 
 /**
@@ -29,8 +34,30 @@ export default function AIStreamOutput({
   onAccept,
   onRetry,
   placeholder = '点击生成按钮，让 AI 为你创作...',
+  moduleKey,
 }: AIStreamOutputProps) {
   const hasOutput = output.length > 0
+  const [marked, setMarked] = useState<'good' | 'bad' | null>(null)
+
+  /** 把当前输出存为模板的好/坏示例 */
+  const handleMark = async (kind: 'good' | 'bad') => {
+    if (!moduleKey || !output.trim()) return
+    const tpl = usePromptStore.getState().getActive(moduleKey)
+    const example: PromptExample = {
+      id: `ex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      text: output.trim().slice(0, 2000), // 限制长度
+      source: 'user-marked',
+      rating: kind === 'good' ? 5 : 1,
+      createdAt: Date.now(),
+    }
+    const examples = tpl.examples || {}
+    const updated = {
+      ...examples,
+      [kind]: [...(examples[kind] || []), example],
+    }
+    await usePromptStore.getState().saveTemplate({ ...tpl, examples: updated })
+    setMarked(kind)
+  }
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -82,6 +109,37 @@ export default function AIStreamOutput({
                   <RotateCcw className="w-3 h-3" />
                   重试
                 </button>
+              )}
+              {/* P15: 标记好/坏示例（仅在已有输出 + moduleKey 提供时） */}
+              {hasOutput && !error && moduleKey && (
+                <>
+                  <button
+                    onClick={() => handleMark('good')}
+                    disabled={marked === 'good'}
+                    title="标为好示例 — 下次生成时 AI 会参考此风格"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                      marked === 'good'
+                        ? 'bg-success/20 text-success'
+                        : 'bg-bg-hover text-text-secondary hover:text-success hover:bg-success/10'
+                    }`}
+                  >
+                    <ThumbsUp className="w-3 h-3" />
+                    {marked === 'good' ? '已标好' : '好示例'}
+                  </button>
+                  <button
+                    onClick={() => handleMark('bad')}
+                    disabled={marked === 'bad'}
+                    title="标为坏示例 — 下次生成时 AI 会避开此风格"
+                    className={`flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-md transition-colors ${
+                      marked === 'bad'
+                        ? 'bg-error/20 text-error'
+                        : 'bg-bg-hover text-text-secondary hover:text-error hover:bg-error/10'
+                    }`}
+                  >
+                    <ThumbsDown className="w-3 h-3" />
+                    {marked === 'bad' ? '已标坏' : '反例'}
+                  </button>
+                </>
               )}
               {hasOutput && !error && (
                 <button

@@ -56,8 +56,32 @@ export function renderPrompt(
   const sysSrc = options?.overrides?.systemPrompt ?? template.systemPrompt
   const userSrc = options?.overrides?.userPromptTemplate ?? template.userPromptTemplate
 
-  const userContent = renderString(userSrc, enriched, template.moduleKey)
+  let userContent = renderString(userSrc, enriched, template.moduleKey)
   const systemContent = renderString(sysSrc, enriched, template.moduleKey)
+
+  // P15: 拼接示例（few-shot）到 user prompt 末尾
+  // - good 示例：作者标记的"输出风格参考"
+  // - bad 示例：作者标记的"避免的输出"
+  const goodExamples = (template.examples?.good || []).filter(e => e.text.trim()).slice(0, 3)
+  const badExamples = (template.examples?.bad || []).filter(e => e.text.trim()).slice(0, 2)
+  if (goodExamples.length > 0 || badExamples.length > 0) {
+    const parts: string[] = ['', '---', '【参考示例】']
+    if (goodExamples.length > 0) {
+      parts.push('请参考以下风格（这些是作者认可的输出）：')
+      goodExamples.forEach((e, i) => {
+        parts.push(`\n[好示例 ${i + 1}]`)
+        parts.push(e.text.trim())
+      })
+    }
+    if (badExamples.length > 0) {
+      parts.push('\n请避免以下风格（这些是作者认为不好的输出）：')
+      badExamples.forEach((e, i) => {
+        parts.push(`\n[反例 ${i + 1}]`)
+        parts.push(e.text.trim())
+      })
+    }
+    userContent += '\n' + parts.join('\n')
+  }
 
   const messages: ChatMessage[] = []
   if (systemContent.trim()) {

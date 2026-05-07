@@ -136,6 +136,7 @@ export default function WorldviewFieldEditor({
           onStop={ai.stop}
           onAccept={handleAccept}
           onRetry={handleGenerate}
+          moduleKey="worldview.dimension"
         />
       )}
     </div>

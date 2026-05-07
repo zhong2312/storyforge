@@ -137,6 +137,7 @@ export default function AIFieldCard({
           onStop={ai.stop}
           onAccept={handleAccept}
           onRetry={handleGenerate}
+          moduleKey={moduleKey}
         />
       )}
     </div>

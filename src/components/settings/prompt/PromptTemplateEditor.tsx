@@ -8,6 +8,7 @@ import { PREVIEW_VARS } from '../../../lib/ai/prompt-preview-vars'
 import type { PromptTemplate, PromptModuleKey, PromptParameter } from '../../../lib/types/prompt'
 import { db } from '../../../lib/db/schema'
 import PromptParametersEditor from './PromptParametersEditor'
+import PromptExamplesEditor from './PromptExamplesEditor'
 
 const ALL_MODULE_KEYS: { value: PromptModuleKey; label: string }[] = [
   { value: 'worldview.dimension',         label: '世界观 · 维度生成' },
@@ -273,6 +274,13 @@ export default function PromptTemplateEditor({ template, onChanged, onDeleted }:
       <PromptParametersEditor
         parameters={draft.parameters || []}
         onChange={(params: PromptParameter[]) => update({ parameters: params })}
+        readOnly={isSystem}
+      />
+
+      {/* 示例 / 反例 (P15) */}
+      <PromptExamplesEditor
+        template={draft}
+        onChange={(examples) => update({ examples })}
         readOnly={isSystem}
       />
 
