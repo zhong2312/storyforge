@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useRef } from 'react'
 import {
   Play, Trash2, Copy, ArrowRight, Square,
   Sparkles, Check, X, Loader2, ChevronRight, Save, ClipboardCopy,
+  Upload, Download, Plus, Edit3,
 } from 'lucide-react'
 import { useWorkflowStore } from '../../../stores/workflow'
 import { usePromptStore } from '../../../stores/prompt'
@@ -21,11 +23,75 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
   const workflows = useWorkflowStore(s => s.workflows)
   const cloneWorkflow = useWorkflowStore(s => s.clone)
   const removeWorkflow = useWorkflowStore(s => s.remove)
+  const saveWorkflow = useWorkflowStore(s => s.save)
+  const reloadWorkflows = useWorkflowStore(s => s.reload)
   const initWorkflows = useWorkflowStore(s => s.init)
 
   const [runningId, setRunningId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { initWorkflows() }, [initWorkflows])
+
+  const handleExportAll = () => {
+    const blob = new Blob([JSON.stringify(workflows, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `storyforge-workflows-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportClick = () => fileInputRef.current?.click()
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const items: unknown[] = Array.isArray(data) ? data : [data]
+      const now = Date.now()
+      let count = 0
+      for (const raw of items) {
+        if (typeof raw !== 'object' || raw === null) continue
+        const r = raw as Record<string, unknown>
+        if (typeof r.name !== 'string' || !Array.isArray(r.steps)) continue
+        await saveWorkflow({
+          scope: 'user',
+          name: r.name,
+          description: typeof r.description === 'string' ? r.description : '',
+          genres: Array.isArray(r.genres) ? r.genres as string[] : undefined,
+          steps: r.steps as PromptWorkflowStep[],
+          isDefault: false,
+          createdAt: now,
+          updatedAt: now,
+        })
+        count++
+      }
+      await reloadWorkflows()
+      alert(`成功导入 ${count} 个工作流`)
+    } catch (err) {
+      alert(`导入失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleNew = async () => {
+    const now = Date.now()
+    const id = await saveWorkflow({
+      scope: 'user',
+      name: '新建工作流',
+      description: '',
+      steps: [],
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    setEditingId(id)
+  }
 
   if (runningId !== null) {
     const wf = workflows.find(w => w.id === runningId)
@@ -36,13 +102,51 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
     return <WorkflowRunner workflow={wf} project={project} onClose={() => setRunningId(null)} />
   }
 
+  if (editingId !== null) {
+    const wf = workflows.find(w => w.id === editingId)
+    if (!wf) {
+      setEditingId(null)
+      return null
+    }
+    return <WorkflowEditor workflow={wf} onClose={() => setEditingId(null)} />
+  }
+
   return (
     <div className="p-5 space-y-3">
-      <div>
-        <h2 className="text-base font-semibold text-text-primary mb-1">🔗 提示词工作流</h2>
-        <p className="text-sm text-text-muted">
-          一键跑完一段创作流程，每步可暂停审核。借鉴蛙蛙写作的链式工作流理念。
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-text-primary mb-1">🔗 提示词工作流</h2>
+          <p className="text-sm text-text-muted">
+            一键跑完一段创作流程，每步可暂停审核。
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent text-xs rounded hover:bg-accent/20"
+          >
+            <Plus className="w-3.5 h-3.5" /> 新建
+          </button>
+          <button
+            onClick={handleImportClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-hover text-text-primary text-xs rounded hover:bg-bg-elevated"
+          >
+            <Upload className="w-3.5 h-3.5" /> 导入
+          </button>
+          <button
+            onClick={handleExportAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-hover text-text-primary text-xs rounded hover:bg-bg-elevated"
+          >
+            <Download className="w-3.5 h-3.5" /> 导出全部
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+        </div>
       </div>
 
       {workflows.length === 0 ? (
@@ -71,6 +175,15 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
                   >
                     <Play className="w-3 h-3" /> 运行
                   </button>
+                  {w.scope === 'user' && (
+                    <button
+                      onClick={() => setEditingId(w.id!)}
+                      className="p-1.5 text-text-muted hover:text-text-primary"
+                      title="编辑"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => cloneWorkflow(w.id!)}
                     className="p-1.5 text-text-muted hover:text-text-primary"
@@ -498,6 +611,265 @@ function StepCard({
             </button>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── 工作流编辑器（用户工作流可深度编辑） ───────────────────────────────────
+
+const ALL_MODULE_KEYS_FOR_WORKFLOW = [
+  'worldview.dimension', 'character.generate', 'character.dimension',
+  'outline.volume', 'outline.chapter',
+  'chapter.content', 'chapter.continue', 'chapter.polish', 'chapter.expand', 'chapter.de-ai',
+  'foreshadow.generate', 'story.generate', 'rules.generate', 'detail.scene',
+  'geography.concept-map', 'geography.image-map-prompt',
+] as const
+
+const SAVE_TARGET_PRESETS = [
+  { label: '不自动保存（仅复制）', value: '' },
+  { label: '世界观.世界起源', value: 'worldview-field:worldOrigin' },
+  { label: '世界观.力量层次', value: 'worldview-field:powerHierarchy' },
+  { label: '世界观.世界历史线', value: 'worldview-field:historyLine' },
+  { label: '世界观.世界观摘要', value: 'worldview-field:summary' },
+  { label: '故事.一句话故事', value: 'storyCore-field:logline' },
+  { label: '故事.故事概念', value: 'storyCore-field:concept' },
+  { label: '故事.主题', value: 'storyCore-field:theme' },
+  { label: '故事.核心冲突', value: 'storyCore-field:centralConflict' },
+  { label: '故事.故事主线', value: 'storyCore-field:mainPlot' },
+  { label: '创作规则.写作风格', value: 'creativeRules-field:writingStyle' },
+  { label: '创作规则.基调氛围', value: 'creativeRules-field:toneAndMood' },
+] as const
+
+function WorkflowEditor({ workflow, onClose }: { workflow: PromptWorkflow; onClose: () => void }) {
+  const saveWorkflow = useWorkflowStore(s => s.save)
+  const removeWorkflow = useWorkflowStore(s => s.remove)
+  const [draft, setDraft] = useState<PromptWorkflow>(workflow)
+  const [dirty, setDirty] = useState(false)
+
+  const update = (patch: Partial<PromptWorkflow>) => {
+    setDraft(d => ({ ...d, ...patch }))
+    setDirty(true)
+  }
+
+  const updateStep = (idx: number, patch: Partial<PromptWorkflowStep>) => {
+    setDraft(d => ({
+      ...d,
+      steps: d.steps.map((s, i) => i === idx ? { ...s, ...patch } : s),
+    }))
+    setDirty(true)
+  }
+
+  const addStep = () => {
+    setDraft(d => ({
+      ...d,
+      steps: [...d.steps, {
+        stepId: `s-${Math.random().toString(36).slice(2, 10)}`,
+        label: `步骤 ${d.steps.length + 1}`,
+        promptModuleKey: 'chapter.content',
+        userConfirmRequired: false,
+      }],
+    }))
+    setDirty(true)
+  }
+
+  const removeStep = (idx: number) => {
+    setDraft(d => ({ ...d, steps: d.steps.filter((_, i) => i !== idx) }))
+    setDirty(true)
+  }
+
+  const moveStep = (idx: number, dir: -1 | 1) => {
+    setDraft(d => {
+      const next = [...d.steps]
+      const target = idx + dir
+      if (target < 0 || target >= next.length) return d
+      ;[next[idx], next[target]] = [next[target], next[idx]]
+      return { ...d, steps: next }
+    })
+    setDirty(true)
+  }
+
+  const handleSave = async () => {
+    await saveWorkflow(draft)
+    setDirty(false)
+    alert('已保存')
+  }
+
+  const saveTargetToValue = (st?: SaveTarget): string => {
+    if (!st) return ''
+    return `${st.type}:${st.field}`
+  }
+
+  const valueToSaveTarget = (v: string): SaveTarget | undefined => {
+    if (!v) return undefined
+    const [type, field] = v.split(':')
+    return { type: type as SaveTarget['type'], field, mode: 'replace' }
+  }
+
+  return (
+    <div className="p-5 space-y-4">
+      {/* 顶栏 */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-text-primary">✏️ 编辑工作流</h2>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSave}
+            disabled={!dirty}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-sm rounded hover:bg-accent-hover disabled:opacity-40"
+          >
+            <Save className="w-4 h-4" /> 保存{dirty && ' *'}
+          </button>
+          <button
+            onClick={() => {
+              if (dirty && !confirm('未保存的更改将丢失，确认返回？')) return
+              onClose()
+            }}
+            className="px-3 py-1.5 text-text-secondary text-sm rounded hover:bg-bg-hover"
+          >
+            返回
+          </button>
+        </div>
+      </div>
+
+      {/* 元信息 */}
+      <div className="bg-bg-surface border border-border rounded-xl p-4 space-y-3">
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">名称</label>
+          <input
+            value={draft.name}
+            onChange={e => update({ name: e.target.value })}
+            className="w-full px-3 py-2 bg-bg-base border border-border rounded text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">描述</label>
+          <textarea
+            value={draft.description}
+            onChange={e => update({ description: e.target.value })}
+            rows={2}
+            className="w-full px-3 py-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent"
+          />
+        </div>
+      </div>
+
+      {/* 步骤列表 */}
+      <div className="bg-bg-surface border border-border rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-text-primary">步骤（{draft.steps.length}）</h3>
+          <button
+            onClick={addStep}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-accent hover:bg-accent/10 rounded"
+          >
+            <Plus className="w-3 h-3" /> 加一步
+          </button>
+        </div>
+        {draft.steps.length === 0 ? (
+          <p className="text-xs text-text-muted py-3 text-center">还没有步骤，点上方「加一步」开始。</p>
+        ) : (
+          <div className="space-y-3">
+            {draft.steps.map((s, idx) => (
+              <div key={s.stepId} className="bg-bg-base border border-border rounded p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-text-muted text-xs flex-shrink-0">{idx + 1}.</span>
+                  <input
+                    value={s.label}
+                    onChange={e => updateStep(idx, { label: e.target.value })}
+                    placeholder="步骤名"
+                    className="flex-1 px-2 py-1 bg-bg-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent"
+                  />
+                  <button onClick={() => moveStep(idx, -1)} disabled={idx === 0} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30">↑</button>
+                  <button onClick={() => moveStep(idx, 1)} disabled={idx === draft.steps.length - 1} className="px-1 text-text-muted hover:text-text-primary disabled:opacity-30">↓</button>
+                  <button onClick={() => removeStep(idx)} className="px-1 text-text-muted hover:text-error">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-text-muted mb-0.5">提示词模块</label>
+                    <select
+                      value={s.promptModuleKey}
+                      onChange={e => updateStep(idx, { promptModuleKey: e.target.value as PromptWorkflowStep['promptModuleKey'] })}
+                      className="w-full px-2 py-1 bg-bg-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent"
+                    >
+                      {ALL_MODULE_KEYS_FOR_WORKFLOW.map(k => (
+                        <option key={k} value={k}>{k}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-text-muted mb-0.5">自动保存目标</label>
+                    <select
+                      value={saveTargetToValue(s.saveTarget)}
+                      onChange={e => updateStep(idx, { saveTarget: valueToSaveTarget(e.target.value) })}
+                      className="w-full px-2 py-1 bg-bg-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent"
+                    >
+                      {SAVE_TARGET_PRESETS.map(p => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-text-muted mb-0.5">给 AI 的提示（userHint）</label>
+                  <textarea
+                    value={s.userHint || ''}
+                    onChange={e => updateStep(idx, { userHint: e.target.value })}
+                    rows={2}
+                    placeholder="如：请用一句话讲清楚这部小说要讲什么"
+                    className="w-full px-2 py-1 bg-bg-surface border border-border rounded text-xs text-text-primary resize-none focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <label className="flex items-center gap-1 text-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={s.userConfirmRequired || false}
+                      onChange={e => updateStep(idx, { userConfirmRequired: e.target.checked })}
+                      className="accent-accent"
+                    />
+                    本步执行后暂停等用户确认
+                  </label>
+                  {idx > 0 && (
+                    <label className="flex items-center gap-1 text-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={!!s.inputMapping?.previousOutput}
+                        onChange={e => updateStep(idx, {
+                          inputMapping: e.target.checked ? { previousOutput: 'previousOutput' } : undefined,
+                        })}
+                        className="accent-accent"
+                      />
+                      把上一步输出当作上下文
+                    </label>
+                  )}
+                </div>
+                {idx > 0 && s.inputMapping?.previousOutput && (
+                  <input
+                    value={s.inputMapping.previousOutput}
+                    onChange={e => updateStep(idx, { inputMapping: { previousOutput: e.target.value } })}
+                    placeholder="变量名（如 worldContext / characters）"
+                    className="w-full px-2 py-1 bg-bg-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 底部删除（仅用户工作流） */}
+      {draft.scope === 'user' && draft.id && (
+        <button
+          onClick={() => {
+            if (confirm(`删除工作流「${draft.name}」？此操作不可恢复。`)) {
+              removeWorkflow(draft.id!)
+              onClose()
+            }
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-error text-xs hover:bg-error/10 rounded"
+        >
+          <Trash2 className="w-3 h-3" /> 删除工作流
+        </button>
       )}
     </div>
   )

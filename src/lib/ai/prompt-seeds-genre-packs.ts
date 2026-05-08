@@ -736,6 +736,140 @@ const SUSPENSE: PromptSeed[] = [
   },
 ]
 
+// ── 各包补 chapter.continue（续写）────────────────────────────────────────
+
+const CONTINUE_TEMPLATES: PromptSeed[] = [
+  {
+    scope: 'system',
+    moduleKey: 'chapter.continue',
+    promptType: 'continue',
+    name: '仙侠包-章节续写',
+    description: '保持文风古典、心境优先的续写。',
+    genres: ['xianxia'],
+    systemPrompt: `你是一位仙侠续写者{{#if usesTone}}，本次基调偏{{tone}}{{/if}}。续写要求：
+1. 文笔保持典雅古意，避免现代词汇
+2. 心境/景物描写多于动作
+3. 保持前文的叙述节奏与语感
+4. 续写约 1000-2000 字`,
+    userPromptTemplate: `请续写以下仙侠正文：
+
+章节大纲：{{chapterSummary}}
+
+世界观：
+{{worldContext}}
+
+已有正文（接续）：
+---
+{{existingContent}}
+---{{#if userHint}}
+
+用户额外要求：{{userHint}}{{/if}}`,
+    variables: ['chapterSummary', 'worldContext', 'existingContent', 'userHint'],
+    parameters: [
+      { key: 'tone', label: '基调', type: 'select',
+        options: ['空灵', '清冷', '苍茫', '禅意'], default: '清冷', optional: true },
+    ],
+    isActive: false,
+  },
+  {
+    scope: 'system',
+    moduleKey: 'chapter.continue',
+    promptType: 'continue',
+    name: '言情包-章节续写',
+    description: '保持心理戏 + CP 互动张力的续写。',
+    genres: ['yanqing'],
+    systemPrompt: `你是一位言情续写者{{#if usesTone}}，本次基调偏{{tone}}{{/if}}。续写要求：
+1. 心理描写优先，捕捉情绪的细微变化
+2. 对话克制，留白让情绪渗透
+3. 保持原有 CP 互动节奏
+4. 续写约 1000-2000 字`,
+    userPromptTemplate: `请续写以下言情正文：
+
+章节大纲：{{chapterSummary}}
+
+背景：
+{{worldContext}}
+
+已有正文：
+---
+{{existingContent}}
+---{{#if userHint}}
+
+用户额外要求：{{userHint}}{{/if}}`,
+    variables: ['chapterSummary', 'worldContext', 'existingContent', 'userHint'],
+    parameters: [
+      { key: 'tone', label: '基调', type: 'select',
+        options: ['甜', '虐', '甜虐交织', '克制', '炽热'], default: '甜虐交织', optional: true },
+    ],
+    isActive: false,
+  },
+  {
+    scope: 'system',
+    moduleKey: 'chapter.continue',
+    promptType: 'continue',
+    name: '现实主义包-章节续写',
+    description: '保持日常感和克制叙述的续写。',
+    genres: ['realism'],
+    systemPrompt: `你是一位现实主义续写者{{#if usesTone}}，本次基调偏{{tone}}{{/if}}。续写要求：
+1. 不回避琐碎，让生活肌理自然延展
+2. 内心戏丰富但克制
+3. 保持原文的语速和句式
+4. 续写约 1500-3000 字（现实主义节奏更慢）`,
+    userPromptTemplate: `请续写以下现实主义正文：
+
+章节大纲：{{chapterSummary}}
+
+背景：
+{{worldContext}}
+
+已有正文：
+---
+{{existingContent}}
+---{{#if userHint}}
+
+用户额外要求：{{userHint}}{{/if}}`,
+    variables: ['chapterSummary', 'worldContext', 'existingContent', 'userHint'],
+    parameters: [
+      { key: 'tone', label: '基调', type: 'select',
+        options: ['温情', '苍凉', '克制', '怀旧'], default: '克制', optional: true },
+    ],
+    isActive: false,
+  },
+  {
+    scope: 'system',
+    moduleKey: 'chapter.continue',
+    promptType: 'continue',
+    name: '悬疑推理包-章节续写',
+    description: '保持信息控制 + 反转节奏的续写。',
+    genres: ['suspense'],
+    systemPrompt: `你是一位悬疑续写者{{#if usesTone}}，本次基调偏{{tone}}{{/if}}。续写要求：
+1. 每一段都让读者要么知道得更多，要么发现之前判断有误
+2. 保留至少一处"看似无关"的细节作为新线索
+3. 紧凑的句子节奏，避免散文式抒情
+4. 在结尾留一个新的悬念或反转
+5. 续写约 1000-2000 字`,
+    userPromptTemplate: `请续写以下悬疑正文：
+
+章节大纲：{{chapterSummary}}
+
+案件背景：
+{{worldContext}}
+
+已有正文：
+---
+{{existingContent}}
+---{{#if userHint}}
+
+用户额外要求：{{userHint}}{{/if}}`,
+    variables: ['chapterSummary', 'worldContext', 'existingContent', 'userHint'],
+    parameters: [
+      { key: 'tone', label: '基调', type: 'select',
+        options: ['冷峻', '诡谲', '紧绷', '阴郁'], default: '冷峻', optional: true },
+    ],
+    isActive: false,
+  },
+]
+
 // ── 合并导出 ───────────────────────────────────────────────────────────────
 
 export const GENRE_PACK_SEEDS: PromptSeed[] = [
@@ -743,6 +877,7 @@ export const GENRE_PACK_SEEDS: PromptSeed[] = [
   ...YANQING,
   ...REALISM,
   ...SUSPENSE,
+  ...CONTINUE_TEMPLATES,
 ]
 
 /** 题材包元信息（用于 UI 显示） */
