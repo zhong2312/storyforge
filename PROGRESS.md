@@ -1,6 +1,6 @@
 # StoryForge / 故事熔炉 — 开发进度文档
 
-> **最后更新**: 2026-05-09 21:48 | **当前阶段**: Phase 2 ✅ + Design System v2 ✅ + AI 多平台接入 🔧 进行中
+> **最后更新**: 2026-05-09 21:57 | **当前阶段**: Phase 2 ✅ + Design System v2 ✅ + AI 多平台接入 🔧 进行中
 
 ---
 
@@ -280,7 +280,7 @@ storyforge/src/
 
 ## 🔧 AI 多平台接入（进行中）
 
-**开始日期**: 2026-05-09 | **当前状态**: 日志系统 ✅ + DeepSeek ✅ + Poe 适配 ✅
+**开始日期**: 2026-05-09 | **当前状态**: 日志系统 ✅ + DeepSeek ✅ + Poe 适配 ✅ (bug修复 05-09 21:55)
 
 ### 目标
 纯前端工具，用户自配 API Key，浏览器直接调用 AI API（无需后端服务器）。
@@ -316,15 +316,48 @@ storyforge/src/
 | `src/lib/ai/client.ts` | `buildRequest()` 函数根据 provider 构造不同请求格式 + 流式日志记录 |
 | `src/components/settings/AIConfigPanel.tsx` | 全部 11 个平台下拉选择 + 每个配置提示（去哪获取 Key）+ 日志面板 + 3 主题切换 |
 
+### Bug 修复记录
+
+#### 🐛 Poe 连接 404 问题（05-09 21:55 修复）
+
+**现象**: 选择 Poe 提供商后测试连接，日志显示请求发到 `https://api.poe.com/v1//chat/completions`（404），未走 Poe 适配路径。
+
+**根因**:
+1. 用户手动将 Base URL 改为 `https://api.poe.com/v1/`（末尾带 `/`），拼接后产生双斜杠 `//`
+2. `config.provider === 'poe'` 判断在某些场景下未生效（可能是 localStorage 中存储的旧值问题）
+
+**修复**（commit `c5fcc0e`）:
+- `ai-config.ts` + `client.ts` 两处同步修复：
+  - 添加 URL 标准化：`baseUrl.replace(/\/+$/, '')` 去除尾部斜杠
+  - 添加域名兜底检测：`baseUrl.includes('api.poe.com')` — 即使 provider 字段有问题，只要 URL 含 poe 域名就走 Poe 格式
+  - Poe 请求格式：`{baseUrl}/{model}`（不含 `/chat/completions`）
+
+**验证方法**: 在设置页重新切换到 Poe（会重置 Base URL 为 `https://api.poe.com/bot`），输入 Key 后测试连接。
+
+### 当前测试状态
+
+| 平台 | 状态 | 备注 |
+|------|------|------|
+| DeepSeek | ✅ 连通 | HTTP 402 = 余额不足（非代码问题） |
+| Poe | 🔧 已修复待验证 | 需用户重新切换 provider 或手动改 Base URL 为 `https://api.poe.com/bot` |
+| 通义千问 | 🔜 待测试 | — |
+| 豆包 | 🔜 待测试 | — |
+| MiniMax | 🔜 待测试 | — |
+| 智谱 GLM | 🔜 待测试 | — |
+| 文心一言 | 🔜 待测试 | — |
+| Gemini | 🔜 待测试 | — |
+
 ### 下一步待做
-1. 逐个测试通义千问、豆包、MiniMax、智谱GLM、文心、Gemini 的实际连接
-2. 如果某些平台 API 格式有细微差异，在 `buildRequest()` 中加适配
-3. 考虑给 Kimi/OpenAI/Claude 添加 Vercel Serverless 代理（生产环境）
+1. **验证 Poe 修复** — 用户需在设置中重新选择 Poe 提供商（触发 switchProvider 重置 Base URL）
+2. 逐个测试通义千问、豆包、MiniMax、智谱GLM、文心、Gemini 的实际连接
+3. 如果某些平台 API 格式有细微差异，在 `buildRequest()` 中加适配
+4. 考虑给 Kimi/OpenAI/Claude 添加 Vercel Serverless 代理（生产环境）
 
 ### 开发 Tips
 - 选择 DeepSeek → 输入 key → 测试连接 → 如果显示 "Insufficient Balance" 说明连接成功但余额不足
 - 点「日志」按钮可查看完整请求日志（URL、HTTP 状态码、耗时、错误信息）
 - Poe 的 API 格式不同：endpoint 是 `baseUrl/{model}` 而非 `baseUrl/chat/completions`
+- **⚠️ 如果切换 provider 后 Base URL 没变**，说明 localStorage 里有旧配置。可以在浏览器 DevTools → Application → Local Storage → 删除 `storyforge-ai-config` 重来
 
 ---
 
