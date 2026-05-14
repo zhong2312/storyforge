@@ -8,7 +8,7 @@
 import { useCharacterStore } from '../../stores/character'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useOutlineStore } from '../../stores/outline'
-import type { UnifiedParseResult } from '../types/import-session-data'
+import type { UnifiedParseResult } from '../types'
 import type { CharacterRole } from '../types'
 
 export interface ApplyChunkCounts {

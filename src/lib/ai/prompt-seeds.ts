@@ -1,4 +1,4 @@
-import type { PromptTemplate } from '../types/prompt'
+import type { PromptTemplate } from '../types'
 import { GENRE_PACK_SEEDS } from './prompt-seeds-genre-packs'
 
 /**

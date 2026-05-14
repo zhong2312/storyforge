@@ -23,9 +23,9 @@ import { useAIConfigStore } from '../../stores/ai-config'
 import { useImportSessionStore } from '../../stores/import-session'
 import { useImportStatusStore } from '../../stores/import-status'
 import { extractJSON, IMPORT_MAX_TOKENS } from '../ai/adapters/import-adapter'
-import type { UnifiedParseResult } from '../types/import-session-data'
+import type { UnifiedParseResult } from '../types'
 import type { AIConfig } from '../types'
-import type { ImportSession, ChunkState } from '../types/import-session'
+import type { ImportSession, ChunkState } from '../types'
 import {
   registerChunkTexts as _registerChunkTexts,
   hasChunkTexts as _hasChunkTexts,

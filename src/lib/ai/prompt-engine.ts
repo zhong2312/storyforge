@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types'
-import type { PromptTemplate, PromptVariableContext } from '../types/prompt'
+import type { PromptTemplate, PromptVariableContext } from '../types'
 
 /**
  * 渲染提示词模板。

@@ -27,7 +27,7 @@ import type {
   MasterAnalysisDepth,
   MasterChunkAnalysis,
   MasterWork,
-} from '../types/master-study'
+} from '../types'
 
 /** 不同深度对应的分块字符数 + maxTokens 上限 */
 const DEPTH_PRESET: Record<MasterAnalysisDepth, {

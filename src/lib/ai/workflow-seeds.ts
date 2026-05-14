@@ -1,4 +1,4 @@
-import type { PromptWorkflow } from '../types/workflow'
+import type { PromptWorkflow } from '../types'
 
 export type WorkflowSeed = Omit<PromptWorkflow, 'id' | 'createdAt' | 'updatedAt'>
 

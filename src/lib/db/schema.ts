@@ -16,20 +16,19 @@ import type {
   CharacterRelation,
   Snapshot,
   Reference,
-} from '../types'
-import type { PromptTemplate } from '../types/prompt'
-import type { DetailedOutline } from '../types/detailed-outline'
-import type { ImportJob } from '../types/import-job'
-import type { ImportSession, ImportLog } from '../types/import-session'
-import type { ImportFileBlob } from '../types/import-file'
-import type { PromptWorkflow } from '../types/workflow'
-import type {
+  PromptTemplate,
+  DetailedOutline,
+  ImportJob,
+  ImportSession,
+  ImportLog,
+  ImportFileBlob,
+  PromptWorkflow,
   MasterWork,
   MasterChunkAnalysis,
   MasterChapterBeat,
   MasterStyleMetrics,
   MasterInsight,
-} from '../types/master-study'
+} from '../types'
 
 class StoryForgeDB extends Dexie {
   projects!: Table<Project>

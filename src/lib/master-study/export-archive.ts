@@ -18,7 +18,7 @@ import type {
   MasterChunkAnalysis,
   MasterChapterBeat,
   MasterStyleMetrics,
-} from '../types/master-study'
+} from '../types'
 
 export interface AnalysisArchivePayload {
   work: MasterWork

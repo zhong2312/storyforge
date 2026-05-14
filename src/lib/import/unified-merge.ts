@@ -5,8 +5,8 @@
  * 从 pipeline.ts 抽出。
  */
 
-import type { UnifiedParseResult } from '../types/import-session-data'
-import type { ImportSession } from '../types/import-session'
+import type { UnifiedParseResult } from '../types'
+import type { ImportSession } from '../types'
 
 /**
  * 把一块新解析出的 UnifiedParseResult 合并进累计结果。
