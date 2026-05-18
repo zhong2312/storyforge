@@ -62,7 +62,7 @@ export default defineConfig({
   base: '/storyforge/',
   server: {
     port: 5175,
-    open: true,
+    open: '/storyforge/',
     proxy: {
       '/deepseek-proxy': {
         target: 'https://api.deepseek.com',
