@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type ReactElement } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Settings } from 'lucide-react'
 import {
   NAV_TREE, getBranchChain,
   type SidebarModule, type TreeLeaf, type TreeNode,
@@ -113,8 +113,19 @@ export default function Sidebar({
         ))}
       </nav>
 
-      {/* 底部：折叠切换 */}
-      <div className="border-t border-border p-2 flex justify-center">
+      {/* 底部：设置快捷入口 + 折叠切换 */}
+      <div className="border-t border-border p-2 flex items-center justify-between">
+        <button
+          onClick={() => onSelect('settings')}
+          title="设置"
+          className={`p-1.5 rounded transition-colors ${
+            normActive === 'settings'
+              ? 'text-accent bg-accent/10'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+        </button>
         <button
           onClick={onToggleCollapse}
           title={collapsed ? '展开侧边栏' : '折叠侧边栏'}

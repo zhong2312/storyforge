@@ -1,4 +1,12 @@
 import type { Worldview, StoryCore, PowerSystem, Character } from '../types'
+import { loadContextMemo } from '../export/context-snapshot'
+
+/** 获取已缓存的上下文快照（如果有） */
+export function getContextMemo(projectId: number): string {
+  const memo = loadContextMemo(projectId)
+  if (!memo) return ''
+  return `【上下文快照 — 此前故事状态】\n${memo}\n【快照结束】`
+}
 
 /** 构建世界观上下文摘要 */
 export function buildWorldContext(wv: Worldview | null, sc: StoryCore | null, ps: PowerSystem | null): string {

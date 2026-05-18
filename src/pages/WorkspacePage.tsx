@@ -45,6 +45,8 @@ import HistoryPanel from '../components/history/HistoryPanel'
 import ItemSystemPanel from '../components/items/ItemSystemPanel'
 import CreativeRulesPanel from '../components/rules/CreativeRulesPanel'
 import CharacterRelationPanel from '../components/relations/CharacterRelationPanel'
+import WorldMapPanel from '../components/geography/WorldMapPanel'
+import StatePanel from '../components/state/StatePanel'
 import type { Project } from '../lib/types'
 
 export default function WorkspacePage() {
@@ -130,6 +132,8 @@ export default function WorkspacePage() {
         return <WorldviewPanel project={project} />
       case 'geography':
         return <GeographyPanel project={project} />
+      case 'world-map':
+        return <WorldMapPanel project={project} />
       case 'history':
         return <HistoryPanel project={project} />
       case 'items':
@@ -169,6 +173,8 @@ export default function WorkspacePage() {
         return <ChapterEditor project={project} outlineNodeId={editorNodeId} />
       case 'foreshadow':
         return <ForeshadowPanel project={project} />
+      case 'state-table':
+        return <StatePanel project={project} />
 
       // ── 作品学习（一级） ─────────────────────────────────────────
       case 'master-studies':

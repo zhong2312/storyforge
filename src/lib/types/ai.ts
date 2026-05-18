@@ -76,7 +76,7 @@ export const PROVIDER_MODELS: Record<string, { value: string; label: string; des
 /** 提供商预设 */
 export const PROVIDER_PRESETS: Record<string, Partial<AIConfig>> = {
   deepseek: {
-    baseUrl: 'https://api.deepseek.com',
+    baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-v4-flash',
   },
   qwen: {

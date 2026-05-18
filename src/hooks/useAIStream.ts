@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
-import { streamChat } from '../lib/ai/client'
+import { streamChat, type StreamResult } from '../lib/ai/client'
 import { useAIConfigStore } from '../stores/ai-config'
 import type { AIConfig, ChatMessage } from '../lib/types'
+import type { TokenUsage } from '../lib/ai/logger'
 
 export interface UseAIStreamReturn {
   /** 当前累积的输出文本 */
@@ -10,6 +11,8 @@ export interface UseAIStreamReturn {
   isStreaming: boolean
   /** 错误信息 */
   error: string | null
+  /** 本次生成的 token 用量（流结束后可用） */
+  tokenUsage: TokenUsage | null
   /**
    * 开始流式生成。
    * @param messages 聊天消息
@@ -31,6 +34,7 @@ export function useAIStream(): UseAIStreamReturn {
   const [output, setOutput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const stop = useCallback(() => {
@@ -43,6 +47,7 @@ export function useAIStream(): UseAIStreamReturn {
     stop()
     setOutput('')
     setError(null)
+    setTokenUsage(null)
   }, [stop])
 
   const start = useCallback(async (
@@ -52,6 +57,7 @@ export function useAIStream(): UseAIStreamReturn {
     // 重置状态
     setOutput('')
     setError(null)
+    setTokenUsage(null)
     setIsStreaming(true)
 
     const controller = new AbortController()
@@ -62,7 +68,6 @@ export function useAIStream(): UseAIStreamReturn {
       ? { ...baseConfig, ...overrideConfig }
       : baseConfig
 
-
     if (!config.apiKey) {
       const errMsg = '请先在「设置」中配置 AI API Key'
       setError(errMsg)
@@ -71,9 +76,10 @@ export function useAIStream(): UseAIStreamReturn {
     }
 
     let accumulated = ''
+    const streamResult: StreamResult = {}
 
     try {
-      const stream = streamChat(messages, config, controller.signal)
+      const stream = streamChat(messages, config, controller.signal, streamResult)
       for await (const chunk of stream) {
         if (controller.signal.aborted) break
         accumulated += chunk
@@ -89,10 +95,14 @@ export function useAIStream(): UseAIStreamReturn {
     } finally {
       setIsStreaming(false)
       abortRef.current = null
+      // 流结束后写入 token 用量（若 provider 返回了 usage）
+      if (streamResult.usage) {
+        setTokenUsage(streamResult.usage)
+      }
     }
 
     return accumulated
   }, [])
 
-  return { output, isStreaming, error, start, stop, reset }
+  return { output, isStreaming, error, tokenUsage, start, stop, reset }
 }

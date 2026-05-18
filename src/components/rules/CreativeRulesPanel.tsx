@@ -191,7 +191,7 @@ export default function CreativeRulesPanel({ project }: Props) {
         {aiTarget === 'writingStyle' && (ai.output || ai.isStreaming || ai.error) && (
           <div className="mt-2">
             <AIStreamOutput
-              output={ai.output} isStreaming={ai.isStreaming} error={ai.error}
+              output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
               onStop={ai.stop} onAccept={acceptAi}
               onRetry={() => generateField('writingStyle')}
             />
@@ -245,7 +245,7 @@ export default function CreativeRulesPanel({ project }: Props) {
         {aiTarget === 'toneAndMood' && (ai.output || ai.isStreaming || ai.error) && (
           <div className="mt-2">
             <AIStreamOutput
-              output={ai.output} isStreaming={ai.isStreaming} error={ai.error}
+              output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
               onStop={ai.stop} onAccept={acceptAi}
               onRetry={() => generateField('toneAndMood')}
             />
@@ -284,7 +284,7 @@ export default function CreativeRulesPanel({ project }: Props) {
         {aiTarget === 'specialRequirements' && (ai.output || ai.isStreaming || ai.error) && (
           <div className="mt-2">
             <AIStreamOutput
-              output={ai.output} isStreaming={ai.isStreaming} error={ai.error}
+              output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
               onStop={ai.stop} onAccept={acceptAi}
               onRetry={() => generateField('specialRequirements')}
             />

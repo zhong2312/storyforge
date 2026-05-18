@@ -178,18 +178,26 @@ export default function DetailedOutlinePanel({ project }: Props) {
             {(ai.output || ai.isStreaming || ai.error) && (
               <div className="mb-4">
                 <AIStreamOutput
-                  output={ai.output} isStreaming={ai.isStreaming} error={ai.error}
+                  output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
                   onStop={ai.stop}
-                  onAccept={(text) => {
+                  onAccept={async (text) => {
                     // AI 输出粘贴到第一个场景的备注里，让用户参考着手动拆
                     // 后续 P10 可以做结构化解析
-                    if (!currentDetailed || currentDetailed.scenes.length === 0) {
-                      addScene().then(() => {
-                        const cur = useDetailedOutlineStore.getState().detailedOutlines.find(d => d.outlineNodeId === currentChapter.id)
-                        if (cur && cur.scenes[0]) updateScene(cur.scenes[0].sceneId, { notes: text })
-                      })
-                    } else {
-                      updateScene(currentDetailed.scenes[0].sceneId, { notes: text })
+                    try {
+                      if (!currentDetailed || currentDetailed.scenes.length === 0) {
+                        await addScene()
+                        // addScene 后必须从 store 取最新状态，不能用闭包里的旧 currentDetailed
+                        const fresh = useDetailedOutlineStore.getState().detailedOutlines.find(d => d.outlineNodeId === currentChapter.id)
+                        if (fresh && fresh.scenes[0]) {
+                          await updateScenes(fresh.scenes.map((s, i) =>
+                            i === 0 ? { ...s, notes: text } : s
+                          ))
+                        }
+                      } else {
+                        await updateScene(currentDetailed.scenes[0].sceneId, { notes: text })
+                      }
+                    } catch (err) {
+                      console.error('[DetailedOutline] 采纳失败:', err)
                     }
                     ai.reset()
                   }}

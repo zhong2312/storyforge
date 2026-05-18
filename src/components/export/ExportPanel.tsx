@@ -2,10 +2,15 @@ import { useState, useRef } from 'react'
 import {
   Download, Upload, FileJson, FileText, FileType,
   Loader2, CheckCircle, AlertCircle, FolderOpen, Github, ExternalLink, X,
+  Brain, Trash2,
 } from 'lucide-react'
 import { exportProjectJSON, downloadJSON, importProjectJSON, type ProjectExportData } from '../../lib/export/json-export'
 import { exportProjectMarkdown, exportProjectTXT, downloadTextFile } from '../../lib/export/text-export'
 import { exportToGist, validateGitHubPAT } from '../../lib/export/gist-export'
+import {
+  generateContextSnapshot, downloadContextSnapshot,
+  saveContextMemo, loadContextMemo, clearContextMemo,
+} from '../../lib/export/context-snapshot'
 import { useFileSystemAccess, isFSASupported, type FSAHandle } from '../../hooks/useFileSystemAccess'
 import type { Project } from '../../lib/types'
 
@@ -23,6 +28,10 @@ export default function ExportPanel({ project, onImported }: Props) {
 
   // 6.5 File System Access
   const { handle, writing, pickDirectory, writeFile, clearHandle } = useFileSystemAccess()
+
+  // 上下文快照
+  const [hasMemo, setHasMemo] = useState(() => !!loadContextMemo(project.id!))
+  const contextImportRef = useRef<HTMLInputElement>(null)
 
   // 6.6 GitHub Gist
   const [pat, setPat] = useState(() => localStorage.getItem('sf_github_pat') ?? '')
@@ -166,6 +175,70 @@ export default function ExportPanel({ project, onImported }: Props) {
           <span className="flex-1">{message}</span>
         </div>
       )}
+
+      {/* 上下文快照 */}
+      <div className="bg-bg-surface border border-border rounded-lg p-5 space-y-4">
+        <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
+          <Brain className="w-5 h-5 text-emerald-400" /> 上下文快照（AI 记忆）
+        </h3>
+        <p className="text-sm text-text-muted">
+          生成紧凑的项目状态摘要，可粘贴到任意 AI 聊天中"续写"故事，也可导入后自动注入后续生成。
+        </p>
+        {hasMemo && (
+          <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-2 rounded-lg">
+            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1">已有上下文快照缓存，后续 AI 调用将自动注入</span>
+            <button onClick={() => { clearContextMemo(project.id!); setHasMemo(false) }}
+              className="text-text-muted hover:text-red-400 transition" title="清除缓存">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-3">
+          <button onClick={async () => {
+            try {
+              showStatus('loading', '正在生成上下文快照...')
+              const snapshot = await generateContextSnapshot(project.id!)
+              downloadContextSnapshot(snapshot, project.name)
+              showStatus('success', '上下文快照已导出！')
+            } catch (e) { showStatus('error', `导出失败：${(e as Error).message}`) }
+          }} disabled={status === 'loading'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/30 transition-colors disabled:opacity-50">
+            <Download className="w-4 h-4" /> 导出快照
+          </button>
+          <button onClick={async () => {
+            try {
+              showStatus('loading', '正在生成并缓存上下文快照...')
+              const snapshot = await generateContextSnapshot(project.id!)
+              saveContextMemo(project.id!, snapshot)
+              setHasMemo(true)
+              showStatus('success', '已缓存！后续 AI 调用将自动注入此快照。')
+            } catch (e) { showStatus('error', `缓存失败：${(e as Error).message}`) }
+          }} disabled={status === 'loading'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50">
+            <Brain className="w-4 h-4" /> 生成并缓存
+          </button>
+          <button onClick={() => contextImportRef.current?.click()} disabled={status === 'loading'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-bg-elevated text-text-secondary rounded-lg text-sm font-medium hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-50">
+            <Upload className="w-4 h-4" /> 导入快照
+          </button>
+          <input ref={contextImportRef} type="file" accept=".md,.txt" className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              try {
+                const text = await file.text()
+                saveContextMemo(project.id!, text)
+                setHasMemo(true)
+                showStatus('success', `已导入并缓存上下文快照（${(text.length / 1024).toFixed(1)} KB）`)
+              } catch (err) {
+                showStatus('error', `导入失败：${(err as Error).message}`)
+              }
+              e.target.value = ''
+            }}
+          />
+        </div>
+      </div>
 
       {/* JSON 导出/导入 */}
       <div className="bg-bg-surface border border-border rounded-lg p-5 space-y-4">

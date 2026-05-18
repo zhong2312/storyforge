@@ -146,7 +146,7 @@ export default function CharacterPanel({ project }: Props) {
         <AIStreamOutput
           output={ai.output}
           isStreaming={ai.isStreaming}
-          error={ai.error}
+          error={ai.error} tokenUsage={ai.tokenUsage}
           onStop={ai.stop}
           onAccept={() => ai.reset()}
           onRetry={handleAIGenerate}

@@ -1,6 +1,11 @@
 import type { AIConfig, ChatMessage } from '../types'
 import { AIError } from '../types'
-import { createLog, updateLog } from './logger'
+import { createLog, updateLog, type TokenUsage } from './logger'
+
+/** 可变容器，streamChat 写入 usage，调用方读取 */
+export interface StreamResult {
+  usage?: TokenUsage
+}
 
 /**
  * 根据 provider 构造请求 URL 和 headers
@@ -14,6 +19,11 @@ function buildRequest(config: AIConfig, messages: ChatMessage[], stream: boolean
     model: config.model,
     messages,
     stream,
+  }
+
+  // 流式请求时要求返回 token 用量（OpenAI / DeepSeek 等兼容 provider 支持）
+  if (stream) {
+    body.stream_options = { include_usage: true }
   }
 
   // Poe 官方文档明确只需 model + messages，不要传额外参数
@@ -56,6 +66,7 @@ export async function* streamChat(
   messages: ChatMessage[],
   config: AIConfig,
   signal?: AbortSignal,
+  result?: StreamResult,
 ): AsyncGenerator<string> {
   const req = buildRequest(config, messages, true)
 
@@ -87,6 +98,7 @@ export async function* streamChat(
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let usage: TokenUsage | undefined
 
     while (true) {
       const { done, value } = await reader.read()
@@ -100,13 +112,24 @@ export async function* streamChat(
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim()
           if (data === '[DONE]') {
-            updateLog(log.id, { status: 'success', statusCode: response.status, duration: Date.now() - startTime })
+            const logUpdate: Record<string, unknown> = { status: 'success', statusCode: response.status, duration: Date.now() - startTime }
+            if (usage) logUpdate.usage = usage
+            if (result && usage) result.usage = usage
+            updateLog(log.id, logUpdate)
             return
           }
           try {
             const json = JSON.parse(data)
             const content = json.choices?.[0]?.delta?.content
             if (content) yield content
+            // 提取 token 用量（通常在最后一个 chunk 中）
+            if (json.usage) {
+              usage = {
+                inputTokens: json.usage.prompt_tokens ?? 0,
+                outputTokens: json.usage.completion_tokens ?? 0,
+                totalTokens: json.usage.total_tokens ?? 0,
+              }
+            }
           } catch {
             // 忽略解析错误
           }
@@ -114,7 +137,10 @@ export async function* streamChat(
       }
     }
 
-    updateLog(log.id, { status: 'success', statusCode: response.status, duration: Date.now() - startTime })
+    const logUpdate: Record<string, unknown> = { status: 'success', statusCode: response.status, duration: Date.now() - startTime }
+    if (usage) logUpdate.usage = usage
+    if (result && usage) result.usage = usage
+    updateLog(log.id, logUpdate)
   } catch (err) {
     if (err instanceof AIError) throw err
     const duration = Date.now() - startTime

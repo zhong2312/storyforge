@@ -132,7 +132,7 @@ export default function WorldviewFieldEditor({
         <AIStreamOutput
           output={ai.output}
           isStreaming={ai.isStreaming}
-          error={ai.error}
+          error={ai.error} tokenUsage={ai.tokenUsage}
           onStop={ai.stop}
           onAccept={handleAccept}
           onRetry={handleGenerate}

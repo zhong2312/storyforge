@@ -4,7 +4,7 @@ import {
   UserCircle, UsersRound, User, Footprints, Network,
   Ruler, BookOpen, ListTree, FilePen, PenTool, Eye,
   FileCog, History, Upload, Download, Settings,
-  GraduationCap,
+  GraduationCap, Map, ClipboardList,
 } from 'lucide-react'
 
 /**
@@ -48,6 +48,11 @@ export type SidebarModule =
   | 'settings'              // = AIConfigPanel
   | 'data-management'       // 数据管理
 
+  // 状态表（A1）
+  | 'state-table'
+
+  // 世界地图（Phase 20）
+  | 'world-map'
   // legacy aliases，路由仍兼容但不再出现在 sidebar
   | 'worldview' | 'geography' | 'history' | 'power-system' | 'items'
   | 'story-core' | 'factions' | 'backup'
@@ -110,6 +115,7 @@ export const NAV_TREE: TreeSection[] = [
           leaf('worldview-origin',   '世界起源', Sparkles),
           leaf('worldview-natural',  '自然环境', Mountain),
           leaf('worldview-humanity', '人文环境', Users2),
+          leaf('world-map',          '世界地图', Map),
         ],
       },
       leaf('story-design', '故事设计', BookOpen),
@@ -138,6 +144,7 @@ export const NAV_TREE: TreeSection[] = [
       leaf('chapters-list',    '章节',     FilePen),
       leaf('editor',           '正文',     PenTool),
       leaf('foreshadow',       '伏笔',     Eye),
+      leaf('state-table',      '状态表',   ClipboardList),
     ],
   },
   {

@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Save, FileText, Eye } from 'lucide-react'
+import { Save, FileText, Eye, ClipboardList } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useCharacterStore } from '../../stores/character'
+import { useStateCardStore } from '../../stores/state-card'
 import { useAIStream } from '../../hooks/useAIStream'
 import { useAutoSave } from '../../hooks/useAutoSave'
 import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { buildChapterContentPrompt, buildContinuePrompt, buildPolishPrompt, buildExpandPrompt, buildDeAIPrompt } from '../../lib/ai/adapters/chapter-adapter'
-import { buildWorldContext, buildCharacterContext } from '../../lib/ai/context-builder'
+import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
+import { buildWorldContext, buildCharacterContext, getContextMemo } from '../../lib/ai/context-builder'
 import { htmlToPlainText, plainTextToHtml, countWords } from '../../lib/utils/html'
 import AIStreamOutput from '../shared/AIStreamOutput'
+import StateDiffModal from '../state/StateDiffModal'
 import RichEditor, { type RichEditorHandle } from './RichEditor'
-import type { Project } from '../../lib/types'
+import type { Project, StateDiffItem } from '../../lib/types'
 
 interface Props {
   project: Project
@@ -24,6 +27,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const { nodes } = useOutlineStore()
   const { worldview, storyCore, powerSystem } = useWorldviewStore()
   const { characters } = useCharacterStore()
+  const { loadAll: loadStateCards, buildStateContext, applyDiffs } = useStateCardStore()
 
   // content 为 HTML 字符串；旧数据是纯文本，RichEditor 内部会自动包装
   const [content, setContent] = useState('')
@@ -32,7 +36,10 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [showContext, setShowContext] = useState(false)
   const [aiAction, setAIAction] = useState<string>('')
   const [customInstruction, setCustomInstruction] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [pendingDiffs, setPendingDiffs] = useState<StateDiffItem[] | null>(null)
   const ai = useAIStream()
+  const stateAI = useAIStream()
   const editorRef = useRef<RichEditorHandle>(null)
 
   // 字数（基于纯文本）
@@ -42,6 +49,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   useBeforeUnload(content !== savedContent && plainText.length > 0)
 
   useEffect(() => { loadChapters(project.id!) }, [project.id, loadChapters])
+  useEffect(() => { loadStateCards(project.id!) }, [project.id, loadStateCards])
 
   // 如果从大纲进入，选择/创建对应章节
   useEffect(() => {
@@ -74,7 +82,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   }, [currentChapter?.id, updateChapter]))
 
   const outlineNode = currentChapter ? nodes.find(n => n.id === currentChapter.outlineNodeId) : null
-  const worldCtx = buildWorldContext(worldview, storyCore, powerSystem)
+  const memo = getContextMemo(project.id!)
+  const worldCtx = [memo, buildWorldContext(worldview, storyCore, powerSystem)].filter(Boolean).join('\n\n')
   const charCtx = buildCharacterContext(characters)
 
   const handleCreateFromOutline = async () => {
@@ -126,6 +135,39 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     const messages = buildDeAIPrompt(selected)
     setAIAction('deai')
     ai.start(messages)
+  }
+
+  // ── 状态提取 ──
+  const handleExtractState = async () => {
+    if (!currentChapter || !plainText) return
+    setExtracting(true)
+    try {
+      const stateCtx = buildStateContext()
+      const chapterTitle = outlineNode?.title || currentChapter.title || '未知章节'
+      const messages = buildStateExtractPrompt(stateCtx, chapterTitle, plainText)
+      console.log('[StateExtract] 开始提取，章节:', chapterTitle)
+      const raw = await stateAI.start(messages)
+      const { diffs, error } = parseStateDiffs(raw)
+      if (error) {
+        console.error('[StateExtract] 解析失败:', error)
+      }
+      setPendingDiffs(diffs as StateDiffItem[])
+    } catch (err) {
+      console.error('[StateExtract] 提取失败:', err)
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const handleAcceptDiffs = async (accepted: StateDiffItem[]) => {
+    try {
+      await applyDiffs(project.id!, accepted, currentChapter?.id)
+      console.log(`[StateExtract] ${accepted.length} 条变更已写入状态表`)
+    } catch (err) {
+      console.error('[StateExtract] 写入状态表失败:', err)
+    }
+    setPendingDiffs(null)
+    stateAI.reset()
   }
 
   const handleAcceptAI = (text: string) => {
@@ -238,6 +280,12 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           className="px-3 py-1.5 bg-bg-elevated text-text-secondary text-xs rounded-md hover:text-text-primary disabled:opacity-50 transition-colors">
           🔥 去AI味
         </button>
+        <button onClick={handleExtractState} disabled={ai.isStreaming || extracting || !plainText}
+          title="AI 分析本章内容，提取角色/地点/物品等状态变更"
+          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 text-xs rounded-md hover:bg-emerald-500/20 disabled:opacity-50 transition-colors">
+          <ClipboardList className="w-3 h-3" />
+          {extracting ? '提取中...' : '提取状态'}
+        </button>
         <input value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
           placeholder="自定义指令..."
           className="flex-1 min-w-[150px] px-2 py-1.5 bg-bg-surface border border-border rounded-md text-xs text-text-primary focus:outline-none focus:border-accent" />
@@ -246,7 +294,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       {/* AI 输出 */}
       {(ai.output || ai.isStreaming || ai.error) && (
         <div className="mb-3">
-          <AIStreamOutput output={ai.output} isStreaming={ai.isStreaming} error={ai.error}
+          <AIStreamOutput output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
             onStop={ai.stop} onAccept={handleAcceptAI} onRetry={() => {
               if (aiAction === 'generate') handleGenerate()
               else if (aiAction === 'continue') handleContinue()
@@ -279,6 +327,16 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           className="w-full p-2 bg-bg-elevated border border-border rounded text-xs text-text-muted resize-y focus:outline-none focus:border-accent"
         />
       </div>
+
+      {/* 状态变更审核弹窗 */}
+      {pendingDiffs !== null && (
+        <StateDiffModal
+          diffs={pendingDiffs}
+          chapterTitle={outlineNode?.title || currentChapter.title || ''}
+          onConfirm={handleAcceptDiffs}
+          onCancel={() => { setPendingDiffs(null); stateAI.reset() }}
+        />
+      )}
     </div>
   )
 }

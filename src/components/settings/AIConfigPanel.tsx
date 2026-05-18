@@ -6,7 +6,7 @@ import { PROVIDER_MODELS } from '../../lib/types'
 import { getLogs, subscribeLogs, clearLogs, formatLog } from '../../lib/ai/logger'
 
 const PROVIDER_OPTIONS: { value: AIProvider; label: string; cors: boolean; hint: string }[] = [
-  { value: 'deepseek', label: 'DeepSeek', cors: true, hint: '获取 Key: platform.deepseek.com → API Keys' },
+  { value: 'deepseek', label: 'DeepSeek', cors: false, hint: '获取 Key: platform.deepseek.com → API Keys（不支持浏览器直调，本地运行时可切换代理）' },
   { value: 'qwen', label: '通义千问', cors: true, hint: '获取 Key: dashscope.console.aliyun.com → API-KEY 管理' },
   { value: 'doubao', label: '豆包', cors: true, hint: '获取 Key: console.volcengine.com → 模型推理 → API Key' },
   { value: 'minimax', label: 'MiniMax', cors: true, hint: '获取 Key: platform.minimaxi.com → API Keys' },
@@ -117,6 +117,25 @@ export default function AIConfigPanel() {
                 onChange={(e) => setConfig({ baseUrl: e.target.value })}
                 className="w-full px-3 py-2 bg-bg-base border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent transition-colors"
               />
+              {config.provider === 'deepseek' && import.meta.env.DEV && (
+                <div className="mt-1.5 flex gap-2">
+                  {!config.baseUrl.startsWith('/deepseek-proxy') ? (
+                    <button
+                      onClick={() => setConfig({ baseUrl: '/deepseek-proxy/v1' })}
+                      className="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                    >
+                      🔄 切换到本地代理
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setConfig({ baseUrl: 'https://api.deepseek.com/v1' })}
+                      className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                    >
+                      🔗 恢复直连
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1.5">模型</label>
@@ -217,6 +236,15 @@ export default function AIConfigPanel() {
                   <p className="text-xs mt-0.5 opacity-70">耗时 {testResult.duration}ms</p>
                 )}
               </div>
+            )}
+            {/* CORS 错误提示 */}
+            {testResult && !testResult.ok && config.provider === 'deepseek' &&
+              (testResult.message.includes('CORS') || testResult.message.includes('网络错误')) && (
+              <p className="text-xs text-amber-400 px-1">
+                {import.meta.env.DEV
+                  ? '💡 本地运行时，可点击「切换到本地代理」解决此问题'
+                  : '💡 建议改用 Gemini（支持浏览器直调）或在本地运行此工具'}
+              </p>
             )}
           </div>
         </div>

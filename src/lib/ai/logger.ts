@@ -3,6 +3,12 @@
  * 记录所有 API 调用的详细信息，方便排错
  */
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 export interface AILogEntry {
   id: string
   timestamp: number
@@ -15,6 +21,7 @@ export interface AILogEntry {
   errorMessage?: string
   responseBody?: string
   duration?: number
+  usage?: TokenUsage
 }
 
 const MAX_LOGS = 50
@@ -73,6 +80,7 @@ export function formatLog(entry: AILogEntry): string {
   const dur = entry.duration ? ` (${entry.duration}ms)` : ''
   let line = `${status} [${time}] ${entry.type.toUpperCase()} → ${entry.provider} ${entry.url}${dur}`
   if (entry.statusCode) line += ` HTTP ${entry.statusCode}`
+  if (entry.usage) line += `\n   Token: ↑${entry.usage.inputTokens} ↓${entry.usage.outputTokens} = ${entry.usage.totalTokens}`
   if (entry.errorMessage) line += `\n   错误: ${entry.errorMessage}`
   return line
 }

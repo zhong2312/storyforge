@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Square, Check, RotateCcw, Loader2, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { usePromptStore } from '../../stores/prompt'
 import type { PromptModuleKey, PromptExample } from '../../lib/types/prompt'
+import type { TokenUsage } from '../../lib/ai/logger'
 
 interface AIStreamOutputProps {
   /** 流式输出的文本 */
@@ -10,6 +11,8 @@ interface AIStreamOutputProps {
   isStreaming: boolean
   /** 错误信息 */
   error: string | null
+  /** 本次生成的 token 用量 */
+  tokenUsage?: TokenUsage | null
   /** 停止生成 */
   onStop: () => void
   /** 采纳内容 */
@@ -35,6 +38,7 @@ export default function AIStreamOutput({
   onRetry,
   placeholder = '点击生成按钮，让 AI 为你创作...',
   moduleKey,
+  tokenUsage,
 }: AIStreamOutputProps) {
   const hasOutput = output.length > 0
   const [marked, setMarked] = useState<'good' | 'bad' | null>(null)
@@ -87,8 +91,13 @@ export default function AIStreamOutput({
 
       {/* 操作栏 */}
       <div className="flex items-center justify-between px-4 py-2 bg-bg-elevated border-t border-border">
-        <span className="text-text-muted text-xs">
-          {hasOutput ? `${output.length} 字` : ''}
+        <span className="text-text-muted text-xs flex items-center gap-2">
+          {hasOutput && <span>{output.length} 字</span>}
+          {tokenUsage && (
+            <span title={`输入 ${tokenUsage.inputTokens} + 输出 ${tokenUsage.outputTokens}`}>
+              Token: ↑{tokenUsage.inputTokens.toLocaleString()} ↓{tokenUsage.outputTokens.toLocaleString()}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-2">
           {isStreaming ? (

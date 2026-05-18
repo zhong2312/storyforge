@@ -28,6 +28,7 @@ import type {
   MasterChapterBeat,
   MasterStyleMetrics,
   MasterInsight,
+  StateCard,
 } from '../types'
 
 class StoryForgeDB extends Dexie {
@@ -61,6 +62,9 @@ class StoryForgeDB extends Dexie {
   masterChapterBeats!: Table<MasterChapterBeat, number>
   masterStyleMetrics!: Table<MasterStyleMetrics, number>
   masterInsights!: Table<MasterInsight, number>
+
+  // A1 —— 状态表（角色/地点/物品/势力状态追踪）
+  stateCards!: Table<StateCard, number>
 
   constructor() {
     super('storyforge')
@@ -135,6 +139,11 @@ class StoryForgeDB extends Dexie {
       masterChapterBeats: '++id, workId, chapterIndex, type',
       masterStyleMetrics: '++id, workId',
       masterInsights: '++id, genre, updatedAt',
+    })
+
+    // v12: 状态表 — 角色/地点/物品/势力状态追踪（A1）
+    this.version(12).stores({
+      stateCards: '++id, projectId, category, entityName, lastChapterId',
     })
   }
 }
