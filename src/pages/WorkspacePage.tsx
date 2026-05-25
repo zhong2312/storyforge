@@ -38,7 +38,6 @@ import CharacterExtraPanel from '../components/character/CharacterExtraPanel'
 import FactionPanel from '../components/faction/FactionPanel'
 import OutlinePanel from '../components/outline/OutlinePanel'
 import DetailedOutlinePanel from '../components/outline/DetailedOutlinePanel'
-import ChapterEditor from '../components/editor/ChapterEditor'
 import ChaptersListPanel from '../components/editor/ChaptersListPanel'
 import ForeshadowPanel from '../components/foreshadow/ForeshadowPanel'
 import GeographyPanel from '../components/geography/GeographyPanel'
@@ -111,7 +110,7 @@ export default function WorkspacePage() {
 
   const handleOpenChapter = (nodeId: number) => {
     setEditorNodeId(nodeId)
-    setActiveModule('editor')
+    setActiveModule('chapters-list')
   }
 
   /** 根据当前模块渲染主面板内容 */
@@ -170,9 +169,9 @@ export default function WorkspacePage() {
       case 'detailed-outline':
         return <DetailedOutlinePanel project={project} />
       case 'chapters-list':
-        return <ChaptersListPanel project={project} onOpenChapter={handleOpenChapter} />
+        return <ChaptersListPanel project={project} initialNodeId={editorNodeId} />
       case 'editor':
-        return <ChapterEditor project={project} outlineNodeId={editorNodeId} />
+        return <ChaptersListPanel project={project} initialNodeId={editorNodeId} />
       case 'foreshadow':
         return <ForeshadowPanel project={project} />
       case 'state-table':

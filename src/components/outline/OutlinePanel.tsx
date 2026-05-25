@@ -1,14 +1,20 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2, Sparkles, ChevronDown, ChevronRight, BookOpen } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Check, X, LayoutList } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useAIStream } from '../../hooks/useAIStream'
 import { buildVolumeOutlinePrompt, buildChapterOutlinePrompt } from '../../lib/ai/adapters/outline-adapter'
 import { buildWorldContext } from '../../lib/ai/context-builder'
-import { parseVolumeOutlineOutput, parseChapterOutlineOutput } from '../../lib/ai/parse-outline-output'
+import {
+  parseVolumeOutlineOutput, parseChapterOutlineOutput,
+  type ParsedVolume, type ParsedChapter,
+} from '../../lib/ai/parse-outline-output'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
-import type { Project, OutlineNode } from '../../lib/types'
+import PanelLayout from '../shared/PanelLayout'
+import AutoResizeTextarea from '../shared/AutoResizeTextarea'
+import type { Project, StoryStructure } from '../../lib/types'
+import { STORY_STRUCTURES } from '../../lib/types/outline'
 
 interface Props {
   project: Project
@@ -18,41 +24,80 @@ interface Props {
 export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const { nodes, loadAll, addNode, updateNode, deleteNode } = useOutlineStore()
   const { worldview, storyCore, powerSystem } = useWorldviewStore()
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+  const [selectedVolId, setSelectedVolId] = useState<number | null>(null)
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
   const [activeModuleKey, setActiveModuleKey] = useState<'outline.volume' | 'outline.chapter'>('outline.volume')
-  // 当前正在展开章节的卷（用于章节采纳时知道写入哪个卷）
-  const [activeVolumeId, setActiveVolumeId] = useState<number | null>(null)
-  // 重试时需要知道是哪个卷
-  const [activeVolume, setActiveVolume] = useState<OutlineNode | null>(null)
+
+  // 采纳预览
+  const [previewVolumes, setPreviewVolumes] = useState<ParsedVolume[] | null>(null)
+  const [previewChapters, setPreviewChapters] = useState<ParsedChapter[] | null>(null)
+
   const ai = useAIStream()
 
   useEffect(() => { loadAll(project.id!) }, [project.id, loadAll])
 
-  const toggle = (id: number) => {
-    const s = new Set(expandedIds)
-    s.has(id) ? s.delete(id) : s.add(id)
-    setExpandedIds(s)
-  }
+  const volumes = nodes.filter(n => n.type === 'volume' && n.parentId === null).sort((a, b) => a.order - b.order)
+  const selectedVol = volumes.find(v => v.id === selectedVolId) || null
 
-  const volumes = nodes.filter(n => n.type === 'volume' && n.parentId === null)
+  // 故事块和章节层级
+  const selectedVolBlocks = useMemo(() => {
+    if (!selectedVol) return []
+    return nodes.filter(n => n.parentId === selectedVol.id && n.type === 'storyBlock').sort((a, b) => a.order - b.order)
+  }, [nodes, selectedVol])
+
+  // 直接挂在卷下的章节（无故事块归属）
+  const selectedVolChapters = useMemo(() => {
+    if (!selectedVol) return []
+    return nodes.filter(n => n.parentId === selectedVol.id && n.type === 'chapter').sort((a, b) => a.order - b.order)
+  }, [nodes, selectedVol])
+
+  // 是否使用故事块模式
+  const hasBlocks = selectedVolBlocks.length > 0
+
+  // 自动选中第一个卷
+  useEffect(() => {
+    if (selectedVolId === null && volumes.length > 0) {
+      setSelectedVolId(volumes[0].id!)
+    }
+  }, [volumes, selectedVolId])
 
   const handleAddVolume = async () => {
-    await addNode({
+    const id = await addNode({
       projectId: project.id!, parentId: null, type: 'volume',
       title: `第${volumes.length + 1}卷`, summary: '', order: volumes.length,
     })
+    setSelectedVolId(id)
   }
 
-  const handleAddChapter = async (volumeId: number) => {
-    const children = nodes.filter(n => n.parentId === volumeId)
+  const handleAddChapter = async (parentId?: number) => {
+    const pid = parentId ?? selectedVol?.id
+    if (!pid) return
+    const siblings = nodes.filter(n => n.parentId === pid && n.type === 'chapter')
     await addNode({
-      projectId: project.id!, parentId: volumeId, type: 'chapter',
-      title: `第${children.length + 1}章`, summary: '', order: children.length,
+      projectId: project.id!, parentId: pid, type: 'chapter',
+      title: `第${siblings.length + 1}章`, summary: '', order: siblings.length,
     })
+  }
+
+  const handleAddStructure = async (structure: StoryStructure) => {
+    if (!selectedVol) return
+    const def = STORY_STRUCTURES[structure]
+    if (structure === 'custom') {
+      await addNode({
+        projectId: project.id!, parentId: selectedVol.id!, type: 'storyBlock',
+        title: '自定义故事块', summary: '', order: selectedVolBlocks.length,
+      })
+    } else {
+      for (let i = 0; i < def.blocks.length; i++) {
+        await addNode({
+          projectId: project.id!, parentId: selectedVol.id!, type: 'storyBlock',
+          title: def.blocks[i], summary: '', order: selectedVolBlocks.length + i,
+        })
+      }
+    }
   }
 
   const buildOpts = () => ({
@@ -63,87 +108,153 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     } : undefined,
   })
 
+  // ── AI 生成 ──
+
   const handleAIVolumes = async () => {
     setActiveModuleKey('outline.volume')
+    setPreviewVolumes(null)
+    setPreviewChapters(null)
     const worldCtx = buildWorldContext(worldview, storyCore, powerSystem)
     const scCtx = storyCore ? `主题：${storyCore.theme}\n冲突：${storyCore.centralConflict}\n故事线：${storyCore.storyLines}` : ''
     const messages = buildVolumeOutlinePrompt(project.name, project.genre, worldCtx, scCtx, project.targetWordCount || 500000, hint, buildOpts())
     ai.start(messages)
   }
 
-  const handleAIChapters = async (volume: OutlineNode) => {
+  const handleAIChapters = async () => {
+    if (!selectedVol) return
     setActiveModuleKey('outline.chapter')
-    setActiveVolumeId(volume.id ?? null)
-    setActiveVolume(volume)
+    setPreviewVolumes(null)
+    setPreviewChapters(null)
     const worldCtx = buildWorldContext(worldview, storyCore, powerSystem)
-    const volIdx = volumes.indexOf(volume)
+    const volIdx = volumes.indexOf(selectedVol)
     const prevSummary = volIdx > 0 ? volumes[volIdx - 1].summary : ''
-    const messages = buildChapterOutlinePrompt(volume.title, volume.summary, worldCtx, prevSummary, hint, buildOpts())
+    const messages = buildChapterOutlinePrompt(selectedVol.title, selectedVol.summary, worldCtx, prevSummary, hint, buildOpts())
     ai.start(messages)
   }
 
-  /** 采纳卷级大纲：解析 AI 输出，批量创建卷节点 */
-  const handleAcceptVolumes = async (text: string) => {
+  // ── 采纳预览 + 确认 ──
+
+  const handlePreviewAccept = (text: string) => {
+    if (activeModuleKey === 'outline.volume') {
+      const parsed = parseVolumeOutlineOutput(text)
+      if (parsed.length === 0) {
+        alert('未能从 AI 输出中解析出卷级大纲，请检查输出内容或重试。')
+        return
+      }
+      setPreviewVolumes(parsed)
+    } else {
+      const parsed = parseChapterOutlineOutput(text)
+      if (parsed.length === 0) {
+        alert('未能从 AI 输出中解析出章节大纲，请检查输出内容或重试。')
+        return
+      }
+      setPreviewChapters(parsed)
+    }
+  }
+
+  const handleConfirmVolumes = async () => {
+    if (!previewVolumes) return
     ai.reset()
-    const parsed = parseVolumeOutlineOutput(text)
-    if (parsed.length === 0) return
-    // 已有的卷数，新卷从后面追加
     const existingCount = volumes.length
-    for (let i = 0; i < parsed.length; i++) {
+    let firstId: number | null = null
+    for (let i = 0; i < previewVolumes.length; i++) {
+      const id = await addNode({
+        projectId: project.id!, parentId: null, type: 'volume',
+        title: previewVolumes[i].title, summary: previewVolumes[i].summary,
+        order: existingCount + i,
+      })
+      if (i === 0) firstId = id
+    }
+    setPreviewVolumes(null)
+    if (firstId) setSelectedVolId(firstId)
+  }
+
+  const handleConfirmChapters = async () => {
+    if (!previewChapters || !selectedVol) return
+    ai.reset()
+    const existingCount = selectedVolChapters.length
+    for (let i = 0; i < previewChapters.length; i++) {
       await addNode({
-        projectId: project.id!,
-        parentId: null,
-        type: 'volume',
-        title: parsed[i].title,
-        summary: parsed[i].summary,
+        projectId: project.id!, parentId: selectedVol.id!, type: 'chapter',
+        title: previewChapters[i].title, summary: previewChapters[i].summary,
         order: existingCount + i,
       })
     }
+    setPreviewChapters(null)
   }
 
-  /** 采纳章节大纲：解析 AI 输出，在指定卷下批量创建章节节点 */
-  const handleAcceptChapters = async (text: string) => {
-    ai.reset()
-    if (activeVolumeId === null) return
-    const parsed = parseChapterOutlineOutput(text)
-    if (parsed.length === 0) return
-    const existingChildren = nodes.filter(n => n.parentId === activeVolumeId)
-    for (let i = 0; i < parsed.length; i++) {
-      await addNode({
-        projectId: project.id!,
-        parentId: activeVolumeId,
-        type: 'chapter',
-        title: parsed[i].title,
-        summary: parsed[i].summary,
-        order: existingChildren.length + i,
-      })
-    }
-    // 展开对应的卷
-    setExpandedIds(prev => new Set([...prev, activeVolumeId]))
-    setActiveVolumeId(null)
+  const handleCancelPreview = () => {
+    setPreviewVolumes(null)
+    setPreviewChapters(null)
   }
 
-  return (
-    <div className="max-w-4xl">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-text-primary">📖 大纲</h2>
-        <div className="flex gap-2">
-          <button onClick={handleAddVolume}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-elevated text-text-secondary text-sm rounded-md hover:text-text-primary transition-colors">
-            <Plus className="w-4 h-4" /> 添加卷
-          </button>
-          <button onClick={handleAIVolumes} disabled={ai.isStreaming}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-sm rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
-            <Sparkles className="w-4 h-4" /> AI 生成卷级大纲
-          </button>
-        </div>
+  // ── 侧栏：卷列表 ──
+
+  const sidebarContent = (
+    <div className="flex flex-col h-full">
+      {/* 操作栏 */}
+      <div className="p-2 space-y-1.5">
+        <button onClick={handleAddVolume}
+          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">
+          <Plus className="w-3.5 h-3.5" /> 添加卷
+        </button>
+        <button onClick={handleAIVolumes} disabled={ai.isStreaming}
+          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
+          <Sparkles className="w-3.5 h-3.5" /> AI 生成卷级大纲
+        </button>
       </div>
 
-      <input value={hint} onChange={e => setHint(e.target.value)} placeholder="给 AI 的补充说明（可选）"
-        className="w-full mb-3 px-3 py-2 bg-bg-surface border border-border rounded-md text-text-primary text-sm focus:outline-none focus:border-accent" />
+      {/* 卷列表 */}
+      <div className="flex-1 overflow-y-auto px-1">
+        {volumes.map(vol => {
+          const childCount = nodes.filter(n => n.parentId === vol.id).length
+          const active = selectedVolId === vol.id
+          return (
+            <button
+              key={vol.id}
+              onClick={() => setSelectedVolId(vol.id!)}
+              className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left transition-all mb-0.5 ${
+                active
+                  ? 'bg-accent/8 border-l-2 border-accent'
+                  : 'hover:bg-bg-hover border-l-2 border-transparent'
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-medium truncate ${active ? 'text-accent' : 'text-text-primary'}`}>
+                  {vol.title}
+                </p>
+                <p className="text-[10px] text-text-muted">
+                  {childCount} 章{vol.summary ? ` · ${vol.summary.slice(0, 20)}...` : ''}
+                </p>
+              </div>
+            </button>
+          )
+        })}
+        {volumes.length === 0 && (
+          <div className="text-center py-8 text-text-muted text-xs">
+            还没有卷
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
-      {/* 调参浮窗 (Phase 19) */}
-      <div className="mb-3">
+  // ── 右侧编辑区 ──
+
+  return (
+    <PanelLayout
+      sidebar={sidebarContent}
+      sidebarTitle="📖 大纲"
+      defaultWidth={220}
+      minWidth={160}
+      maxWidth={360}
+      className="h-[calc(100vh-8rem)]"
+    >
+      <div className="p-4 space-y-4">
+        {/* 调参 + 提示 */}
+        <input value={hint} onChange={e => setHint(e.target.value)} placeholder="给 AI 的补充说明（可选）"
+          className="w-full px-3 py-2 bg-bg-surface border border-border rounded-md text-text-primary text-sm focus:outline-none focus:border-accent" />
+
         <PromptRunPanel
           moduleKey={activeModuleKey}
           parameterValues={parameterValues}
@@ -153,74 +264,307 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
           userOverride={userOverride}
           onUserOverrideChange={setUserOverride}
         />
-      </div>
 
-      {(ai.output || ai.isStreaming || ai.error) && (
-        <div className="mb-4">
+        {/* AI 输出（就地显示） */}
+        {(ai.output || ai.isStreaming || ai.error) && (
           <AIStreamOutput output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
             onStop={ai.stop}
-            onAccept={activeModuleKey === 'outline.volume' ? handleAcceptVolumes : handleAcceptChapters}
-            onRetry={activeModuleKey === 'outline.volume' ? handleAIVolumes : () => activeVolume && handleAIChapters(activeVolume)}
+            onAccept={handlePreviewAccept}
+            onRetry={activeModuleKey === 'outline.volume' ? handleAIVolumes : handleAIChapters}
             moduleKey={activeModuleKey} />
-        </div>
-      )}
+        )}
 
-      {/* 大纲树 */}
-      <div className="space-y-2">
-        {volumes.map(vol => {
-          const children = nodes.filter(n => n.parentId === vol.id).sort((a, b) => a.order - b.order)
-          const isExpanded = expandedIds.has(vol.id!)
-          return (
-            <div key={vol.id} className="border border-border rounded-lg overflow-hidden">
-              {/* 卷头 */}
-              <div className="flex items-center gap-2 px-3 py-2 bg-bg-elevated">
-                <button onClick={() => toggle(vol.id!)} className="text-text-muted hover:text-text-primary">
-                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        {/* 采纳预览：卷 */}
+        {previewVolumes && (
+          <PreviewPanel
+            label={`将创建 ${previewVolumes.length} 个卷`}
+            items={previewVolumes}
+            onConfirm={handleConfirmVolumes}
+            onCancel={handleCancelPreview}
+          />
+        )}
+
+        {/* 采纳预览：章节 */}
+        {previewChapters && (
+          <PreviewPanel
+            label={`将在「${selectedVol?.title}」下创建 ${previewChapters.length} 个章节`}
+            items={previewChapters}
+            onConfirm={handleConfirmChapters}
+            onCancel={handleCancelPreview}
+          />
+        )}
+
+        {/* ── 选中卷的详情编辑 ── */}
+        {selectedVol ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <input
+                value={selectedVol.title}
+                onChange={e => updateNode(selectedVol.id!, { title: e.target.value })}
+                className="text-lg font-bold bg-transparent text-text-primary outline-none flex-1"
+              />
+              <div className="flex items-center gap-1.5">
+                <button onClick={handleAIChapters} disabled={ai.isStreaming}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
+                  <Sparkles className="w-3.5 h-3.5" /> AI 生成章节
                 </button>
-                <input value={vol.title} onChange={e => updateNode(vol.id!, { title: e.target.value })}
-                  className="flex-1 bg-transparent text-text-primary font-medium text-sm outline-none" />
-                <span className="text-xs text-text-muted">{children.length} 章</span>
-                <button onClick={() => handleAIChapters(vol)} className="text-text-muted hover:text-accent" title="AI 展开为章节">
-                  <Sparkles className="w-3.5 h-3.5" />
+                <button onClick={() => handleAddChapter()}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> 添加章节
                 </button>
-                <button onClick={() => handleAddChapter(vol.id!)} className="text-text-muted hover:text-accent" title="添加章节">
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => deleteNode(vol.id!)} className="text-text-muted hover:text-error">
-                  <Trash2 className="w-3.5 h-3.5" />
+                <button onClick={() => {
+                  if (confirm(`确定删除「${selectedVol.title}」及其所有章节？`)) {
+                    deleteNode(selectedVol.id!)
+                    setSelectedVolId(null)
+                  }
+                }} className="p-1.5 text-text-muted hover:text-error rounded transition-colors">
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
-              {/* 卷摘要 */}
-              <textarea value={vol.summary} onChange={e => updateNode(vol.id!, { summary: e.target.value })}
-                placeholder="卷情节摘要..." rows={2}
-                className="w-full px-3 py-2 bg-bg-surface text-text-secondary text-xs resize-none border-b border-border focus:outline-none" />
-              {/* 章节列表 */}
-              {isExpanded && children.map(ch => (
-                <div key={ch.id} className="flex items-center gap-2 px-6 py-1.5 bg-bg-surface border-b border-border last:border-b-0 hover:bg-bg-hover group">
-                  <input value={ch.title} onChange={e => updateNode(ch.id!, { title: e.target.value })}
-                    className="w-32 shrink-0 bg-transparent text-text-primary text-sm outline-none" />
-                  <input value={ch.summary} onChange={e => updateNode(ch.id!, { summary: e.target.value })}
-                    placeholder="章节摘要..."
-                    className="flex-1 bg-transparent text-text-muted text-xs outline-none" />
-                  {onOpenChapter && (
-                    <button onClick={() => onOpenChapter(ch.id!)} className="text-text-muted hover:text-accent opacity-0 group-hover:opacity-100" title="写作">
-                      <BookOpen className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button onClick={() => deleteNode(ch.id!)} className="text-text-muted hover:text-error opacity-0 group-hover:opacity-100">
-                    <Trash2 className="w-3.5 h-3.5" />
+            </div>
+
+            {/* 卷摘要 */}
+            <div>
+              <label className="text-xs text-text-muted mb-1 block">卷情节摘要</label>
+              <AutoResizeTextarea
+                value={selectedVol.summary}
+                onChange={e => updateNode(selectedVol.id!, { summary: e.target.value })}
+                placeholder="描述本卷的核心冲突、关键转折和主要情节..."
+                minRows={3}
+                maxRows={10}
+                className="w-full px-3 py-2 bg-bg-surface border border-border rounded-md text-text-secondary text-sm focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            {/* 故事结构 + 章节列表 */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-text-primary">
+                  {hasBlocks ? '故事结构' : '章节列表'}
+                  <span className="text-text-muted font-normal ml-1">（{selectedVolChapters.length + nodes.filter(n => selectedVolBlocks.some(b => b.id === n.parentId) && n.type === 'chapter').length} 章）</span>
+                </h3>
+                {!hasBlocks && (
+                  <StructureMenu onSelect={handleAddStructure} />
+                )}
+              </div>
+
+              {/* 故事块模式 */}
+              {hasBlocks && (
+                <div className="space-y-3 mb-3">
+                  {selectedVolBlocks.map(block => {
+                    const blockChapters = nodes.filter(n => n.parentId === block.id && n.type === 'chapter').sort((a, b) => a.order - b.order)
+                    return (
+                      <StoryBlockSection
+                        key={block.id}
+                        block={block}
+                        chapters={blockChapters}
+                        onUpdateNode={updateNode}
+                        onDeleteNode={deleteNode}
+                        onAddChapter={() => handleAddChapter(block.id!)}
+                        onOpenChapter={onOpenChapter}
+                      />
+                    )
+                  })}
+                  <button onClick={() => handleAddStructure('custom')}
+                    className="w-full py-2 text-xs text-text-muted border border-dashed border-border rounded-lg hover:text-accent hover:border-accent/50 transition-colors">
+                    + 添加故事块
                   </button>
                 </div>
-              ))}
+              )}
+
+              {/* 无故事块：直接章节列表 */}
+              {!hasBlocks && (
+                selectedVolChapters.length === 0 ? (
+                  <div className="text-center py-8 text-text-muted text-sm border border-dashed border-border rounded-lg">
+                    还没有章节，点击「AI 生成章节」或「添加章节」
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {selectedVolChapters.map((ch, idx) => (
+                      <ChapterRow key={ch.id} ch={ch} idx={idx} onUpdate={updateNode} onDelete={deleteNode} onOpen={onOpenChapter} />
+                    ))}
+                  </div>
+                )
+              )}
             </div>
-          )
-        })}
-        {volumes.length === 0 && (
-          <div className="text-center py-12 text-text-muted text-sm">
-            还没有大纲，点击"添加卷"或"AI 生成"开始
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-20 text-text-muted gap-3">
+            <div className="text-4xl opacity-20">📖</div>
+            <p className="text-sm">选择左侧的卷开始编辑，或点击「AI 生成卷级大纲」</p>
           </div>
         )}
       </div>
+    </PanelLayout>
+  )
+}
+
+// ── 预览面板 ──
+
+function PreviewPanel({
+  label, items, onConfirm, onCancel,
+}: {
+  label: string
+  items: { title: string; summary: string }[]
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="border border-accent/50 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-accent/10">
+        <span className="text-sm font-medium text-accent">{label}</span>
+        <div className="flex gap-2">
+          <button onClick={onCancel}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-text-muted hover:text-text-primary rounded transition-colors">
+            <X className="w-3 h-3" /> 取消
+          </button>
+          <button onClick={onConfirm}
+            className="flex items-center gap-1 px-3 py-1 text-xs bg-accent text-white rounded hover:bg-accent-hover transition-colors">
+            <Check className="w-3 h-3" /> 确认写入
+          </button>
+        </div>
+      </div>
+      <div className="divide-y divide-border max-h-60 overflow-y-auto">
+        {items.map((item, i) => (
+          <div key={i} className="px-3 py-2 bg-bg-surface">
+            <div className="text-sm font-medium text-text-primary">{item.title}</div>
+            {item.summary && (
+              <div className="text-xs text-text-muted mt-1 line-clamp-2">{item.summary}</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── 章节行 ──
+
+function ChapterRow({ ch, idx, onUpdate, onDelete, onOpen }: {
+  ch: { id?: number; title: string; summary: string }
+  idx: number
+  onUpdate: (id: number, patch: Record<string, string>) => void
+  onDelete: (id: number) => void
+  onOpen?: (id: number) => void
+}) {
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 bg-bg-surface border border-border rounded-md hover:border-accent/30 group transition-colors">
+      <span className="text-xs text-text-muted mt-1.5 shrink-0 w-5 text-right">{idx + 1}</span>
+      <div className="flex-1 min-w-0">
+        <input
+          value={ch.title}
+          onChange={e => onUpdate(ch.id!, { title: e.target.value })}
+          className="w-full bg-transparent text-text-primary text-sm font-medium outline-none"
+        />
+        <input
+          value={ch.summary}
+          onChange={e => onUpdate(ch.id!, { summary: e.target.value })}
+          placeholder="章节摘要..."
+          className="w-full bg-transparent text-text-muted text-xs outline-none mt-0.5"
+        />
+      </div>
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1">
+        {onOpen && (
+          <button onClick={() => onOpen(ch.id!)} className="p-1 text-text-muted hover:text-accent rounded" title="编辑章节">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button onClick={() => onDelete(ch.id!)} className="p-1 text-text-muted hover:text-error rounded">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── 故事块区域 ──
+
+function StoryBlockSection({ block, chapters, onUpdateNode, onDeleteNode, onAddChapter, onOpenChapter }: {
+  block: { id?: number; title: string; summary: string }
+  chapters: { id?: number; title: string; summary: string }[]
+  onUpdateNode: (id: number, patch: Record<string, string>) => void
+  onDeleteNode: (id: number) => void
+  onAddChapter: () => void
+  onOpenChapter?: (id: number) => void
+}) {
+  const [expanded, setExpanded] = useState(true)
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      {/* 故事块头 */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-bg-elevated">
+        <button onClick={() => setExpanded(!expanded)} className="text-text-muted hover:text-text-primary">
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+        <LayoutList className="w-3.5 h-3.5 text-accent/60" />
+        <input
+          value={block.title}
+          onChange={e => onUpdateNode(block.id!, { title: e.target.value })}
+          className="flex-1 bg-transparent text-text-primary text-sm font-medium outline-none"
+        />
+        <span className="text-[10px] text-text-muted">{chapters.length} 章</span>
+        <button onClick={onAddChapter} className="p-1 text-text-muted hover:text-accent rounded" title="添加章节">
+          <Plus className="w-3 h-3" />
+        </button>
+        <button onClick={() => {
+          if (confirm(`删除故事块「${block.title}」？其下章节也会被删除。`))
+            onDeleteNode(block.id!)
+        }} className="p-1 text-text-muted hover:text-error rounded">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+      {/* 故事块摘要 */}
+      <input
+        value={block.summary}
+        onChange={e => onUpdateNode(block.id!, { summary: e.target.value })}
+        placeholder="故事块描述..."
+        className="w-full px-3 py-1.5 bg-bg-surface text-text-muted text-xs border-b border-border focus:outline-none"
+      />
+      {/* 章节列表 */}
+      {expanded && (
+        <div className="p-2 space-y-1">
+          {chapters.length === 0 ? (
+            <div className="text-center py-3 text-text-muted text-xs">
+              点击 + 添加章节
+            </div>
+          ) : (
+            chapters.map((ch, idx) => (
+              <ChapterRow key={ch.id} ch={ch} idx={idx} onUpdate={onUpdateNode} onDelete={onDeleteNode} onOpen={onOpenChapter} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 故事结构选择菜单 ──
+
+function StructureMenu({ onSelect }: { onSelect: (s: StoryStructure) => void }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-2 py-1 text-xs text-text-muted hover:text-accent border border-border rounded-md transition-colors">
+        <LayoutList className="w-3 h-3" /> 添加故事结构
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 bg-bg-elevated border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+            {(Object.entries(STORY_STRUCTURES) as [StoryStructure, { label: string; blocks: string[] }][]).map(([key, def]) => (
+              <button key={key} onClick={() => { onSelect(key); setOpen(false) }}
+                className="w-full px-3 py-1.5 text-left text-xs text-text-primary hover:bg-bg-hover transition-colors">
+                <span className="font-medium">{def.label}</span>
+                {def.blocks.length > 0 && (
+                  <span className="text-text-muted ml-1">（{def.blocks.length} 块）</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

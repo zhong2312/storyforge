@@ -59,14 +59,23 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   useEffect(() => { loadChapters(project.id!) }, [project.id, loadChapters])
   useEffect(() => { loadStateCards(project.id!) }, [project.id, loadStateCards])
 
-  // 如果从大纲进入，选择/创建对应章节
+  // 如果从大纲进入，选择/创建对应章节（自动创建）
   useEffect(() => {
     if (!outlineNodeId) return
     const existing = chapters.find(c => c.outlineNodeId === outlineNodeId)
     if (existing?.id) {
       selectChapter(existing.id)
+    } else {
+      // 自动创建 chapter 记录
+      const node = nodes.find(n => n.id === outlineNodeId)
+      if (node) {
+        addChapter({
+          projectId: project.id!, outlineNodeId, title: node.title,
+          content: '', wordCount: 0, status: 'outline', order: chapters.length, notes: '',
+        })
+      }
     }
-  }, [outlineNodeId, chapters, selectChapter])
+  }, [outlineNodeId, chapters, selectChapter, nodes, addChapter, project.id])
 
   // 切换章节：同步到本地 state（RichEditor 会基于 value 重建内容）
   useEffect(() => {

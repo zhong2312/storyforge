@@ -6,3 +6,7 @@ dist/
 
 # Azgaar Fantasy Map Generator（构建产物，运行 setup 脚本生成）
 public/fmg/
+
+# 临时文件
+tree.txt
+*.bak

@@ -1,5 +1,10 @@
 /**
- * 解析 AI 生成的大纲文本，提取结构化数据
+ * 解析 AI 生成的大纲文本，提取结构化卷/章节数据
+ *
+ * 设计原则：
+ * 1. 只匹配明确的卷/章标题（"第X卷"/"第X章"），其他全部忽略
+ * 2. 过滤 AI 开场白、总结语、非大纲段落
+ * 3. 所有标题/摘要去除 markdown 格式
  */
 
 export interface ParsedVolume {
@@ -12,26 +17,153 @@ export interface ParsedChapter {
   summary: string
 }
 
+// ── 工具函数 ──
+
+/** 去除 markdown 格式：**bold**、##标题、*italic*、【】等 */
+function stripMarkdown(s: string): string {
+  return s
+    .replace(/^\s*#+\s*/, '')       // ## 标题
+    .replace(/\*\*(.+?)\*\*/g, '$1') // **bold**
+    .replace(/\*(.+?)\*/g, '$1')     // *italic*
+    .replace(/【(.+?)】/g, '$1')     // 【中括号】
+    .replace(/^---+\s*$/, '')        // --- 分割线
+    .trim()
+}
+
+/** 判断一行是否是 AI 开场白/结尾套话 */
+function isPreambleOrClosing(line: string): boolean {
+  const trimmed = line.trim()
+  if (trimmed.length === 0) return true
+  if (trimmed === '---') return true
+
+  // 开场白模式
+  const preamblePatterns = [
+    /^好的[，,。！!]/,
+    /^以下是/,
+    /^根据你/,
+    /^根据您/,
+    /^基于你/,
+    /^基于您/,
+    /^下面是/,
+    /^这是一份/,
+    /^我[将会来]为你/,
+    /^我为你/,
+    /^我将根据/,
+    /^我来为你/,
+  ]
+  // 结尾套话
+  const closingPatterns = [
+    /^以上是/,
+    /^以上就是/,
+    /^希望这/,
+    /^希望以上/,
+    /^如果你需要/,
+    /^如需调整/,
+    /^如需修改/,
+    /^需要我进一步/,
+    /^是否需要/,
+  ]
+
+  for (const p of [...preamblePatterns, ...closingPatterns]) {
+    if (p.test(trimmed)) return true
+  }
+  return false
+}
+
+/** 判断一行是否是非大纲的段落标题（世界观、故事核心等） */
+function isNonOutlineHeading(line: string): boolean {
+  const stripped = stripMarkdown(line)
+  const nonOutlinePatterns = [
+    /^小说名称/,
+    /^小说类型/,
+    /^目标字数/,
+    /^建议卷数/,
+    /^世界观设定/,
+    /^世界观[：:]/,
+    /^故事核心/,
+    /^故事背景/,
+    /^核心冲突/,
+    /^主题[：:]/,
+    /^卷级大纲[：:]/,
+    /^章节大纲[：:]/,
+    /^人物设定/,
+    /^角色设定/,
+    /^写作说明/,
+    /^注[：:]/,
+    /^备注/,
+  ]
+  for (const p of nonOutlinePatterns) {
+    if (p.test(stripped)) return true
+  }
+  return false
+}
+
+/** 中文数字→阿拉伯数字 */
+function chineseToNum(cn: string): string {
+  const map: Record<string, string> = {
+    '零': '0', '一': '1', '二': '2', '三': '3', '四': '4',
+    '五': '5', '六': '6', '七': '7', '八': '8', '九': '9', '十': '10',
+  }
+  // 简单映射：一 → 1, 十二 → 12
+  if (/^\d+$/.test(cn)) return cn
+  if (map[cn]) return map[cn]
+  // 十X 或 X十Y
+  if (cn.startsWith('十')) {
+    return `1${map[cn[1]] || '0'}`
+  }
+  if (cn.includes('十')) {
+    const [a, b] = cn.split('十')
+    return `${map[a] || ''}${map[b] || '0'}`
+  }
+  return cn
+}
+
+// ── 卷级大纲解析 ──
+
+/** 匹配卷标题行，返回 { volNum, restTitle } 或 null */
+function matchVolumeTitle(line: string): { volNum: string; restTitle: string } | null {
+  const stripped = stripMarkdown(line)
+
+  // 格式1: 第X卷：标题 / 第X卷 标题
+  const m1 = stripped.match(
+    /(?:\d+[.)、]\s*)?第([零一二三四五六七八九十百\d]+)卷[：:：\s—-]*(.*)/
+  )
+  if (m1) {
+    return { volNum: chineseToNum(m1[1]), restTitle: stripMarkdown(m1[2]) }
+  }
+
+  // 格式2: 卷X：标题
+  const m2 = stripped.match(
+    /(?:\d+[.)、]\s*)?卷([零一二三四五六七八九十百\d]+)[：:：\s—-]*(.*)/
+  )
+  if (m2) {
+    return { volNum: chineseToNum(m2[1]), restTitle: stripMarkdown(m2[2]) }
+  }
+
+  return null
+}
+
 /**
  * 解析卷级大纲文本
  *
- * 支持的格式：
- * - ## 第一卷：标题 / **第一卷：标题**
- * - 1. 第一卷：标题 / 第一卷 标题
- * - 卷一：标题
+ * 只提取真正的"第X卷"条目，其他全部忽略。
+ * 每个卷包含标题和紧跟其后的摘要文本。
  */
 export function parseVolumeOutlineOutput(text: string): ParsedVolume[] {
   const volumes: ParsedVolume[] = []
-
-  // 按行处理
   const lines = text.split('\n')
+
   let currentVol: { title: string; summaryLines: string[] } | null = null
 
   const flushVol = () => {
     if (currentVol) {
       const summary = currentVol.summaryLines
-        .map(l => l.replace(/^[（(]?(?:情节|内容|摘要|概述|简介|故事)[）)摘要：:：\s]*/i, '').trim())
-        .filter(l => l.length > 0)
+        .map(l => stripMarkdown(l)
+          .replace(/^[-*•]\s*/, '')
+          .replace(/^(?:情节摘要|情节概要|摘要|内容简介|故事摘要|概述|简介)[：:：]\s*/i, '')
+          .trim()
+        )
+        .filter(l => l.length > 0 && !isPreambleOrClosing(l) && !isNonOutlineHeading(l))
         .join('')
       volumes.push({ title: currentVol.title, summary })
       currentVol = null
@@ -39,82 +171,106 @@ export function parseVolumeOutlineOutput(text: string): ParsedVolume[] {
   }
 
   for (const line of lines) {
-    const stripped = line.replace(/^\s+/, '')
+    // 跳过 AI 套话
+    if (isPreambleOrClosing(line)) {
+      // 但如果已经在收集某个卷的摘要，空行可以忽略但不 flush
+      continue
+    }
 
-    // 识别卷标题行
-    const volHeadMatch = stripped.match(
-      /^(?:#+\s*|(?:\d+[.)、]\s*))?(?:第([零一二三四五六七八九十百\d]+)卷|卷([零一二三四五六七八九十百\d]+))[：:：\s]*(.*)/
-    )
-    if (volHeadMatch) {
+    // 跳过非大纲标题（"世界观设定"等）
+    if (isNonOutlineHeading(line)) {
+      // 遇到非大纲标题，结束当前卷摘要收集
       flushVol()
-      const restTitle = volHeadMatch[3]?.trim() || ''
-      const volNum = volHeadMatch[1] || volHeadMatch[2] || ''
-      // 标题：若 rest 里有内容就用，否则用"第X卷"
-      const title = restTitle
-        ? `第${volNum}卷：${restTitle}`
-        : `第${volNum}卷`
+      continue
+    }
+
+    // 尝试匹配卷标题
+    const vol = matchVolumeTitle(line)
+    if (vol) {
+      flushVol()
+      const title = vol.restTitle
+        ? `第${vol.volNum}卷：${vol.restTitle}`
+        : `第${vol.volNum}卷`
       currentVol = { title, summaryLines: [] }
       continue
     }
 
-    // 摘要行（去掉列表符号和"情节摘要："前缀）
+    // 如果在某个卷内，收集摘要行
     if (currentVol) {
-      const contentLine = stripped
-        .replace(/^[-*•]\s*/, '')
-        .replace(/^(?:情节摘要|摘要|内容简介|故事摘要)[：:：]\s*/i, '')
-      if (contentLine.length > 0) {
-        currentVol.summaryLines.push(contentLine)
+      const stripped = line.trim()
+      // 遇到"第X章"开头说明进入了章节区域，停止收集卷摘要
+      if (/第[零一二三四五六七八九十百\d]+章/.test(stripped)) {
+        flushVol()
+        continue
+      }
+      if (stripped.length > 0) {
+        currentVol.summaryLines.push(stripped)
       }
     }
   }
 
   flushVol()
-
-  // 如果正则没匹配到任何卷（格式特殊），尝试按 ## / 数字 + 粗体标题分割
-  if (volumes.length === 0) {
-    return parseFallback(text)
-  }
-
   return volumes
 }
 
-/**
- * 兜底解析：把文本按 ## 标题或 **标题** 分割，每段作为一卷
- */
-function parseFallback(text: string): ParsedVolume[] {
-  const volumes: ParsedVolume[] = []
-  const blocks = text.split(/\n(?=#+\s|\*\*第)/)
-  for (const block of blocks) {
-    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
-    if (lines.length === 0) continue
-    const title = lines[0]
-      .replace(/^#+\s*/, '')
-      .replace(/^\*\*|\*\*$/g, '')
-      .trim()
-    const summary = lines.slice(1).join('')
-    if (title) volumes.push({ title, summary })
+// ── 章节大纲解析 ──
+
+/** 匹配章节标题行 */
+function matchChapterTitle(line: string): { chNum: string; restTitle: string } | null {
+  const stripped = stripMarkdown(line)
+
+  // 格式1: 第X章：标题
+  const m1 = stripped.match(
+    /(?:\d+[.)、]\s*)?第([零一二三四五六七八九十百\d]+)章[：:：\s—-]*(.*)/
+  )
+  if (m1) {
+    return { chNum: chineseToNum(m1[1]), restTitle: stripMarkdown(m1[2]) }
   }
-  return volumes
+
+  // 格式2: 章X：标题 / 章：标题
+  const m2 = stripped.match(
+    /^章([零一二三四五六七八九十百\d]*)[：:：\s—-]+(.*)/
+  )
+  if (m2) {
+    return { chNum: m2[1] ? chineseToNum(m2[1]) : '', restTitle: stripMarkdown(m2[2]) }
+  }
+
+  return null
 }
 
 /**
  * 解析章节大纲文本
  *
  * 支持的格式：
- * - 第X章：标题  情节摘要：...
+ * - 第X章：标题
  * - ## 第X章 标题
- * - 1. 章节标题
+ * - **第X章：标题**
+ * - 数字序号 + 标题（1. 标题）
  */
 export function parseChapterOutlineOutput(text: string): ParsedChapter[] {
   const chapters: ParsedChapter[] = []
   const lines = text.split('\n')
+
   let currentCh: { title: string; summaryLines: string[] } | null = null
+  let autoChapterNum = 0
 
   const flushCh = () => {
     if (currentCh) {
       const summary = currentCh.summaryLines
-        .map(l => l.replace(/^(?:情节摘要|摘要|内容|故事摘要)[：:：]\s*/i, '').trim())
-        .filter(l => l.length > 0)
+        .map(l => stripMarkdown(l)
+          .replace(/^[-*•]\s*/, '')
+          .replace(/^(?:情节摘要|情节概要|摘要|内容简介|一句话概要)[：:：]\s*/i, '')
+          .trim()
+        )
+        .filter(l => {
+          if (l.length === 0) return false
+          if (isPreambleOrClosing(l)) return false
+          // 过滤掉"涉及角色"之类的附属信息
+          if (/^(?:涉及的?主要角色|主要角色|关键角色|出场角色|涉及角色)[：:：]/.test(l)) return false
+          // 过滤掉"主要人物：XXX"
+          if (/^主要人物[：:：]/.test(l)) return false
+          return true
+        })
         .join('')
       chapters.push({ title: currentCh.title, summary })
       currentCh = null
@@ -122,36 +278,37 @@ export function parseChapterOutlineOutput(text: string): ParsedChapter[] {
   }
 
   for (const line of lines) {
-    const stripped = line.replace(/^\s+/, '')
+    if (isPreambleOrClosing(line)) continue
+    if (isNonOutlineHeading(line)) continue
 
-    // 章节标题行
-    const chHeadMatch = stripped.match(
-      /^(?:#+\s*|(?:\d+[.)、]\s*))?(?:第([零一二三四五六七八九十百\d]+)章)[：:：\s]*(.*)/
-    )
-    if (chHeadMatch) {
+    // 尝试匹配"第X章"格式
+    const ch = matchChapterTitle(line)
+    if (ch) {
       flushCh()
-      const chNum = chHeadMatch[1] || ''
-      const restTitle = chHeadMatch[2]?.trim() || ''
-      const title = restTitle ? `第${chNum}章：${restTitle}` : `第${chNum}章`
+      autoChapterNum++
+      const num = ch.chNum || String(autoChapterNum)
+      const title = ch.restTitle
+        ? `第${num}章：${ch.restTitle}`
+        : `第${num}章`
       currentCh = { title, summaryLines: [] }
       continue
     }
 
-    // 纯数字序号 + 标题（无"章"字），如 "1. 觉醒"
-    const numTitleMatch = stripped.match(/^(\d+)[.)、]\s+([^\n]+)/)
-    if (numTitleMatch && !currentCh) {
+    // 尝试匹配纯数字序号: "1. 标题" / "1、标题" / "1) 标题"
+    const numMatch = line.trim().match(/^(\d+)[.)、]\s+(.+)/)
+    if (numMatch && !currentCh) {
       flushCh()
-      currentCh = { title: numTitleMatch[2].trim(), summaryLines: [] }
+      autoChapterNum++
+      const restTitle = stripMarkdown(numMatch[2])
+      currentCh = { title: `第${numMatch[1]}章：${restTitle}`, summaryLines: [] }
       continue
     }
 
-    // 摘要行
+    // 收集摘要行
     if (currentCh) {
-      const contentLine = stripped
-        .replace(/^[-*•]\s*/, '')
-        .replace(/^(?:情节摘要|摘要|内容简介|涉及角色)[：:：]\s*/i, '')
-      if (contentLine.length > 0 && !contentLine.match(/^(?:涉及的主要角色|主要角色)[：:：]/)) {
-        currentCh.summaryLines.push(contentLine)
+      const stripped = line.trim()
+      if (stripped.length > 0) {
+        currentCh.summaryLines.push(stripped)
       }
     }
   }

@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import {
   FileText, Library, Globe, Mountain, Users2, Sparkles,
   UserCircle, UsersRound, User, Footprints, Network,
-  Ruler, BookOpen, ListTree, FilePen, PenTool, Eye,
+  Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
   Map, ClipboardList,
 } from 'lucide-react'
@@ -140,9 +140,7 @@ export const NAV_TREE: TreeSection[] = [
     children: [
       leaf('rules',            '创作规则', Ruler),
       leaf('outline',          '大纲',     BookOpen),
-      leaf('detailed-outline', '细纲',     ListTree),
       leaf('chapters-list',    '章节',     FilePen),
-      leaf('editor',           '正文',     PenTool),
       leaf('foreshadow',       '伏笔',     Eye),
       leaf('state-table',      '状态表',   ClipboardList),
     ],

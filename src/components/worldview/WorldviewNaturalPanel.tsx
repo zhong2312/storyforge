@@ -67,6 +67,7 @@ export default function WorldviewNaturalPanel({ project }: Props) {
 
   const handleStreamingChange = useCallback((key: string, streaming: boolean) => {
     setStreamingKeys(prev => {
+      if (prev.has(key) === streaming) return prev
       const next = new Set(prev)
       if (streaming) next.add(key)
       else next.delete(key)

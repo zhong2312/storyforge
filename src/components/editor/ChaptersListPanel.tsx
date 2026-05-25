@@ -1,12 +1,22 @@
-import { useEffect } from 'react'
-import { FilePen, Trash2 } from 'lucide-react'
-import { useChapterStore } from '../../stores/chapter'
+/**
+ * 章节管理面板 — 合并原"章节列表"+"细纲"+"正文"为一体
+ *
+ * 左侧栏：按卷分组的章节列表（从 outlineNodes 读取）
+ * 右侧编辑区：场景细纲 + 正文编辑器
+ */
+import { useState, useEffect, useMemo } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
+import { useChapterStore } from '../../stores/chapter'
+import PanelLayout from '../shared/PanelLayout'
+import ScenePanel from '../outline/ScenePanel'
+import ChapterEditor from './ChapterEditor'
 import type { Project, ChapterStatus } from '../../lib/types'
 
 interface Props {
   project: Project
-  onOpenChapter: (outlineNodeId: number) => void
+  /** 外部指定要打开的 outlineNodeId（从大纲跳转过来） */
+  initialNodeId?: number | null
 }
 
 const STATUS_LABELS: Record<ChapterStatus, string> = {
@@ -17,137 +27,182 @@ const STATUS_LABELS: Record<ChapterStatus, string> = {
   final:    '定稿',
 }
 
-const STATUS_COLORS: Record<ChapterStatus, string> = {
-  outline:  'bg-text-muted/15 text-text-muted',
-  draft:    'bg-warning/15 text-warning',
-  revised:  'bg-info/15 text-info',
-  polished: 'bg-accent/15 text-accent',
-  final:    'bg-success/15 text-success',
+const STATUS_DOT: Record<ChapterStatus, string> = {
+  outline:  'bg-text-muted/40',
+  draft:    'bg-warning',
+  revised:  'bg-info',
+  polished: 'bg-accent',
+  final:    'bg-success',
 }
 
-/** v3 §2.1 — 创作区.章节（独立的章节列表管理） */
-export default function ChaptersListPanel({ project, onOpenChapter }: Props) {
-  const { chapters, loadAll: loadChapters, deleteChapter } = useChapterStore()
+export default function ChaptersListPanel({ project, initialNodeId }: Props) {
   const { nodes, loadAll: loadOutline } = useOutlineStore()
+  const { chapters, loadAll: loadChapters } = useChapterStore()
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(initialNodeId ?? null)
+  const [expandedVols, setExpandedVols] = useState<Set<number>>(new Set())
 
   useEffect(() => {
-    loadChapters(project.id!)
     loadOutline(project.id!)
-  }, [project.id, loadChapters, loadOutline])
+    loadChapters(project.id!)
+  }, [project.id, loadOutline, loadChapters])
 
-  // 把章节按所属 volume 分组（通过 outlineNode.parentId 找上层 volume）
-  const grouped = groupChaptersByVolume(chapters, nodes)
+  // 外部传入的 initialNodeId 变化时同步
+  useEffect(() => {
+    if (initialNodeId != null) setSelectedNodeId(initialNodeId)
+  }, [initialNodeId])
 
+  // 按卷分组的章节列表（从 outlineNodes 读取）
+  const volumeGroups = useMemo(() => {
+    const volumes = nodes.filter(n => n.type === 'volume' && n.parentId === null).sort((a, b) => a.order - b.order)
+    return volumes.map(vol => ({
+      volume: vol,
+      chapters: nodes
+        .filter(n => n.parentId === vol.id && n.type === 'chapter')
+        .sort((a, b) => a.order - b.order),
+    }))
+  }, [nodes])
+
+  // 自动展开包含选中章节的卷
+  useEffect(() => {
+    if (selectedNodeId == null) return
+    for (const grp of volumeGroups) {
+      if (grp.chapters.some(c => c.id === selectedNodeId)) {
+        setExpandedVols(prev => new Set([...prev, grp.volume.id!]))
+        break
+      }
+    }
+  }, [selectedNodeId, volumeGroups])
+
+  // 自动选中第一个章节
+  useEffect(() => {
+    if (selectedNodeId != null) return
+    for (const grp of volumeGroups) {
+      if (grp.chapters.length > 0) {
+        setSelectedNodeId(grp.chapters[0].id!)
+        return
+      }
+    }
+  }, [volumeGroups, selectedNodeId])
+
+  const toggleVol = (volId: number) => {
+    setExpandedVols(prev => {
+      const s = new Set(prev)
+      s.has(volId) ? s.delete(volId) : s.add(volId)
+      return s
+    })
+  }
+
+  // 选中章节的信息
+  const selectedNode = nodes.find(n => n.id === selectedNodeId)
+  const totalChapters = volumeGroups.reduce((sum, g) => sum + g.chapters.length, 0)
   const totalWords = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0)
 
-  return (
-    <div className="max-w-5xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-text-primary mb-1">📖 章节列表</h2>
-          <p className="text-sm text-text-muted">
-            共 {chapters.length} 章 · 累计 {totalWords.toLocaleString()} 字
-          </p>
-        </div>
-        <div className="text-xs text-text-muted">
-          新章节请在「大纲」面板里添加（章节由大纲节点驱动）。
-        </div>
+  // ── 侧栏 ──
+
+  const sidebarContent = (
+    <div className="flex flex-col h-full">
+      {/* 统计 */}
+      <div className="px-3 py-2 text-[10px] text-text-muted border-b border-border">
+        共 {totalChapters} 章 · {totalWords.toLocaleString()} 字
       </div>
 
-      {chapters.length === 0 ? (
-        <div className="text-center py-16 text-text-muted text-sm">
-          <FilePen className="w-10 h-10 mx-auto mb-2 opacity-50" />
-          <p>还没有章节。先在「大纲」里建几个章节节点。</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {grouped.map(grp => (
-            <div key={grp.volumeId} className="bg-bg-surface border border-border rounded-xl">
-              {/* 卷头 */}
-              {grp.volumeTitle && (
-                <div className="px-4 py-2 border-b border-border">
-                  <h3 className="text-sm font-semibold text-text-primary">📚 {grp.volumeTitle}</h3>
-                </div>
-              )}
-              {/* 章节行 */}
-              <div className="divide-y divide-border/50">
-                {grp.chapters.map(c => {
-                  const status = c.status || 'outline'
+      {/* 按卷分组的章节列表 */}
+      <div className="flex-1 overflow-y-auto">
+        {volumeGroups.length === 0 ? (
+          <div className="text-center py-8 text-text-muted text-xs px-3">
+            还没有章节。先在「大纲」里生成卷和章节。
+          </div>
+        ) : (
+          volumeGroups.map(grp => {
+            const volExpanded = expandedVols.has(grp.volume.id!)
+            return (
+              <div key={grp.volume.id}>
+                {/* 卷标题 */}
+                <button
+                  onClick={() => toggleVol(grp.volume.id!)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-xs font-medium text-text-secondary hover:bg-bg-hover border-b border-border/50"
+                >
+                  {volExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  <span className="truncate flex-1">{grp.volume.title}</span>
+                  <span className="text-text-muted">{grp.chapters.length}</span>
+                </button>
+
+                {/* 章节列表 */}
+                {volExpanded && grp.chapters.map((ch, idx) => {
+                  const active = selectedNodeId === ch.id
+                  const chRec = chapters.find(c => c.outlineNodeId === ch.id)
+                  const status = chRec?.status || 'outline'
+                  const wc = chRec?.wordCount || 0
                   return (
-                    <div
-                      key={c.id}
-                      className="flex items-center gap-3 p-3 hover:bg-bg-hover transition-colors"
+                    <button
+                      key={ch.id}
+                      onClick={() => setSelectedNodeId(ch.id!)}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-all ${
+                        active
+                          ? 'bg-accent/10 border-l-2 border-accent'
+                          : 'hover:bg-bg-hover border-l-2 border-transparent'
+                      }`}
                     >
-                      <button
-                        onClick={() => onOpenChapter(c.outlineNodeId)}
-                        className="flex-1 flex items-center gap-3 text-left"
-                      >
-                        <span className="text-text-muted text-xs w-10 flex-shrink-0">#{c.order ?? '-'}</span>
-                        <span className="flex-1 text-sm text-text-primary truncate font-medium">
-                          {c.title || '未命名章节'}
-                        </span>
-                        <span className={`px-2 py-0.5 text-[10px] rounded ${STATUS_COLORS[status]}`}>
-                          {STATUS_LABELS[status]}
-                        </span>
-                        <span className="text-xs text-text-secondary w-16 text-right flex-shrink-0">
-                          {(c.wordCount || 0).toLocaleString()} 字
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`删除章节「${c.title || '未命名'}」？`)) deleteChapter(c.id!)
-                        }}
-                        className="p-1 text-text-muted hover:text-error"
-                        title="删除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                      <span className="text-[10px] text-text-muted w-4 shrink-0 text-right">{idx + 1}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[status]}`}
+                        title={STATUS_LABELS[status]} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs truncate ${active ? 'text-accent font-medium' : 'text-text-primary'}`}>
+                          {ch.title}
+                        </p>
+                        {wc > 0 && (
+                          <p className="text-[9px] text-text-muted">{wc.toLocaleString()} 字</p>
+                        )}
+                      </div>
+                    </button>
                   )
                 })}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            )
+          })
+        )}
+      </div>
     </div>
   )
-}
 
-interface VolumeGroup {
-  volumeId: number | string
-  volumeTitle: string
-  chapters: ReturnType<typeof useChapterStore.getState>['chapters']
-}
+  // ── 右侧编辑区 ──
 
-function groupChaptersByVolume(
-  chapters: ReturnType<typeof useChapterStore.getState>['chapters'],
-  nodes: ReturnType<typeof useOutlineStore.getState>['nodes'],
-): VolumeGroup[] {
-  const nodeById = new Map(nodes.map(n => [n.id!, n]))
-  const groups = new Map<number | string, VolumeGroup>()
+  return (
+    <PanelLayout
+      sidebar={sidebarContent}
+      sidebarTitle="📖 章节"
+      defaultWidth={200}
+      minWidth={150}
+      maxWidth={320}
+      className="h-[calc(100vh-8rem)]"
+    >
+      {selectedNode ? (
+        <div className="h-full flex flex-col">
+          {/* 场景细纲（可折叠） */}
+          <div className="px-4 pt-4 pb-2">
+            <ScenePanel
+              projectId={project.id!}
+              outlineNodeId={selectedNode.id!}
+              chapterTitle={selectedNode.title}
+              chapterSummary={selectedNode.summary}
+            />
+          </div>
 
-  for (const ch of chapters) {
-    const chapterNode = nodeById.get(ch.outlineNodeId)
-    // 向上找 volume 节点
-    let volumeNode = chapterNode
-    while (volumeNode && volumeNode.type !== 'volume') {
-      volumeNode = volumeNode.parentId ? nodeById.get(volumeNode.parentId) : undefined
-    }
-    const key = volumeNode?.id ?? '__no_volume'
-    if (!groups.has(key)) {
-      groups.set(key, {
-        volumeId: key,
-        volumeTitle: volumeNode?.title || '',
-        chapters: [],
-      })
-    }
-    groups.get(key)!.chapters.push(ch)
-  }
-
-  // 按章节 order 排序
-  for (const grp of groups.values()) {
-    grp.chapters.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }
-  return [...groups.values()]
+          {/* 正文编辑器 */}
+          <div className="flex-1 min-h-0">
+            <ChapterEditor project={project} outlineNodeId={selectedNode.id!} />
+          </div>
+        </div>
+      ) : (
+        <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3">
+          <div className="text-4xl opacity-20">📝</div>
+          <p className="text-sm">
+            {totalChapters > 0
+              ? '从左侧选择一个章节开始写作'
+              : '先在「大纲」里生成章节，然后回来写作'}
+          </p>
+        </div>
+      )}
+    </PanelLayout>
+  )
 }

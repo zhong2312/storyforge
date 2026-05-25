@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { streamChat, type StreamResult } from '../lib/ai/client'
 import { useAIConfigStore } from '../stores/ai-config'
 import type { AIConfig, ChatMessage } from '../lib/types'
@@ -105,5 +105,8 @@ export function useAIStream(): UseAIStreamReturn {
     return accumulated
   }, [])
 
-  return { output, isStreaming, error, tokenUsage, start, stop, reset }
+  return useMemo(
+    () => ({ output, isStreaming, error, tokenUsage, start, stop, reset }),
+    [output, isStreaming, error, tokenUsage, start, stop, reset],
+  )
 }

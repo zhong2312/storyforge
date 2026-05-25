@@ -20,8 +20,10 @@ interface SidebarProps {
 
 /** legacy → new 别名映射（路由层兼容） */
 const LEGACY_ALIASES: Partial<Record<SidebarModule, SidebarModule>> = {
-  'story-core': 'story-design',
-  'backup':     'data-management',
+  'story-core':      'story-design',
+  'backup':          'data-management',
+  'detailed-outline': 'chapters-list',
+  'editor':          'chapters-list',
 }
 
 function normalize(m: SidebarModule): SidebarModule {
