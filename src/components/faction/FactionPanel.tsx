@@ -1,3 +1,4 @@
+import { CInput, CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useCharacterStore } from '../../stores/character'
@@ -52,7 +53,7 @@ export default function FactionPanel({ project }: Props) {
         {selectedFaction ? (
           <div className="bg-bg-surface border border-border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <input value={selectedFaction.name} onChange={e => handleUpdate('name', e.target.value)}
+              <CInput value={selectedFaction.name} onChange={e => handleUpdate('name', e.target.value)}
                 className="text-lg font-bold bg-transparent text-text-primary border-none outline-none" />
               <button onClick={() => { deleteFaction(selectedFaction.id!); setSelected(null) }}
                 className="text-text-muted hover:text-error"><Trash2 className="w-4 h-4" /></button>
@@ -60,7 +61,7 @@ export default function FactionPanel({ project }: Props) {
             {fields.map(f => (
               <div key={f.key}>
                 <label className="block text-xs text-text-muted mb-1">{f.label}</label>
-                <textarea value={(selectedFaction[f.key] as string) || ''}
+                <CTextarea value={(selectedFaction[f.key] as string) || ''}
                   onChange={e => handleUpdate(f.key, e.target.value)}
                   rows={f.rows || 1}
                   className="w-full p-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent" />

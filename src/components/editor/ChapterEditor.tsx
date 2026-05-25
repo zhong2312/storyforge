@@ -7,6 +7,7 @@ import { useCharacterStore } from '../../stores/character'
 import { useStateCardStore } from '../../stores/state-card'
 import { useEmotionBeatStore } from '../../stores/emotion-beat'
 import { useAIStream } from '../../hooks/useAIStream'
+import { CInput } from '../shared/CompositionInput'
 import { useAutoSave } from '../../hooks/useAutoSave'
 import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { buildChapterContentPrompt, buildContinuePrompt, buildPolishPrompt, buildExpandPrompt, buildDeAIPrompt } from '../../lib/ai/adapters/chapter-adapter'
@@ -395,7 +396,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           <ClipboardList className="w-3 h-3" />
           {extracting ? '提取中...' : '提取状态'}
         </button>
-        <input value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
+        <CInput value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
           placeholder="自定义指令..."
           className="flex-1 min-w-[150px] px-2 py-1.5 bg-bg-surface border border-border rounded-md text-xs text-text-primary focus:outline-none focus:border-accent" />
       </div>

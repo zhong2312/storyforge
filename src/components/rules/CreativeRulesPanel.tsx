@@ -1,3 +1,4 @@
+import { CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, X, Sparkles, Microscope, Check } from 'lucide-react'
 import { useCreativeRulesStore } from '../../stores/project-singletons'
@@ -186,7 +187,7 @@ export default function CreativeRulesPanel({ project }: Props) {
             <Sparkles className="w-3 h-3" /> AI 建议
           </button>
         </div>
-        <textarea
+        <CTextarea
           value={writingStyle}
           onChange={e => setWritingStyle(e.target.value)}
           onBlur={() => saveField({ writingStyle })}
@@ -240,7 +241,7 @@ export default function CreativeRulesPanel({ project }: Props) {
             <Sparkles className="w-3 h-3" /> AI 建议
           </button>
         </div>
-        <textarea
+        <CTextarea
           value={toneAndMood}
           onChange={e => setToneAndMood(e.target.value)}
           onBlur={() => saveField({ toneAndMood })}
@@ -341,7 +342,7 @@ export default function CreativeRulesPanel({ project }: Props) {
             <Sparkles className="w-3 h-3" /> AI 建议
           </button>
         </div>
-        <textarea
+        <CTextarea
           value={specialRequirements}
           onChange={e => setSpecialRequirements(e.target.value)}
           onBlur={() => saveField({ specialRequirements })}

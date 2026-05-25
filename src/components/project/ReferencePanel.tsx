@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   Trash2, Library, BookMarked, Palette, Upload,
   Globe, Users2, ListTree, PenTool, ChevronDown, ChevronRight,
   Microscope, Loader2, UploadCloud, StopCircle, BarChart3,
 } from 'lucide-react'
+import { InlineInput, InlineTextarea } from '../shared/InlineEdit'
 import { useReferenceStore } from '../../stores/reference'
 import type {
   Project, Reference, ReferenceType,
@@ -818,113 +819,3 @@ function OutlineNodeView({ node, depth }: { node: Record<string, unknown>; depth
   )
 }
 
-// ── 行内编辑：单行 ────────────────────────────────────────────────
-
-function InlineInput({
-  value, onChange, className, placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  className?: string
-  placeholder?: string
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { setDraft(value) }, [value])
-
-  const commit = () => {
-    setEditing(false)
-    if (draft !== value) onChange(draft)
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
-        placeholder={placeholder}
-        className={`bg-transparent border-b border-accent/50 outline-none w-full ${className || ''}`}
-        autoFocus
-      />
-    )
-  }
-
-  return (
-    <div
-      onClick={() => setEditing(true)}
-      className={`cursor-text min-h-[1.2em] ${className || ''} ${!value ? 'opacity-40' : ''}`}
-    >
-      {value || (placeholder || '点击编辑…')}
-    </div>
-  )
-}
-
-// ── 行内编辑：多行 ────────────────────────────────────────────────
-
-function InlineTextarea({
-  value, onChange, placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const ref = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => { setDraft(value) }, [value])
-
-  const resize = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = Math.max(32, el.scrollHeight) + 'px'
-  }, [])
-
-  useEffect(() => { if (editing) resize() }, [editing, resize])
-
-  const commit = () => {
-    setEditing(false)
-    if (draft !== value) onChange(draft)
-  }
-
-  if (editing) {
-    return (
-      <textarea
-        ref={ref}
-        value={draft}
-        onChange={e => { setDraft(e.target.value); resize() }}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
-        placeholder={placeholder}
-        className="w-full bg-transparent border border-accent/30 rounded px-2 py-1 text-sm text-text-primary outline-none resize-none"
-        autoFocus
-      />
-    )
-  }
-
-  if (!value) {
-    return (
-      <div
-        onClick={() => setEditing(true)}
-        className="text-sm text-text-muted/40 cursor-text py-0.5"
-      >
-        {placeholder || '点击编辑…'}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      onClick={() => setEditing(true)}
-      className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap cursor-text py-0.5"
-    >
-      {value}
-    </div>
-  )
-}

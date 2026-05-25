@@ -1,3 +1,4 @@
+import { CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight, Clock } from 'lucide-react'
 import { useHistoryStore } from '../../stores/project-singletons'
@@ -90,7 +91,7 @@ export default function HistoryPanel({ project }: Props) {
       {/* 历史总述 */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-text-secondary mb-1">历史总述</label>
-        <textarea
+        <CTextarea
           value={overview}
           onChange={e => setOverview(e.target.value)}
           onBlur={handleSaveOverview}
@@ -102,7 +103,7 @@ export default function HistoryPanel({ project }: Props) {
       {/* 纪年体系 */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-text-secondary mb-1">纪年体系</label>
-        <textarea
+        <CTextarea
           value={eraSystem}
           onChange={e => setEraSystem(e.target.value)}
           onBlur={handleSaveEraSystem}
@@ -180,7 +181,7 @@ export default function HistoryPanel({ project }: Props) {
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted mb-1">事件描述</label>
-                      <textarea
+                      <CTextarea
                         value={evt.description}
                         onChange={e => handleUpdateEvent(evt.id, { description: e.target.value })}
                         className="w-full h-20 p-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent"
@@ -188,7 +189,7 @@ export default function HistoryPanel({ project }: Props) {
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted mb-1">对世界的影响</label>
-                      <textarea
+                      <CTextarea
                         value={evt.impact}
                         onChange={e => handleUpdateEvent(evt.id, { impact: e.target.value })}
                         className="w-full h-16 p-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent"

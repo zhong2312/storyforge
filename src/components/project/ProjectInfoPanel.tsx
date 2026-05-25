@@ -1,3 +1,4 @@
+import { CTextarea } from '../shared/CompositionInput'
 import { useState } from 'react'
 import { Save, X, ChevronDown } from 'lucide-react'
 import { useProjectStore } from '../../stores/project'
@@ -148,7 +149,7 @@ export default function ProjectInfoPanel({ project, onUpdate }: ProjectInfoPanel
 
         <div>
           <label className="block text-sm text-text-secondary mb-1.5">简介</label>
-          <textarea
+          <CTextarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={4}

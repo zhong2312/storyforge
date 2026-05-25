@@ -13,6 +13,7 @@ import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
 import PanelLayout from '../shared/PanelLayout'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
+import { CInput } from '../shared/CompositionInput'
 import type { Project, StoryStructure } from '../../lib/types'
 import { STORY_STRUCTURES } from '../../lib/types/outline'
 
@@ -252,7 +253,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     >
       <div className="p-4 space-y-4">
         {/* 调参 + 提示 */}
-        <input value={hint} onChange={e => setHint(e.target.value)} placeholder="给 AI 的补充说明（可选）"
+        <CInput value={hint} onChange={e => setHint(e.target.value)} placeholder="给 AI 的补充说明（可选）"
           className="w-full px-3 py-2 bg-bg-surface border border-border rounded-md text-text-primary text-sm focus:outline-none focus:border-accent" />
 
         <PromptRunPanel
@@ -298,7 +299,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
         {selectedVol ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <input
+              <CInput
                 value={selectedVol.title}
                 onChange={e => updateNode(selectedVol.id!, { title: e.target.value })}
                 className="text-lg font-bold bg-transparent text-text-primary outline-none flex-1"
@@ -451,12 +452,12 @@ function ChapterRow({ ch, idx, onUpdate, onDelete, onOpen }: {
     <div className="flex items-start gap-2 px-3 py-2 bg-bg-surface border border-border rounded-md hover:border-accent/30 group transition-colors">
       <span className="text-xs text-text-muted mt-1.5 shrink-0 w-5 text-right">{idx + 1}</span>
       <div className="flex-1 min-w-0">
-        <input
+        <CInput
           value={ch.title}
           onChange={e => onUpdate(ch.id!, { title: e.target.value })}
           className="w-full bg-transparent text-text-primary text-sm font-medium outline-none"
         />
-        <input
+        <CInput
           value={ch.summary}
           onChange={e => onUpdate(ch.id!, { summary: e.target.value })}
           placeholder="章节摘要..."
@@ -497,7 +498,7 @@ function StoryBlockSection({ block, chapters, onUpdateNode, onDeleteNode, onAddC
           {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </button>
         <LayoutList className="w-3.5 h-3.5 text-accent/60" />
-        <input
+        <CInput
           value={block.title}
           onChange={e => onUpdateNode(block.id!, { title: e.target.value })}
           className="flex-1 bg-transparent text-text-primary text-sm font-medium outline-none"
@@ -514,7 +515,7 @@ function StoryBlockSection({ block, chapters, onUpdateNode, onDeleteNode, onAddC
         </button>
       </div>
       {/* 故事块摘要 */}
-      <input
+      <CInput
         value={block.summary}
         onChange={e => onUpdateNode(block.id!, { summary: e.target.value })}
         placeholder="故事块描述..."

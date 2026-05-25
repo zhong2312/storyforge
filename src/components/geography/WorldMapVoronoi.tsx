@@ -4,7 +4,7 @@
  */
 
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
-import { Loader2, RefreshCw, Download, Info, Settings2 } from 'lucide-react'
+import { Loader2, RefreshCw, Download, Info, Settings2, Map } from 'lucide-react'
 import { generateMap, renderMap, STYLE_PRESET_LABELS } from '../../lib/world-map/engine'
 import { BIOMES } from '../../lib/world-map/engine/climate'
 import type {
@@ -106,8 +106,12 @@ export default function WorldMapVoronoi({ config, onMapGenerated }: Props) {
     [onMapGenerated],
   )
 
+  // 仅在有 AI 生成的配置时才自动生成地图
+  // 没有配置（首次打开、尚未点 AI 生成）时显示空状态
   useEffect(() => {
-    doGenerate(mergedConfig)
+    if (config && Object.keys(config).length > 0) {
+      doGenerate(mergedConfig)
+    }
   }, [configKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 重新渲染（不重新生成） ──
@@ -275,6 +279,20 @@ export default function WorldMapVoronoi({ config, onMapGenerated }: Props) {
 
   return (
     <div ref={containerRef} className="relative w-full h-full min-h-[400px] bg-[#1a1f2e] overflow-hidden">
+      {/* 空状态：尚未生成地图 */}
+      {!mapData && !generating && !error && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#1a1f2e]">
+          <div className="text-center max-w-sm text-text-muted">
+            <Map className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p className="text-sm mb-1">还没有地图数据</p>
+            <p className="text-xs opacity-60">
+              点击右上角「AI 生成地图」，系统会根据世界观设定自动生成。
+              <br />先在「世界起源」「自然环境」中填写内容，效果更好。
+            </p>
+          </div>
+        </div>
+      )}
+
       {generating && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#1a1f2e]">
           <div className="text-center text-text-muted">

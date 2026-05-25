@@ -1,3 +1,4 @@
+import { CInput } from '../shared/CompositionInput'
 /**
  * 状态表面板 — 查看/编辑/管理所有实体状态卡
  * 支持：手动增删改、按分类筛选、AI 提取变更、导出状态表
@@ -203,10 +204,10 @@ function StateCardItem({ card, isEditing, onEdit, onUpdate, onDelete }: {
         <div className="space-y-2">
           {editFields.map((f, idx) => (
             <div key={idx} className="flex gap-2">
-              <input value={f.key} onChange={e => {
+              <CInput value={f.key} onChange={e => {
                 const next = [...editFields]; next[idx] = { ...f, key: e.target.value }; setEditFields(next)
               }} placeholder="字段名" className="w-24 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
-              <input value={f.value} onChange={e => {
+              <CInput value={f.value} onChange={e => {
                 const next = [...editFields]; next[idx] = { ...f, value: e.target.value }; setEditFields(next)
               }} placeholder="值" className="flex-1 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
               <button onClick={() => removeField(idx)} className="p-1 text-text-muted hover:text-error">
@@ -274,16 +275,16 @@ function AddCardForm({ projectId, onAdd, onCancel }: {
             <option key={cat} value={cat}>{STATE_CATEGORY_LABELS[cat]}</option>
           ))}
         </select>
-        <input value={entityName} onChange={e => setEntityName(e.target.value)}
+        <CInput value={entityName} onChange={e => setEntityName(e.target.value)}
           placeholder="实体名称（如：李明远、长安城）"
           className="flex-1 px-3 py-1.5 bg-bg-base border border-border rounded text-sm text-text-primary" />
       </div>
       {fields.map((f, idx) => (
         <div key={idx} className="flex gap-2">
-          <input value={f.key} onChange={e => {
+          <CInput value={f.key} onChange={e => {
             const next = [...fields]; next[idx] = { ...f, key: e.target.value }; setFields(next)
           }} placeholder="字段名（如：位置）" className="w-32 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
-          <input value={f.value} onChange={e => {
+          <CInput value={f.value} onChange={e => {
             const next = [...fields]; next[idx] = { ...f, value: e.target.value }; setFields(next)
           }} placeholder="值（如：长安）" className="flex-1 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
           <button onClick={() => setFields(fields.filter((_, i) => i !== idx))}

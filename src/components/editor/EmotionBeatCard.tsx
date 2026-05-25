@@ -1,3 +1,4 @@
+import { CInput } from '../../components/shared/CompositionInput'
 /**
  * 情感节拍卡组件 — 嵌入 ChapterEditor，在写作前/中展示和编辑情感节奏规划
  * 支持：AI 生成、手动编辑、展开/折叠、删除
@@ -174,7 +175,7 @@ export default function EmotionBeatCard({
           </div>
         </div>
 
-        <input value={editArc} onChange={e => setEditArc(e.target.value)}
+        <CInput value={editArc} onChange={e => setEditArc(e.target.value)}
           placeholder="整章情感概述..."
           className="w-full px-2 py-1.5 bg-bg-base border border-border rounded text-xs text-text-primary" />
 
@@ -182,20 +183,20 @@ export default function EmotionBeatCard({
           <div key={idx} className="p-2 bg-bg-elevated rounded-lg space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-xs text-text-muted w-6 text-right">{idx + 1}.</span>
-              <input value={beat.label} onChange={e => updateBeat(idx, 'label', e.target.value)}
+              <CInput value={beat.label} onChange={e => updateBeat(idx, 'label', e.target.value)}
                 placeholder="节拍名" className="flex-1 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary font-medium" />
-              <input value={beat.emotionTone} onChange={e => updateBeat(idx, 'emotionTone', e.target.value)}
+              <CInput value={beat.emotionTone} onChange={e => updateBeat(idx, 'emotionTone', e.target.value)}
                 placeholder="情感基调" className="w-24 px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
               <button onClick={() => removeBeat(idx)} className="p-0.5 text-text-muted hover:text-error">
                 <X className="w-3 h-3" />
               </button>
             </div>
             <div className="ml-8 grid grid-cols-1 gap-1.5">
-              <input value={beat.sceneGoal} onChange={e => updateBeat(idx, 'sceneGoal', e.target.value)}
+              <CInput value={beat.sceneGoal} onChange={e => updateBeat(idx, 'sceneGoal', e.target.value)}
                 placeholder="场景目标" className="px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
-              <input value={beat.readerFeeling} onChange={e => updateBeat(idx, 'readerFeeling', e.target.value)}
+              <CInput value={beat.readerFeeling} onChange={e => updateBeat(idx, 'readerFeeling', e.target.value)}
                 placeholder="期望读者感受" className="px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
-              <input value={beat.characterGrowth} onChange={e => updateBeat(idx, 'characterGrowth', e.target.value)}
+              <CInput value={beat.characterGrowth} onChange={e => updateBeat(idx, 'characterGrowth', e.target.value)}
                 placeholder="角色变化/成长" className="px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary" />
             </div>
           </div>

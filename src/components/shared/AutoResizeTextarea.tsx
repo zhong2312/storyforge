@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, type TextareaHTMLAttributes } from 'react'
+import { useRef, useState, useEffect, useCallback, type TextareaHTMLAttributes } from 'react'
 
 interface Props extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'rows'> {
   /** 最小行数 */
@@ -8,26 +8,34 @@ interface Props extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'rows'
 }
 
 /**
- * 自适应高度的 textarea
+ * 自适应高度的 textarea（组合输入安全）
  *
  * 随内容自动增长/收缩高度，到 maxRows 后显示滚动条。
+ * 内置 IME 组合输入保护，中文/日文/韩文输入不会闪烁。
  */
 export default function AutoResizeTextarea({
   minRows = 2,
   maxRows = 20,
-  value,
+  value: externalValue,
   onChange,
   className = '',
   ...rest
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const composingRef = useRef(false)
+  const [localValue, setLocalValue] = useState(String(externalValue ?? ''))
+
+  // 外部值变化时同步（仅非组合状态）
+  useEffect(() => {
+    if (!composingRef.current) {
+      setLocalValue(String(externalValue ?? ''))
+    }
+  }, [externalValue])
 
   const resize = useCallback(() => {
     const el = ref.current
     if (!el) return
-    // 重置高度以获取 scrollHeight
     el.style.height = 'auto'
-    // 计算行高
     const computed = getComputedStyle(el)
     const lineHeight = parseFloat(computed.lineHeight) || 20
     const paddingY = parseFloat(computed.paddingTop) + parseFloat(computed.paddingBottom)
@@ -38,19 +46,28 @@ export default function AutoResizeTextarea({
     el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden'
   }, [minRows, maxRows])
 
-  // 值变化时重算
-  useEffect(() => { resize() }, [value, resize])
-
-  // 初始渲染
+  useEffect(() => { resize() }, [localValue, resize])
   useEffect(() => { resize() }, [resize])
 
   return (
     <textarea
       ref={ref}
-      value={value}
-      onChange={onChange}
-      className={`resize-none ${className}`}
       {...rest}
+      value={localValue}
+      className={`resize-none ${className}`}
+      onCompositionStart={() => { composingRef.current = true }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false
+        const val = (e.target as HTMLTextAreaElement).value
+        setLocalValue(val)
+        onChange?.({ ...e, target: { ...e.target, value: val } } as unknown as React.ChangeEvent<HTMLTextAreaElement>)
+      }}
+      onChange={(e) => {
+        setLocalValue(e.target.value)
+        if (!composingRef.current) {
+          onChange?.(e)
+        }
+      }}
     />
   )
 }

@@ -1,3 +1,4 @@
+import { CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight, Gem } from 'lucide-react'
 import { useItemSystemStore } from '../../stores/project-singletons'
@@ -88,7 +89,7 @@ export default function ItemSystemPanel({ project }: Props) {
       {/* 道具体系总述 */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-text-secondary mb-1">道具体系总述</label>
-        <textarea
+        <CTextarea
           value={overview}
           onChange={e => setOverview(e.target.value)}
           onBlur={handleSaveOverview}
@@ -169,7 +170,7 @@ export default function ItemSystemPanel({ project }: Props) {
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted mb-1">描述</label>
-                      <textarea
+                      <CTextarea
                         value={item.description}
                         onChange={e => handleUpdateItem(item.id, { description: e.target.value })}
                         className="w-full h-20 p-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent"
@@ -177,7 +178,7 @@ export default function ItemSystemPanel({ project }: Props) {
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted mb-1">能力/效果</label>
-                      <textarea
+                      <CTextarea
                         value={item.abilities}
                         onChange={e => handleUpdateItem(item.id, { abilities: e.target.value })}
                         placeholder="描述该道具的特殊能力或效果..."

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Sparkles } from 'lucide-react'
+import { CInput, CTextarea } from './CompositionInput'
 import { useAIStream } from '../../hooks/useAIStream'
 import AIStreamOutput from './AIStreamOutput'
 import PromptRunPanel from './PromptRunPanel'
@@ -91,7 +92,7 @@ export default function AIFieldCard({
         </button>
       </div>
 
-      <textarea
+      <CTextarea
         value={value}
         onChange={e => onChange(e.target.value)}
         onBlur={() => onSave(value)}
@@ -102,7 +103,7 @@ export default function AIFieldCard({
 
       <div className="flex items-center gap-2">
         {showHint && (
-          <input
+          <CInput
             value={hint}
             onChange={e => setHint(e.target.value)}
             placeholder="给 AI 的补充说明（可选）"

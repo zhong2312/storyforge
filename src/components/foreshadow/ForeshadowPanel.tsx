@@ -1,3 +1,4 @@
+import { CInput, CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, ArrowRight, Sparkles, Loader2, LayoutList, LayoutGrid } from 'lucide-react'
 import { useForeshadowStore } from '../../stores/foreshadow'
@@ -219,7 +220,7 @@ export default function ForeshadowPanel({ project }: Props) {
         {selectedF ? (
           <div className="bg-bg-surface border border-border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <input value={selectedF.name} onChange={e => handleUpdate('name', e.target.value)}
+              <CInput value={selectedF.name} onChange={e => handleUpdate('name', e.target.value)}
                 className="text-lg font-bold bg-transparent text-text-primary border-none outline-none" />
               <div className="flex items-center gap-2">
                 <button onClick={() => handleNextStatus(selectedF)}
@@ -250,7 +251,7 @@ export default function ForeshadowPanel({ project }: Props) {
 
             <div>
               <label className="block text-xs text-text-muted mb-1">伏笔描述</label>
-              <textarea value={selectedF.description} onChange={e => handleUpdate('description', e.target.value)}
+              <CTextarea value={selectedF.description} onChange={e => handleUpdate('description', e.target.value)}
                 rows={4} className="w-full p-2 bg-bg-base border border-border rounded text-sm text-text-primary resize-y focus:outline-none focus:border-accent" />
             </div>
 
@@ -311,7 +312,7 @@ export default function ForeshadowPanel({ project }: Props) {
 
             <div>
               <label className="block text-xs text-text-muted mb-1">备注</label>
-              <textarea value={selectedF.notes} onChange={e => handleUpdate('notes', e.target.value)}
+              <CTextarea value={selectedF.notes} onChange={e => handleUpdate('notes', e.target.value)}
                 rows={2} className="w-full p-2 bg-bg-base border border-border rounded text-xs text-text-muted resize-y focus:outline-none focus:border-accent" />
             </div>
           </div>
