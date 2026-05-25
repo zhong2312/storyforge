@@ -47,6 +47,7 @@ import CreativeRulesPanel from '../components/rules/CreativeRulesPanel'
 import CharacterRelationPanel from '../components/relations/CharacterRelationPanel'
 import WorldMapPanel from '../components/geography/WorldMapPanel'
 import StatePanel from '../components/state/StatePanel'
+import StoryArcPanel from '../components/outline/StoryArcPanel'
 import type { Project } from '../lib/types'
 
 export default function WorkspacePage() {
@@ -174,6 +175,8 @@ export default function WorkspacePage() {
         return <ChaptersListPanel project={project} initialNodeId={editorNodeId} />
       case 'foreshadow':
         return <ForeshadowPanel project={project} />
+      case 'story-arc':
+        return <StoryArcPanel project={project} />
       case 'state-table':
         return <StatePanel project={project} />
 

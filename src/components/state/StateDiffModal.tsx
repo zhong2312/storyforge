@@ -12,9 +12,11 @@ interface Props {
   chapterTitle: string
   onConfirm: (accepted: StateDiffItem[]) => void
   onCancel: () => void
+  /** Phase A1: 是否显示"跳过本次"按钮（自动触发时显示） */
+  showSkip?: boolean
 }
 
-export default function StateDiffModal({ diffs, chapterTitle, onConfirm, onCancel }: Props) {
+export default function StateDiffModal({ diffs, chapterTitle, onConfirm, onCancel, showSkip }: Props) {
   const [selected, setSelected] = useState<Set<number>>(() => new Set(diffs.map((_, i) => i)))
 
   const toggle = (idx: number) => {
@@ -108,6 +110,12 @@ export default function StateDiffModal({ diffs, chapterTitle, onConfirm, onCance
             已选 {selected.size}/{diffs.length} 条
           </span>
           <div className="flex gap-3">
+            {showSkip && (
+              <button onClick={onCancel}
+                className="flex items-center gap-1.5 px-4 py-2 text-text-muted text-sm hover:text-text-secondary transition-colors">
+                跳过本次
+              </button>
+            )}
             <button onClick={onCancel}
               className="flex items-center gap-1.5 px-4 py-2 bg-bg-elevated text-text-secondary rounded-lg text-sm hover:bg-bg-hover transition-colors">
               <X className="w-4 h-4" /> 取消

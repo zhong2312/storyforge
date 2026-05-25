@@ -32,6 +32,10 @@ interface StateCardStore {
 
   /** 按需召回：只注入与参考文本相关的状态卡 */
   buildSelectiveStateContext: (referenceText: string, extraIds?: number[]) => { text: string; matchedIds: number[]; allIds: number[] }
+
+  // ── Phase G1 ──
+  /** 获取角色当前状态（从状态卡中筛选） */
+  getCharacterState: (characterName: string) => { fields: { key: string; value: string }[]; card: StateCard | null }
 }
 
 export const useStateCardStore = create<StateCardStore>((set, get) => ({
@@ -248,5 +252,14 @@ export const useStateCardStore = create<StateCardStore>((set, get) => ({
     }
 
     return { text: parts.join('\n'), matchedIds, allIds }
+  },
+
+  // ── Phase G1 ──
+  getCharacterState: (characterName: string) => {
+    const card = get().cards.find(
+      c => c.category === 'character' && c.entityName === characterName
+    )
+    if (!card) return { fields: [], card: null }
+    return { fields: parseFields(card.fields), card }
   },
 }))

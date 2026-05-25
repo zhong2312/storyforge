@@ -37,6 +37,14 @@ export interface Character {
   /** 结局走向 */
   ending?: string
 
+  // ── Phase G2 新字段 ──
+  /** 首次出场章节 ID */
+  firstAppearChapterId?: number | null
+  /** 活跃章节范围描述（如 "1-30, 45-60"） */
+  activeChapterRange?: string
+  /** 退场/死亡章节 ID */
+  exitChapterId?: number | null
+
   createdAt: number
   updatedAt: number
 }

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { exportProjectJSON, downloadJSON, importProjectJSON, type ProjectExportData } from '../../lib/export/json-export'
 import { exportProjectMarkdown, exportProjectTXT, downloadTextFile } from '../../lib/export/text-export'
+import { exportProjectHTML } from '../../lib/export/html-builder'
 import { exportToGist, validateGitHubPAT } from '../../lib/export/gist-export'
 import {
   generateContextSnapshot, downloadContextSnapshot,
@@ -95,6 +96,22 @@ export default function ExportPanel({ project, onImported }: Props) {
       const txt = await exportProjectTXT(project.id!)
       downloadTextFile(txt, `${project.name}_${new Date().toISOString().slice(0, 10)}.txt`)
       showStatus('success', 'TXT 导出成功！')
+    } catch (e) {
+      showStatus('error', `导出失败：${(e as Error).message}`)
+    }
+  }
+
+  // ── HTML 导出（Phase H1）──
+  const handleExportHTML = async () => {
+    try {
+      showStatus('loading', '正在导出 HTML...')
+      const html = await exportProjectHTML(project.id!, {
+        includeOutline: true,
+        includeCharacters: true,
+        includeWorldview: true,
+      })
+      downloadTextFile(html, `${project.name}_${new Date().toISOString().slice(0, 10)}.html`, 'text/html')
+      showStatus('success', 'HTML 导出成功！')
     } catch (e) {
       showStatus('error', `导出失败：${(e as Error).message}`)
     }
@@ -282,6 +299,18 @@ export default function ExportPanel({ project, onImported }: Props) {
         <button onClick={handleExportTXT} disabled={status === 'loading'}
           className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm font-medium hover:bg-yellow-500/30 transition-colors disabled:opacity-50">
           <Download className="w-4 h-4" /> 导出 TXT
+        </button>
+      </div>
+
+      {/* HTML 导出（Phase H1） */}
+      <div className="bg-bg-surface border border-border rounded-lg p-5 space-y-4">
+        <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
+          <FileText className="w-5 h-5 text-emerald-400" /> HTML（带样式排版）
+        </h3>
+        <p className="text-sm text-text-muted">导出为带样式的单页 HTML 文件，包含目录、角色设定和世界观。可用浏览器直接打开阅读。</p>
+        <button onClick={handleExportHTML} disabled={status === 'loading'}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-medium hover:bg-emerald-500/30 transition-colors disabled:opacity-50">
+          <Download className="w-4 h-4" /> 导出 HTML
         </button>
       </div>
 

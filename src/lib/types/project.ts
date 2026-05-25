@@ -91,6 +91,13 @@ export interface Project {
   currentWordCount?: number
   /** 封面图（base64 或 object URL） */
   coverImage?: string
+
+  // ── Phase E 新字段 ──
+  /** 写作风格预设 ID */
+  writingStyleId?: string
+  /** 创作方法论 ID */
+  methodologyId?: string
+
   createdAt: number        // timestamp
   updatedAt: number        // timestamp
 }

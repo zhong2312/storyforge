@@ -35,6 +35,17 @@ export interface Foreshadow {
   /** 时间线位置：相对于全文的归一化进度（0-1），由前端按埋设/呼应/回收章节自动算 */
   timelinePosition?: number
 
+  // ── Phase C 新字段 ─────────────────────────────────────────────
+  /** 预期回收章节ID */
+  expectedResolveChapterId?: number | null
+  /** 重要度 (1-10) */
+  importance?: number
+  /** 紧急度（自动计算） */
+  urgency?: ForeshadowUrgency
+
   createdAt: number
   updatedAt: number
 }
+
+/** 伏笔紧急度 */
+export type ForeshadowUrgency = 'low' | 'medium' | 'high' | 'critical'

@@ -4,7 +4,7 @@ import {
   UserCircle, UsersRound, User, Footprints, Network,
   Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
-  Map, ClipboardList,
+  Map, ClipboardList, GitBranch,
 } from 'lucide-react'
 
 /**
@@ -50,6 +50,9 @@ export type SidebarModule =
 
   // 状态表（A1）
   | 'state-table'
+
+  // 全局故事线（Phase B）
+  | 'story-arc'
 
   // 世界地图（Phase 20）
   | 'world-map'
@@ -140,6 +143,7 @@ export const NAV_TREE: TreeSection[] = [
     children: [
       leaf('rules',            '创作规则', Ruler),
       leaf('outline',          '大纲',     BookOpen),
+      leaf('story-arc',        '故事线',   GitBranch),
       leaf('chapters-list',    '章节',     FilePen),
       leaf('foreshadow',       '伏笔',     Eye),
       leaf('state-table',      '状态表',   ClipboardList),

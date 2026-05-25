@@ -28,10 +28,12 @@ import type {
   MasterChunkAnalysis,
   MasterChapterBeat,
   MasterStyleMetrics,
+  Note,
   MasterInsight,
   StateCard,
   EmotionBeatCard,
   WorldNode,
+  StoryArc,
 } from '../types'
 
 class StoryForgeDB extends Dexie {
@@ -74,6 +76,12 @@ class StoryForgeDB extends Dexie {
 
   // A3 —— 情感节拍卡
   emotionBeatCards!: Table<EmotionBeatCard, number>
+
+  // Phase B — 全局故事线
+  storyArcs!: Table<StoryArc, number>
+
+  // Phase H3 — 便签/笔记
+  notes!: Table<Note, number>
 
   // 多世界 / 世界树
   worldNodes!: Table<WorldNode, number>
@@ -171,6 +179,16 @@ class StoryForgeDB extends Dexie {
     // v15: 多世界/世界树 — 每个世界节点独立地图配置
     this.version(15).stores({
       worldNodes: '++id, projectId, parentId, sortOrder',
+    })
+
+    // v16: Phase B — 全局故事线
+    this.version(16).stores({
+      storyArcs: '++id, projectId, type',
+    })
+
+    // Phase H3: 便签/笔记
+    this.version(17).stores({
+      notes: '++id, projectId, chapterId, pinned',
     })
   }
 }

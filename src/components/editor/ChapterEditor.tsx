@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Save, FileText, Eye, ClipboardList, CheckSquare, Square } from 'lucide-react'
+import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
 import { useWorldviewStore } from '../../stores/worldview'
@@ -12,13 +12,22 @@ import { useAutoSave } from '../../hooks/useAutoSave'
 import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { buildChapterContentPrompt, buildContinuePrompt, buildPolishPrompt, buildExpandPrompt, buildDeAIPrompt } from '../../lib/ai/adapters/chapter-adapter'
 import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
-import { buildWorldContext, buildCharacterContext, getContextMemo, buildRefAnalysisContext } from '../../lib/ai/context-builder'
+import { buildSummaryPrompt } from '../../lib/ai/adapters/summary-adapter'
+import { buildWorldContext, buildCharacterContext, filterActiveCharacters, getContextMemo, buildRefAnalysisContext } from '../../lib/ai/context-builder'
+import { buildGenreConstraintContext } from '../../lib/ai/genre-metadata'
+import { buildStylePromptInjection } from '../../lib/ai/writing-styles'
+import { buildMemory, type MemoryTaskType } from '../../lib/ai/memory-builder'
 import { useCreativeRulesStore } from '../../stores/project-singletons'
+import { useStoryArcStore } from '../../stores/story-arc'
+import { useForeshadowStore } from '../../stores/foreshadow'
 import { htmlToPlainText, plainTextToHtml, countWords } from '../../lib/utils/html'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import StateDiffModal from '../state/StateDiffModal'
 import RichEditor, { type RichEditorHandle } from './RichEditor'
 import EmotionBeatCard from './EmotionBeatCard'
+import OutlinePreview from '../outline/OutlinePreview'
+import ReviewPanel from './ReviewPanel'
+import NotePanel from './NotePanel'
 import type { Project, StateDiffItem } from '../../lib/types'
 
 interface Props {
@@ -34,6 +43,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const { cards: stateCards, loadAll: loadStateCards, buildStateContext, buildSelectiveStateContext, applyDiffs } = useStateCardStore()
   const { buildBeatContext } = useEmotionBeatStore()
   const { creativeRules } = useCreativeRulesStore()
+  const { buildStoryArcContext, loadAll: loadArcs } = useStoryArcStore()
+  const { buildForeshadowContext, loadAll: loadForeshadows } = useForeshadowStore()
 
   // content 为 HTML 字符串；旧数据是纯文本，RichEditor 内部会自动包装
   const [content, setContent] = useState('')
@@ -49,7 +60,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [showStatePreview, setShowStatePreview] = useState(false)
   const ai = useAIStream()
   const stateAI = useAIStream()
+  const summaryAI = useAIStream()
   const editorRef = useRef<RichEditorHandle>(null)
+  // Phase A1: 自动流程标记
+  const [autoProcessing, setAutoProcessing] = useState<'idle' | 'extracting' | 'summarizing'>('idle')
+  const [showOutlinePreview, setShowOutlinePreview] = useState(false)
+  const [showReviewPanel, setShowReviewPanel] = useState(false)
+  const [showNotePanel, setShowNotePanel] = useState(false)
 
   // 字数（基于纯文本）
   const wordCount = useMemo(() => countWords(plainText), [plainText])
@@ -59,6 +76,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
   useEffect(() => { loadChapters(project.id!) }, [project.id, loadChapters])
   useEffect(() => { loadStateCards(project.id!) }, [project.id, loadStateCards])
+  useEffect(() => { loadArcs(project.id!) }, [project.id, loadArcs])
+  useEffect(() => { loadForeshadows(project.id!) }, [project.id, loadForeshadows])
 
   // 如果从大纲进入，选择/创建对应章节（自动创建）
   useEffect(() => {
@@ -102,7 +121,9 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const outlineNode = currentChapter ? nodes.find(n => n.id === currentChapter.outlineNodeId) : null
   const memo = getContextMemo(project.id!)
   const worldCtx = [memo, buildWorldContext(worldview, storyCore, powerSystem)].filter(Boolean).join('\n\n')
-  const charCtx = buildCharacterContext(characters)
+  // Phase G2: 过滤活跃角色
+  const activeChars = filterActiveCharacters(characters, currentChapter?.id)
+  const charCtx = buildCharacterContext(activeChars)
 
   // A2: 按需召回 — 根据章节大纲+标题+已有文本筛选相关状态卡
   const selectiveState = useMemo(() => {
@@ -128,22 +149,61 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   }
 
   // AI 操作 —— 所有 AI 交互都基于纯文本
-  // 构建包含状态表 + 情感节拍 + 引用手法的完整世界观上下文
-  const buildFullWorldCtx = async () => {
-    const parts = [worldCtx]
-    if (selectiveState.text) parts.push(selectiveState.text)
+  // Phase A2: 使用三层记忆构建器生成完整上下文
+  const buildFullWorldCtx = async (taskType: MemoryTaskType = 'write') => {
+    // 情感节拍上下文
+    let emotionBeatCtx = ''
     if (currentChapter?.id) {
       const beatCtx = buildBeatContext(currentChapter.id)
-      if (beatCtx) parts.push(beatCtx)
+      if (beatCtx) emotionBeatCtx = beatCtx
     }
+
     // 引用手法注入（Phase 20）
+    let refCtx = ''
     try {
       const citedIds: number[] = JSON.parse(creativeRules?.citedReferenceIds || '[]')
       if (citedIds.length) {
-        const refCtx = await buildRefAnalysisContext(citedIds)
-        if (refCtx) parts.push(refCtx)
+        refCtx = await buildRefAnalysisContext(citedIds)
       }
     } catch { /* ignore */ }
+
+    // Phase B3: 注入故事线上下文
+    const storyArcCtx = buildStoryArcContext(currentChapter?.order)
+
+    // Phase C2: 伏笔上下文注入
+    const foreshadowCtx = currentChapter?.id ? buildForeshadowContext(currentChapter.id) : ''
+
+    const memory = await buildMemory({
+      taskType,
+      working: {
+        currentOutline: outlineNode ? { title: outlineNode.title, summary: outlineNode.summary } : null,
+        emotionBeatContext: emotionBeatCtx,
+        projectId: project.id!,
+        currentChapterOrder: currentChapter?.order ?? 0,
+      },
+      episodic: {
+        stateCards,
+        currentChapterId: currentChapter?.id,
+      },
+      semantic: {
+        worldContext: worldCtx,
+        characterContext: charCtx,
+        openForeshadows: foreshadowCtx || undefined,
+        storyArcContext: storyArcCtx || undefined,
+      },
+    })
+
+    console.log(`[MemoryBuilder] ${taskType} 模式 — W:${memory.stats.working} E:${memory.stats.episodic} S:${memory.stats.semantic} Total:${memory.stats.total}`)
+
+    // Phase E: 题材约束 + 写作风格注入
+    const genreCtx = buildGenreConstraintContext(project.genre)
+    const styleCtx = project.writingStyleId ? buildStylePromptInjection(project.writingStyleId) : ''
+
+    // 引用手法追加到末尾（不计入三层记忆预算）
+    const parts = [memory.fullContext]
+    if (genreCtx) parts.push(genreCtx)
+    if (styleCtx) parts.push(styleCtx)
+    if (refCtx) parts.push(refCtx)
     return parts.filter(Boolean).join('\n\n')
   }
 
@@ -151,8 +211,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     if (!outlineNode) return
     const prevChapter = chapters.filter(c => c.order < (currentChapter?.order || 0)).pop()
     const prevEnding = htmlToPlainText(prevChapter?.content || '').slice(-500)
-    const fullCtx = await buildFullWorldCtx()
-    console.log(`[ChapterEditor] 生成正文 — 注入 ${selectiveState.matchedIds.length}/${selectiveState.allIds.length} 张状态卡`)
+    const fullCtx = await buildFullWorldCtx('write')
     const messages = buildChapterContentPrompt(outlineNode.title, outlineNode.summary, fullCtx, charCtx, prevEnding)
     setAIAction('generate')
     ai.start(messages)
@@ -160,8 +219,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
   const handleContinue = async () => {
     if (!plainText || !outlineNode) return
-    const fullCtx = await buildFullWorldCtx()
-    console.log(`[ChapterEditor] 续写 — 注入 ${selectiveState.matchedIds.length}/${selectiveState.allIds.length} 张状态卡`)
+    const fullCtx = await buildFullWorldCtx('write')
     const messages = buildContinuePrompt(plainText, outlineNode.summary, fullCtx)
     setAIAction('continue')
     ai.start(messages)
@@ -224,9 +282,60 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     stateAI.reset()
   }
 
+  // ── Phase A3: 自动生成章节摘要 ──
+  const handleAutoSummary = async (text: string) => {
+    if (!currentChapter?.id) return
+    setAutoProcessing('summarizing')
+    try {
+      const chapterTitle = outlineNode?.title || currentChapter.title || '未知章节'
+      const messages = buildSummaryPrompt(chapterTitle, text)
+      console.log('[Summary] 自动生成章节摘要:', chapterTitle)
+      const raw = await summaryAI.start(messages)
+      if (raw) {
+        const summary = raw.trim()
+        await updateChapter(currentChapter.id, { summary })
+        console.log('[Summary] 摘要已保存:', summary.slice(0, 50) + '...')
+      }
+    } catch (err) {
+      console.error('[Summary] 摘要生成失败:', err)
+    } finally {
+      setAutoProcessing('idle')
+      summaryAI.reset()
+    }
+  }
+
+  // ── Phase A1: 生成正文完成后的自动流程 ──
+  // 接受AI生成的文本后，自动触发状态提取 → 摘要生成
+  const handleAutoPostGenerate = async (text: string) => {
+    // 1. 自动提取状态
+    setAutoProcessing('extracting')
+    try {
+      const stateCtx = buildStateContext()
+      const chapterTitle = outlineNode?.title || currentChapter?.title || '未知章节'
+      const messages = buildStateExtractPrompt(stateCtx, chapterTitle, text)
+      console.log('[AutoPost] 自动提取状态:', chapterTitle)
+      const raw = await stateAI.start(messages)
+      const { diffs, error } = parseStateDiffs(raw)
+      if (error) {
+        console.error('[AutoPost] 状态提取解析失败:', error)
+      }
+      if (diffs.length > 0) {
+        setPendingDiffs(diffs as StateDiffItem[])
+      } else {
+        console.log('[AutoPost] 本章无状态变更')
+      }
+    } catch (err) {
+      console.error('[AutoPost] 状态提取失败:', err)
+    }
+
+    // 2. 同时自动生成摘要（不等状态审核完成）
+    await handleAutoSummary(text)
+  }
+
   const handleAcceptAI = (text: string) => {
     if (!editorRef.current) return
     const html = plainTextToHtml(text)
+    const shouldAutoProcess = aiAction === 'generate' || aiAction === 'continue'
 
     if (aiAction === 'continue') {
       editorRef.current.appendContent(html)
@@ -242,6 +351,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     }
     ai.reset()
     setAIAction('')
+
+    // Phase A1: 生成/续写完成后自动触发状态提取 + 摘要生成
+    if (shouldAutoProcess) {
+      // 获取完整正文用于分析
+      const fullText = editorRef.current.getPlainText()
+      handleAutoPostGenerate(fullText)
+    }
   }
 
   // 没有选中章节
@@ -396,10 +512,80 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           <ClipboardList className="w-3 h-3" />
           {extracting ? '提取中...' : '提取状态'}
         </button>
+        {outlineNodeId && (
+          <button onClick={() => setShowOutlinePreview(!showOutlinePreview)}
+            title="大纲预览"
+            className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+              showOutlinePreview
+                ? 'bg-accent/10 text-accent'
+                : 'bg-bg-elevated text-text-secondary hover:text-text-primary'
+            }`}>
+            <BookOpenCheck className="w-3 h-3" />
+            大纲预览
+          </button>
+        )}
+        <button onClick={() => setShowReviewPanel(!showReviewPanel)}
+          disabled={!plainText}
+          title="质量审校"
+          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors disabled:opacity-50 ${
+            showReviewPanel
+              ? 'bg-success/10 text-success'
+              : 'bg-bg-elevated text-text-secondary hover:text-text-primary'
+          }`}>
+          <ShieldCheck className="w-3 h-3" />
+          质量审校
+        </button>
+        <button onClick={() => setShowNotePanel(!showNotePanel)}
+          title="便签"
+          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+            showNotePanel
+              ? 'bg-yellow-500/10 text-yellow-600'
+              : 'bg-bg-elevated text-text-secondary hover:text-text-primary'
+          }`}>
+          <StickyNote className="w-3 h-3" />
+          便签
+        </button>
         <CInput value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
           placeholder="自定义指令..."
           className="flex-1 min-w-[150px] px-2 py-1.5 bg-bg-surface border border-border rounded-md text-xs text-text-primary focus:outline-none focus:border-accent" />
       </div>
+
+      {/* D3: 大纲预览 */}
+      {showOutlinePreview && outlineNodeId && (
+        <div className="mb-3">
+          <OutlinePreview outlineNodeId={outlineNodeId} onClose={() => setShowOutlinePreview(false)} />
+        </div>
+      )}
+
+      {/* F: 质量审校面板 */}
+      {showReviewPanel && (
+        <div className="mb-3">
+          <ReviewPanel
+            chapterContent={plainText}
+            chapterTitle={outlineNode?.title || currentChapter?.title || ''}
+            worldContext={worldCtx}
+            characterContext={charCtx}
+            prevChapterSummary={(() => {
+              const prev = chapters.filter(c => c.order < (currentChapter?.order || 0)).pop()
+              return prev?.summary || ''
+            })()}
+            nextChapterSummary={(() => {
+              const next = chapters.filter(c => c.order > (currentChapter?.order || 0)).shift()
+              return next?.summary || ''
+            })()}
+            foreshadowContext={currentChapter?.id ? buildForeshadowContext(currentChapter.id) : ''}
+            stateContext={stateCards.slice(0, 10).map(sc => `${sc.category}:${sc.entityName} — ${sc.fields?.slice(0, 50)}`).join('\n')}
+            onClose={() => setShowReviewPanel(false)}
+          />
+        </div>
+      )}
+
+      {/* H3: 便签面板 */}
+      {showNotePanel && (
+        <div className="mb-3">
+          <NotePanel projectId={project.id!} chapterId={currentChapter?.id} onClose={() => setShowNotePanel(false)} />
+        </div>
+      )}
 
       {/* AI 输出 */}
       {/* A3: 情感节拍卡 */}
@@ -425,6 +611,25 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
               if (aiAction === 'generate') handleGenerate()
               else if (aiAction === 'continue') handleContinue()
             }} />
+        </div>
+      )}
+
+      {/* Phase A1/A3: 自动后处理状态指示 */}
+      {autoProcessing !== 'idle' && (
+        <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-emerald-400">
+            <ClipboardList className="w-3.5 h-3.5 animate-pulse" />
+            {autoProcessing === 'extracting' && '正在自动提取状态变更...'}
+            {autoProcessing === 'summarizing' && '正在自动生成章节摘要...'}
+          </div>
+        </div>
+      )}
+
+      {/* Phase A3: 章节摘要显示 */}
+      {currentChapter?.summary && (
+        <div className="mb-3 p-3 bg-bg-elevated border border-border rounded-lg">
+          <p className="text-xs text-text-muted mb-1">📝 章节摘要</p>
+          <p className="text-sm text-text-secondary">{currentChapter.summary}</p>
         </div>
       )}
 
@@ -461,6 +666,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           chapterTitle={outlineNode?.title || currentChapter.title || ''}
           onConfirm={handleAcceptDiffs}
           onCancel={() => { setPendingDiffs(null); stateAI.reset() }}
+          showSkip={autoProcessing !== 'idle'}
         />
       )}
     </div>

@@ -48,6 +48,8 @@ export interface Chapter {
   status: ChapterStatus
   order: number
   notes: string              // 作者笔记
+  /** Phase A3: 章节摘要（100-200字），用于三层记忆的 Working Memory */
+  summary?: string
   createdAt: number
   updatedAt: number
 }

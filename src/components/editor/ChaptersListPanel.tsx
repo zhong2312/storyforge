@@ -150,9 +150,14 @@ export default function ChaptersListPanel({ project, initialNodeId }: Props) {
                         <p className={`text-xs truncate ${active ? 'text-accent font-medium' : 'text-text-primary'}`}>
                           {ch.title}
                         </p>
-                        {wc > 0 && (
-                          <p className="text-[9px] text-text-muted">{wc.toLocaleString()} 字</p>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {wc > 0 && (
+                            <span className="text-[9px] text-text-muted">{wc.toLocaleString()} 字</span>
+                          )}
+                          {chRec?.summary && (
+                            <span className="text-[9px] text-accent/60" title={chRec.summary}>📝</span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   )

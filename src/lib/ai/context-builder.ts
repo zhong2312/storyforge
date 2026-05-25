@@ -50,6 +50,23 @@ export function buildCharacterContext(characters: Character[]): string {
   ).join('\n')
 }
 
+/**
+ * Phase G2: 过滤活跃角色
+ * 只保留在当前章节范围内活跃的角色（主角/反派始终保留）
+ */
+export function filterActiveCharacters(characters: Character[], currentChapterId?: number): Character[] {
+  if (!currentChapterId) return characters
+  return characters.filter(c => {
+    // 主角和反派始终保留
+    if (c.role === 'protagonist' || c.role === 'antagonist') return true
+    // 如果设了退场章节且当前章节已过退场点，过滤掉
+    if (c.exitChapterId && c.exitChapterId < currentChapterId) return false
+    // 如果设了首次出场且当前章节还没到，过滤掉
+    if (c.firstAppearChapterId && c.firstAppearChapterId > currentChapterId) return false
+    return true
+  })
+}
+
 function getRoleLabel(role: string): string {
   const map: Record<string, string> = {
     protagonist: '主角', antagonist: '反派',

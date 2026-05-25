@@ -27,6 +27,9 @@ export interface DetailedScene {
   notes: string               // 作者备注
 }
 
+/** 情绪走向 */
+export type EmotionArc = 'rising' | 'falling' | 'flat' | 'wave' | 'climax'
+
 /** 细纲表行 */
 export interface DetailedOutline {
   id?: number
@@ -35,6 +38,21 @@ export interface DetailedOutline {
   outlineNodeId: number
   /** 场景列表（按顺序） */
   scenes: DetailedScene[]
+
+  // ── Phase D2 新字段 ──────────────────────────────────────────
+  /** 开头衔接（从上一章结尾自然过渡） */
+  openingHook?: string
+  /** 结尾悬念 */
+  endingCliffhanger?: string
+  /** 本章主要场景地点 */
+  sceneLocation?: string
+  /** 出场角色 ID 列表 */
+  appearingCharacterIds?: number[]
+  /** 关联伏笔 ID 列表 */
+  foreshadowIds?: number[]
+  /** 情绪走向 */
+  emotionArc?: EmotionArc
+
   createdAt: number
   updatedAt: number
 }

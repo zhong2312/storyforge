@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Check, X, LayoutList } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Check, X, LayoutList, Layers, Loader2 } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useAIStream } from '../../hooks/useAIStream'
@@ -9,6 +9,7 @@ import {
   parseVolumeOutlineOutput, parseChapterOutlineOutput,
   type ParsedVolume, type ParsedChapter,
 } from '../../lib/ai/parse-outline-output'
+import { runBatchOutlineGeneration, type BatchOutlineProgress } from '../../lib/ai/batch-outline-runner'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
 import PanelLayout from '../shared/PanelLayout'
@@ -35,6 +36,12 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   // 采纳预览
   const [previewVolumes, setPreviewVolumes] = useState<ParsedVolume[] | null>(null)
   const [previewChapters, setPreviewChapters] = useState<ParsedChapter[] | null>(null)
+
+  // D1: 批量生成状态
+  const [batchProgress, setBatchProgress] = useState<BatchOutlineProgress | null>(null)
+  const [batchRunning, setBatchRunning] = useState(false)
+  const batchAbortRef = useRef<AbortController | null>(null)
+  const [batchResult, setBatchResult] = useState<Map<number, ParsedChapter[]> | null>(null)
 
   const ai = useAIStream()
 
@@ -133,6 +140,60 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     ai.start(messages)
   }
 
+  // ── D1: 批量生成 ──
+
+  const handleBatchGenerate = useCallback(async () => {
+    if (volumes.length === 0) return
+    setBatchRunning(true)
+    setBatchResult(null)
+    setBatchProgress(null)
+
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+
+    const worldCtx = buildWorldContext(worldview, storyCore, powerSystem)
+
+    try {
+      const result = await runBatchOutlineGeneration({
+        volumes,
+        worldContext: worldCtx,
+        userHint: hint || undefined,
+        signal: controller.signal,
+        onProgress: setBatchProgress,
+      })
+      if (!result.cancelled) {
+        setBatchResult(result.chaptersByVolume)
+      }
+    } catch (err) {
+      console.error('[BatchOutline] 失败:', err)
+    } finally {
+      setBatchRunning(false)
+      batchAbortRef.current = null
+    }
+  }, [volumes, worldview, storyCore, powerSystem, hint])
+
+  const handleBatchCancel = useCallback(() => {
+    batchAbortRef.current?.abort()
+    batchAbortRef.current = null
+    setBatchRunning(false)
+  }, [])
+
+  const handleBatchConfirm = useCallback(async () => {
+    if (!batchResult) return
+    for (const [volId, chapters] of batchResult) {
+      const existingCount = nodes.filter(n => n.parentId === volId && n.type === 'chapter').length
+      for (let i = 0; i < chapters.length; i++) {
+        await addNode({
+          projectId: project.id!, parentId: volId, type: 'chapter',
+          title: chapters[i].title, summary: chapters[i].summary,
+          order: existingCount + i,
+        })
+      }
+    }
+    setBatchResult(null)
+    setBatchProgress(null)
+  }, [batchResult, nodes, addNode, project.id])
+
   // ── 采纳预览 + 确认 ──
 
   const handlePreviewAccept = (text: string) => {
@@ -199,11 +260,61 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">
           <Plus className="w-3.5 h-3.5" /> 添加卷
         </button>
-        <button onClick={handleAIVolumes} disabled={ai.isStreaming}
+        <button onClick={handleAIVolumes} disabled={ai.isStreaming || batchRunning}
           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
           <Sparkles className="w-3.5 h-3.5" /> AI 生成卷级大纲
         </button>
+        {volumes.length >= 2 && (
+          <button onClick={handleBatchGenerate} disabled={ai.isStreaming || batchRunning}
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-bg-elevated text-accent rounded-md hover:bg-accent/10 border border-accent/30 disabled:opacity-50 transition-colors">
+            <Layers className="w-3.5 h-3.5" /> 批量生成所有章节
+          </button>
+        )}
       </div>
+
+      {/* 批量生成进度 */}
+      {(batchRunning || batchResult) && (
+        <div className="px-2 pb-2">
+          <div className="bg-bg-surface border border-border rounded-lg p-2 space-y-1.5">
+            {batchRunning && batchProgress && (
+              <>
+                <div className="flex items-center gap-1.5 text-xs text-accent">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{batchProgress.completedVolumes}/{batchProgress.totalVolumes} 卷</span>
+                </div>
+                <div className="w-full bg-border rounded-full h-1.5">
+                  <div
+                    className="bg-accent h-1.5 rounded-full transition-all"
+                    style={{ width: `${(batchProgress.completedVolumes / batchProgress.totalVolumes) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-text-muted truncate">{batchProgress.stage}</p>
+                <button onClick={handleBatchCancel}
+                  className="w-full px-2 py-1 text-[10px] text-error border border-error/30 rounded hover:bg-error/10 transition-colors">
+                  取消
+                </button>
+              </>
+            )}
+            {!batchRunning && batchResult && (
+              <>
+                <p className="text-xs text-success">
+                  批量生成完成：{Array.from(batchResult.values()).reduce((s, chs) => s + chs.length, 0)} 章
+                </p>
+                <div className="flex gap-1">
+                  <button onClick={handleBatchConfirm}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-accent text-white rounded hover:bg-accent-hover transition-colors">
+                    <Check className="w-3 h-3" /> 全部写入
+                  </button>
+                  <button onClick={() => { setBatchResult(null); setBatchProgress(null) }}
+                    className="px-2 py-1 text-[10px] text-text-muted border border-border rounded hover:text-text-primary transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 卷列表 */}
       <div className="flex-1 overflow-y-auto px-1">

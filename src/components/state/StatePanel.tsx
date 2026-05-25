@@ -2,10 +2,12 @@ import { CInput } from '../shared/CompositionInput'
 /**
  * 状态表面板 — 查看/编辑/管理所有实体状态卡
  * 支持：手动增删改、按分类筛选、AI 提取变更、导出状态表
+ * Phase A4: 新增事件时间线视图
  */
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Edit3, Download, Filter, Save, X } from 'lucide-react'
+import { Plus, Trash2, Edit3, Download, Filter, Save, X, Clock } from 'lucide-react'
 import { useStateCardStore } from '../../stores/state-card'
+import EventTimeline from './EventTimeline'
 import type { Project, StateCard, StateCategory, StateField } from '../../lib/types'
 import { STATE_CATEGORY_LABELS, parseFields, stringifyFields } from '../../lib/types/state-card'
 
@@ -23,11 +25,14 @@ const CATEGORY_COLORS: Record<StateCategory, string> = {
   event:     'bg-red-500/10 text-red-400',
 }
 
+type ViewMode = 'cards' | 'timeline'
+
 export default function StatePanel({ project }: Props) {
   const { cards, loading, loadAll, addCard, updateCard, deleteCard, buildStateContext } = useStateCardStore()
   const [filter, setFilter] = useState<StateCategory | 'all'>('all')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('cards')
 
   useEffect(() => {
     loadAll(project.id!).catch(err => {
@@ -78,6 +83,32 @@ export default function StatePanel({ project }: Props) {
         </div>
       </div>
 
+      {/* 视图切换 */}
+      <div className="flex gap-2 mb-4">
+        <div className="flex bg-bg-elevated rounded-lg p-0.5 border border-border">
+          <button
+            onClick={() => setViewMode('cards')}
+            className={`px-3 py-1 text-xs rounded transition-colors ${
+              viewMode === 'cards' ? 'bg-accent text-white' : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            📋 状态卡
+          </button>
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={`flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors ${
+              viewMode === 'timeline' ? 'bg-accent text-white' : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <Clock className="w-3 h-3" /> 事件线
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'timeline' ? (
+        <EventTimeline projectId={project.id!} />
+      ) : (
+      <>
       {/* 分类筛选 */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <button onClick={() => setFilter('all')}
@@ -150,6 +181,8 @@ export default function StatePanel({ project }: Props) {
             />
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   )

@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Sparkles, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Sparkles, ChevronRight, Wand2 } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useDetailedOutlineStore } from '../../stores/detailed-outline'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useCharacterStore } from '../../stores/character'
+import { useForeshadowStore } from '../../stores/foreshadow'
 import { useAIStream } from '../../hooks/useAIStream'
-import { buildDetailSceneGeneratePrompt } from '../../lib/ai/adapters/detail-scene-adapter'
+import { buildDetailSceneGeneratePrompt, buildEnhancedDetailPrompt, parseEnhancedDetailResult } from '../../lib/ai/adapters/detail-scene-adapter'
 import { buildWorldContext, buildCharacterContext } from '../../lib/ai/context-builder'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import { nanoid } from '../../lib/utils/id'
-import type { Project, DetailedScene, ScenePace } from '../../lib/types'
+import type { Project, DetailedScene, ScenePace, EmotionArc } from '../../lib/types'
 
 interface Props {
   project: Project
@@ -29,20 +30,31 @@ const PACE_COLORS: Record<ScenePace, string> = {
   climax: 'bg-error/10 text-error',
 }
 
+const EMOTION_LABELS: Record<EmotionArc, string> = {
+  rising:  '📈 升温',
+  falling: '📉 降温',
+  flat:    '➡️ 平稳',
+  wave:    '🌊 波动',
+  climax:  '⚡ 高潮',
+}
+
 /** v3 §2.1 — 创作区.细纲（场景拆分 + AI） */
 export default function DetailedOutlinePanel({ project }: Props) {
   const { nodes, loadAll: loadOutline } = useOutlineStore()
   const { detailedOutlines, loadAll: loadDetailed, getOrCreate, save } = useDetailedOutlineStore()
   const { worldview, storyCore } = useWorldviewStore()
   const { characters } = useCharacterStore()
+  const { foreshadows, loadAll: loadForeshadows } = useForeshadowStore()
   const ai = useAIStream()
+  const enhanceAI = useAIStream()
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null)
 
   useEffect(() => {
     loadOutline(project.id!)
     loadDetailed(project.id!)
-  }, [project.id, loadOutline, loadDetailed])
+    loadForeshadows(project.id!)
+  }, [project.id, loadOutline, loadDetailed, loadForeshadows])
 
   // 章节节点列表（按 order 排序）
   const chapterNodes = useMemo(() =>
@@ -100,6 +112,70 @@ export default function DetailedOutlinePanel({ project }: Props) {
       '',
     )
     ai.start(messages)
+  }
+
+  // D2: 完善细纲
+  const handleEnhancedGenerate = () => {
+    if (!currentChapter) return
+    const idx = chapterNodes.indexOf(currentChapter)
+    const prevSummary = idx > 0 ? (chapterNodes[idx - 1].summary || '') : ''
+    const nextSummary = idx < chapterNodes.length - 1 ? (chapterNodes[idx + 1].summary || '') : ''
+    const worldCtx = buildWorldContext(worldview, storyCore, null)
+
+    const charCtx = characters
+      .filter(c => c.role === 'protagonist' || c.role === 'supporting')
+      .map(c => `[ID:${c.id}] ${c.name}（${c.role}）`)
+      .join('\n')
+
+    const foreshadowCtx = foreshadows
+      .filter(f => f.status !== 'resolved')
+      .map(f => `[ID:${f.id}] ${f.name}（${f.type}）：${f.description}`)
+      .join('\n')
+
+    const messages = buildEnhancedDetailPrompt(
+      currentChapter.title,
+      currentChapter.summary || '',
+      prevSummary, nextSummary,
+      worldCtx, charCtx, foreshadowCtx,
+    )
+    enhanceAI.start(messages)
+  }
+
+  const handleAcceptEnhanced = async (text: string) => {
+    const parsed = parseEnhancedDetailResult(text)
+    if (!parsed) {
+      alert('解析增强细纲失败，请重试')
+      return
+    }
+    const dt = await ensureDetailed()
+    if (!dt?.id) return
+
+    const patch: Record<string, unknown> = {}
+    if (parsed.openingHook) patch.openingHook = parsed.openingHook
+    if (parsed.endingCliffhanger) patch.endingCliffhanger = parsed.endingCliffhanger
+    if (parsed.sceneLocation) patch.sceneLocation = parsed.sceneLocation
+    if (parsed.emotionArc) patch.emotionArc = parsed.emotionArc
+    if (parsed.appearingCharacterIds) patch.appearingCharacterIds = parsed.appearingCharacterIds
+    if (parsed.foreshadowIds) patch.foreshadowIds = parsed.foreshadowIds
+
+    // 如果 AI 返回了场景，也写入
+    if (parsed.scenes && parsed.scenes.length > 0) {
+      const newScenes: DetailedScene[] = parsed.scenes.map(s => ({
+        sceneId: nanoid(),
+        title: s.title,
+        summary: s.summary,
+        characterIds: s.characterIds || [],
+        location: s.location || '',
+        conflict: s.conflict || '',
+        pace: (s.pace || 'medium') as ScenePace,
+        estimatedWords: s.estimatedWords || 0,
+        notes: '',
+      }))
+      patch.scenes = newScenes
+    }
+
+    await save(dt.id, patch)
+    enhanceAI.reset()
   }
 
   const totalWords = currentDetailed?.scenes.reduce((s, sc) => s + (sc.estimatedWords || 0), 0) ?? 0
@@ -167,10 +243,17 @@ export default function DetailedOutlinePanel({ project }: Props) {
               </button>
               <button
                 onClick={handleAIGenerate}
-                disabled={ai.isStreaming}
+                disabled={ai.isStreaming || enhanceAI.isStreaming}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent text-sm rounded hover:bg-accent/20 disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" /> AI 一键拆场景
+              </button>
+              <button
+                onClick={handleEnhancedGenerate}
+                disabled={ai.isStreaming || enhanceAI.isStreaming}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-success/10 text-success text-sm rounded hover:bg-success/20 disabled:opacity-50"
+              >
+                <Wand2 className="w-4 h-4" /> 完善细纲
               </button>
             </div>
 
@@ -203,6 +286,55 @@ export default function DetailedOutlinePanel({ project }: Props) {
                   }}
                   onRetry={handleAIGenerate}
                 />
+              </div>
+            )}
+
+            {/* 完善细纲 AI 输出 */}
+            {(enhanceAI.output || enhanceAI.isStreaming || enhanceAI.error) && (
+              <div className="mb-4">
+                <AIStreamOutput
+                  output={enhanceAI.output} isStreaming={enhanceAI.isStreaming} error={enhanceAI.error} tokenUsage={enhanceAI.tokenUsage}
+                  onStop={enhanceAI.stop}
+                  onAccept={handleAcceptEnhanced}
+                  onRetry={handleEnhancedGenerate}
+                />
+              </div>
+            )}
+
+            {/* D2: 增强字段展示 */}
+            {currentDetailed && (currentDetailed.openingHook || currentDetailed.endingCliffhanger || currentDetailed.emotionArc) && (
+              <div className="mb-4 bg-bg-surface border border-border rounded-xl p-3 space-y-2">
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide">章节细纲增强信息</h3>
+                {currentDetailed.openingHook && (
+                  <div>
+                    <span className="text-[10px] text-text-muted">🔗 开头衔接</span>
+                    <p className="text-xs text-text-primary mt-0.5">{currentDetailed.openingHook}</p>
+                  </div>
+                )}
+                {currentDetailed.endingCliffhanger && (
+                  <div>
+                    <span className="text-[10px] text-text-muted">🎣 结尾悬念</span>
+                    <p className="text-xs text-text-primary mt-0.5">{currentDetailed.endingCliffhanger}</p>
+                  </div>
+                )}
+                <div className="flex items-center gap-4 text-xs">
+                  {currentDetailed.sceneLocation && (
+                    <span className="text-text-secondary">📍 {currentDetailed.sceneLocation}</span>
+                  )}
+                  {currentDetailed.emotionArc && (
+                    <span className="text-text-secondary">{EMOTION_LABELS[currentDetailed.emotionArc] || currentDetailed.emotionArc}</span>
+                  )}
+                  {currentDetailed.appearingCharacterIds && currentDetailed.appearingCharacterIds.length > 0 && (
+                    <span className="text-text-secondary">
+                      👥 {currentDetailed.appearingCharacterIds.length} 个角色
+                    </span>
+                  )}
+                  {currentDetailed.foreshadowIds && currentDetailed.foreshadowIds.length > 0 && (
+                    <span className="text-text-secondary">
+                      🔮 {currentDetailed.foreshadowIds.length} 个伏笔
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
