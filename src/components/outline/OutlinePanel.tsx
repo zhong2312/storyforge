@@ -160,12 +160,20 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     batchAbortRef.current = controller
 
     const worldCtx = buildWorldContext(worldview, storyCore, powerSystem)
+    const charCtx = buildCharacterContext(characters)
+    // Phase 31: 历史模式
+    const histCtx = project.creativeMode === 'historical'
+      ? await buildHistoricalContext(project.id!)
+      : ''
 
     try {
       const result = await runBatchOutlineGeneration({
         volumes,
         worldContext: worldCtx,
         userHint: hint || undefined,
+        characterContext: charCtx,
+        historicalContext: histCtx,
+        creativeMode: project.creativeMode,
         signal: controller.signal,
         onProgress: setBatchProgress,
       })

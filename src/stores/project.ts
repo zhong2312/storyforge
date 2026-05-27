@@ -56,29 +56,57 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   deleteProject: async (id: number) => {
-    // 删除项目及所有关联数据
+    // 先收集子表外键 ID（需在主表删除前查询）
+    const refIds = await db.references.where('projectId').equals(id).primaryKeys()
+    const workIds = await db.masterWorks.where('projectId').equals(id).primaryKeys()
+
+    // 删除项目及所有关联数据（Phase 29-fix: 补全所有 projectId 表）
     await db.transaction('rw', [
       db.projects, db.worldviews, db.storyCores, db.powerSystems,
       db.characters, db.factions, db.outlineNodes, db.chapters, db.foreshadows,
       db.geographies, db.histories, db.itemSystems, db.creativeRules,
       db.characterRelations, db.snapshots, db.references,
+      db.detailedOutlines, db.emotionBeatCards, db.stateCards,
+      db.storyArcs, db.worldNodes, db.notes,
+      db.historicalTimelineEvents, db.historicalKeywords,
+      db.masterWorks, db.importSessions,
+      db.referenceChunkAnalysis, db.masterChunkAnalysis,
+      db.masterChapterBeats, db.masterStyleMetrics,
     ], async () => {
+      // 子表先删（依赖外键）
+      if (refIds.length) await db.referenceChunkAnalysis.where('referenceId').anyOf(refIds).delete()
+      if (workIds.length) {
+        await db.masterChunkAnalysis.where('workId').anyOf(workIds).delete()
+        await db.masterChapterBeats.where('workId').anyOf(workIds).delete()
+        await db.masterStyleMetrics.where('workId').anyOf(workIds).delete()
+      }
+      // 主表删除
       await db.projects.delete(id)
       await db.worldviews.where('projectId').equals(id).delete()
       await db.storyCores.where('projectId').equals(id).delete()
       await db.powerSystems.where('projectId').equals(id).delete()
       await db.characters.where('projectId').equals(id).delete()
       await db.factions.where('projectId').equals(id).delete()
-      await db.outlineNodes.where('projectId').equals(id).delete()
-      await db.chapters.where('projectId').equals(id).delete()
-      await db.foreshadows.where('projectId').equals(id).delete()
       await db.geographies.where('projectId').equals(id).delete()
       await db.histories.where('projectId').equals(id).delete()
       await db.itemSystems.where('projectId').equals(id).delete()
-      await db.creativeRules.where('projectId').equals(id).delete()
       await db.characterRelations.where('projectId').equals(id).delete()
-      await db.snapshots.where('projectId').equals(id).delete()
+      await db.worldNodes.where('projectId').equals(id).delete()
+      await db.historicalTimelineEvents.where('projectId').equals(id).delete()
+      await db.historicalKeywords.where('projectId').equals(id).delete()
+      await db.outlineNodes.where('projectId').equals(id).delete()
+      await db.chapters.where('projectId').equals(id).delete()
+      await db.detailedOutlines.where('projectId').equals(id).delete()
+      await db.emotionBeatCards.where('projectId').equals(id).delete()
+      await db.stateCards.where('projectId').equals(id).delete()
+      await db.storyArcs.where('projectId').equals(id).delete()
+      await db.foreshadows.where('projectId').equals(id).delete()
+      await db.creativeRules.where('projectId').equals(id).delete()
+      await db.notes.where('projectId').equals(id).delete()
       await db.references.where('projectId').equals(id).delete()
+      await db.masterWorks.where('projectId').equals(id).delete()
+      await db.snapshots.where('projectId').equals(id).delete()
+      await db.importSessions.where('projectId').equals(id).delete()
     })
     if (get().currentProjectId === id) {
       set({ currentProjectId: null })

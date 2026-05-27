@@ -41,6 +41,12 @@ export interface BatchOutlineOptions {
   worldContext: string
   /** 用户补充说明 */
   userHint?: string
+  /** 角色上下文 */
+  characterContext?: string
+  /** 历史上下文（Phase 31） */
+  historicalContext?: string
+  /** 创作模式（Phase 31） */
+  creativeMode?: string
   /** 进度回调 */
   onProgress?: (progress: BatchOutlineProgress) => void
   /** 取消信号 */
@@ -55,7 +61,7 @@ export interface BatchOutlineOptions {
 export async function runBatchOutlineGeneration(
   options: BatchOutlineOptions,
 ): Promise<BatchOutlineResult> {
-  const { volumes, worldContext, userHint, onProgress, signal } = options
+  const { volumes, worldContext, userHint, characterContext, historicalContext, creativeMode, onProgress, signal } = options
   const config = useAIConfigStore.getState().config
   const chaptersByVolume = new Map<number, ParsedChapter[]>()
   const startTime = Date.now()
@@ -90,6 +96,10 @@ export async function runBatchOutlineGeneration(
       worldContext,
       prevSummary,
       userHint,
+      undefined, // options
+      characterContext,
+      historicalContext,
+      creativeMode,
     )
 
     try {
