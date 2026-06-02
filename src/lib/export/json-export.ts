@@ -10,7 +10,7 @@ import type {
   HistoricalTimelineEvent, HistoricalKeyword,
   MasterWork, MasterChunkAnalysis, MasterChapterBeat,
   MasterStyleMetrics, MasterInsight,
-  WorldGroup, WorldGroupLink, ItemLedgerEntry,
+  WorldGroup, WorldGroupLink, ItemLedgerEntry, StoryTimelineEvent,
 } from '../types'
 
 /**
@@ -77,6 +77,8 @@ export interface ProjectExportData {
 
   // ── v3: 物品流水（Phase 25.5.2-b，chapterId 可空）──
   itemLedger?: (Omit<ItemLedgerEntry, 'id' | 'projectId' | 'chapterId'> & { _chapterExportId: number | null })[]
+  // ── v3: 故事进程年表（Phase 25.5.2-a，chapterId 可空）──
+  storyTimelineEvents?: (Omit<StoryTimelineEvent, 'id' | 'projectId' | 'chapterId'> & { _chapterExportId: number | null })[]
 }
 
 /** 导出项目为 JSON */
@@ -96,7 +98,7 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
     refs, historicalTimelineEvents, historicalKeywords,
     masterWorks, masterInsights,
     // v3
-    worldGroups, worldGroupLinks, itemLedger,
+    worldGroups, worldGroupLinks, itemLedger, storyTimelineEvents,
   ] = await Promise.all([
     db.worldviews.where('projectId').equals(projectId).toArray(),
     db.storyCores.where('projectId').equals(projectId).toArray(),
@@ -130,6 +132,8 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
     db.worldGroupLinks.where('projectId').equals(projectId).toArray(),
     // v3: 物品流水
     db.itemLedger.where('projectId').equals(projectId).toArray(),
+    // v3: 故事进程年表
+    db.storyTimelineEvents.where('projectId').equals(projectId).toArray(),
   ])
 
   // ── 构建 ID 映射 ──
@@ -284,6 +288,10 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
       _toGroupExportId: worldGroupIdMap.get(toGroupId) ?? 0,
     })),
     itemLedger: itemLedger.map(({ id: _, projectId: _p, chapterId, ...rest }) => ({
+      ...rest,
+      _chapterExportId: chapterId != null ? (chapterIdMap.get(chapterId) ?? null) : null,
+    })),
+    storyTimelineEvents: storyTimelineEvents.map(({ id: _, projectId: _p, chapterId, ...rest }) => ({
       ...rest,
       _chapterExportId: chapterId != null ? (chapterIdMap.get(chapterId) ?? null) : null,
     })),
@@ -581,6 +589,17 @@ export async function importProjectJSON(data: ProjectExportData): Promise<number
       projectId: newProjectId,
       chapterId: newChapterId,
     } as ItemLedgerEntry)
+  }
+
+  // 26.6 故事进程年表（v3，chapterId 重映射）
+  for (const e of data.storyTimelineEvents || []) {
+    const { _chapterExportId, ...rest } = e
+    const newChapterId = _chapterExportId != null ? (newChapterIds.get(_chapterExportId) ?? null) : null
+    await db.storyTimelineEvents.add({
+      ...rest,
+      projectId: newProjectId,
+      chapterId: newChapterId,
+    } as StoryTimelineEvent)
   }
 
   // 27. 重映射所有 worldGroupId 引用

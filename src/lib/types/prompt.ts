@@ -50,6 +50,8 @@ export type PromptModuleKey =
   | 'world-group.expand'
   // —— Phase 25.5.2-b 物品栏 ——
   | 'inventory.extract'
+  // —— Phase 25.5.2-a 故事进程年表 ——
+  | 'story-timeline.extract'
   // —— Phase 19 作品学习 ——
   | 'master.analyze-chunk'
   | 'master.extract-beats'

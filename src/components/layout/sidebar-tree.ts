@@ -5,7 +5,7 @@ import {
   Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
   Map, ClipboardList, GitBranch, Clock, Gem, MapPin, Scale,
-  Drama, Package,
+  Drama, Package, CalendarClock,
 } from 'lucide-react'
 
 /**
@@ -62,6 +62,9 @@ export type SidebarModule =
 
   // 物品栏（Phase 25.5.2-b）
   | 'inventory'
+
+  // 故事进程年表（Phase 25.5.2-a）
+  | 'story-timeline'
 
   // 全局故事线（Phase B）
   | 'story-arc'
@@ -167,6 +170,7 @@ export const NAV_TREE: TreeSection[] = [
       leaf('locations',        '重要地点', MapPin),
       leaf('state-table',      '状态表',   ClipboardList),
       leaf('inventory',        '物品栏',   Package),
+      leaf('story-timeline',   '故事年表', CalendarClock),
     ],
   },
   // 作品学习已整合进「项目参考 → 深度分析」tab（Phase 20）
