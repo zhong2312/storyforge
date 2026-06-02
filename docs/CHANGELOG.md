@@ -6,6 +6,31 @@
 
 ## 2026-06-02
 
+### Phase 25.5 — 多世界补完 + 下游提取产物
+
+**来源**：多世界系统讨论延伸
+
+- **多世界历史年表**：历史年表支持多世界，用标签切换（每个世界一个标签 + 「一览」并排对比），不是下拉藏内容
+- **故事进程年表（新）**：AI 从已写正文提取剧情大事，按故事进程排成时间轴。与「历史年表（世界背景）」「故事线（结构）」区分。带故事内时间、重要度分级
+- **游戏包裹式物品栏（新）**：道具追踪升级为游戏包裹——主角在正文里获得/消耗物品，AI 自动提取，统计当前持有数量 + 获得/消耗历程
+- **多世界版灵感反推**：写带多世界意图的灵感，AI 顺思路反推故事主线 + 多个世界 + 角色，一键创建。字段严格对齐，确保正确落框
+- **世界关系流向图**：4 种自适应布局（横向流程/中心辐射/纵向阶梯/树状分支），智能默认 + 手动切换，纯 SVG 可视化世界间传送门/飞升通道
+- **地图打通**：每个世界有独立的世界树和地图，切换世界整套地图跟随；地图 AI 生成读当前世界的地理设定
+
+**新增文件**：
+| 文件 | 说明 |
+|------|------|
+| `src/lib/types/{item-ledger,story-timeline}.ts` | 物品流水 / 故事年表类型 |
+| `src/stores/{item-ledger,story-timeline}.ts` | 对应 store |
+| `src/lib/ai/adapters/{inventory-extract,story-timeline}-adapter.ts` | AI 提取适配器 |
+| `src/components/items/InventoryPanel.tsx` | 物品栏面板 |
+| `src/components/timeline/StoryTimelinePanel.tsx` | 故事年表面板 |
+| `src/components/world-group/WorldRelationGraph.tsx` | 世界关系流向图 |
+
+**主要修改**：DB v23（itemLedger）+ v24（storyTimelineEvents）；历史类型加 worldGroupId；HistoryPanel 世界标签；InspirationPanel 多世界分支；WorldMapPanel/world-node store 按世界隔离；prompt-seeds 新增 4 个 seed；导入导出 + 级联删除全部补齐。
+
+---
+
 ### Phase 25.4 — 多世界系统
 
 **来源**：产品规划（诸天流/无限流/快穿/修仙多界等多世界题材支持）
