@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Square, Check, RotateCcw, Loader2, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { Square, Check, RotateCcw, Loader2, ThumbsUp, ThumbsDown, Braces, ChevronDown, ChevronRight } from 'lucide-react'
 import { usePromptStore } from '../../stores/prompt'
 import type { PromptModuleKey, PromptExample } from '../../lib/types/prompt'
 import type { TokenUsage } from '../../lib/ai/logger'
@@ -42,6 +42,13 @@ export default function AIStreamOutput({
 }: AIStreamOutputProps) {
   const hasOutput = output.length > 0
   const [marked, setMarked] = useState<'good' | 'bad' | null>(null)
+  const [showRaw, setShowRaw] = useState(false)
+
+  // 检测是否结构化输出（JSON）——这类内容是给程序解析的，不该让用户直接读原始 JSON
+  const trimmed = output.trimStart()
+  const isStructured = hasOutput && (
+    trimmed.startsWith('{') || trimmed.startsWith('[') || /^```(?:json)?\s*[[{]/.test(trimmed)
+  )
 
   /** 把当前输出存为模板的好/坏示例 */
   const handleMark = async (kind: 'good' | 'bad') => {
@@ -88,6 +95,30 @@ export default function AIStreamOutput({
               <p className="mt-2 text-xs text-warning bg-warning/5 p-2 rounded">
                 💡 请在「设置」中检查 API Key 是否正确填写
               </p>
+            )}
+          </div>
+        ) : isStructured ? (
+          // 结构化（JSON）输出：不直接展示原始 JSON，给友好提示 + 可折叠原文
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <Braces className="w-4 h-4 text-accent shrink-0" />
+              {isStreaming ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI 正在生成结构化内容…（完成后点「采纳」自动整理为可编辑内容）
+                </span>
+              ) : (
+                <span>✓ 已生成结构化内容，点「采纳」自动整理填入对应栏目。</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowRaw(v => !v)}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-text-secondary transition-colors"
+            >
+              {showRaw ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              {showRaw ? '收起原始数据' : '查看原始数据'}
+            </button>
+            {showRaw && (
+              <pre className="text-xs text-text-muted bg-bg-base/50 rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-60">{output}</pre>
             )}
           </div>
         ) : hasOutput ? (
