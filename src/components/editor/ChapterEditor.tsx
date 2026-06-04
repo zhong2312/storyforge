@@ -13,7 +13,7 @@ import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { buildChapterContentPrompt, buildContinuePrompt, buildPolishPrompt, buildExpandPrompt, buildDeAIPrompt } from '../../lib/ai/adapters/chapter-adapter'
 import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
 import { buildSummaryPrompt } from '../../lib/ai/adapters/summary-adapter'
-import { buildWorldContext, buildCharacterContext, filterActiveCharacters, getContextMemo, buildRefAnalysisContext, buildMasterInsightContext } from '../../lib/ai/context-builder'
+import { buildWorldContext, buildCharacterContext, filterActiveCharacters, getContextMemo, buildRefAnalysisContext, buildMasterInsightContext, buildCreativeRulesContext } from '../../lib/ai/context-builder'
 import { buildCurrentWorldContext } from '../../lib/ai/world-group-context'
 import { buildCodexContext } from '../../lib/ai/codex-context'
 import { buildGenreConstraintContext } from '../../lib/ai/genre-metadata'
@@ -255,9 +255,12 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     // Phase E: 题材约束 + 写作风格注入
     const genreCtx = buildGenreConstraintContext(project.genre)
     const styleCtx = project.writingStyleId ? buildStylePromptInjection(project.writingStyleId) : ''
+    // 创作规则注入（写作风格/视角/基调/禁忌/一致性——此前从不进入 prompt）
+    const rulesCtx = buildCreativeRulesContext(creativeRules)
 
     // 引用手法追加到末尾（不计入三层记忆预算）
     const parts = [memory.fullContext]
+    if (rulesCtx) parts.push(rulesCtx)
     if (genreCtx) parts.push(genreCtx)
     if (styleCtx) parts.push(styleCtx)
     if (refCtx) parts.push(refCtx)
@@ -283,7 +286,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     setContextBudget(calculateBudget(aiConfig.provider, aiConfig.model, segments))
 
     setAIAction('generate')
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'chapter.content', projectId: project.id! })
   }
 
   const handleContinue = async () => {
@@ -291,7 +294,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     const fullCtx = await buildFullWorldCtx('write')
     const messages = buildContinuePrompt(plainText, outlineNode.summary, fullCtx)
     setAIAction('continue')
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'chapter.continue', projectId: project.id! })
   }
 
   const handlePolish = () => {
@@ -299,7 +302,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     if (!selected) return
     const messages = buildPolishPrompt(selected, customInstruction || '优化文笔，使表达更生动')
     setAIAction('polish')
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'chapter.polish', projectId: project.id! })
   }
 
   const handleExpand = () => {
@@ -307,7 +310,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     if (!selected) return
     const messages = buildExpandPrompt(selected)
     setAIAction('expand')
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'chapter.expand', projectId: project.id! })
   }
 
   const handleDeAI = () => {
@@ -315,7 +318,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     if (!selected) return
     const messages = buildDeAIPrompt(selected)
     setAIAction('deai')
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'chapter.deai', projectId: project.id! })
   }
 
   // ── 状态提取 ──
@@ -327,7 +330,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       const chapterTitle = outlineNode?.title || currentChapter.title || '未知章节'
       const messages = buildStateExtractPrompt(stateCtx, chapterTitle, plainText)
       console.log('[StateExtract] 开始提取，章节:', chapterTitle)
-      const raw = await stateAI.start(messages)
+      const raw = await stateAI.start(messages, undefined, { category: 'state.extract', projectId: project.id! })
       const { diffs, error } = parseStateDiffs(raw)
       if (error) {
         console.error('[StateExtract] 解析失败:', error)
@@ -359,7 +362,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       const chapterTitle = outlineNode?.title || currentChapter.title || '未知章节'
       const messages = buildSummaryPrompt(chapterTitle, text)
       console.log('[Summary] 自动生成章节摘要:', chapterTitle)
-      const raw = await summaryAI.start(messages)
+      const raw = await summaryAI.start(messages, undefined, { category: 'summary', projectId: project.id! })
       if (raw) {
         const summary = raw.trim()
         await updateChapter(currentChapter.id, { summary })
@@ -383,7 +386,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       const chapterTitle = outlineNode?.title || currentChapter?.title || '未知章节'
       const messages = buildStateExtractPrompt(stateCtx, chapterTitle, text)
       console.log('[AutoPost] 自动提取状态:', chapterTitle)
-      const raw = await stateAI.start(messages)
+      const raw = await stateAI.start(messages, undefined, { category: 'state.extract', projectId: project.id! })
       const { diffs, error } = parseStateDiffs(raw)
       if (error) {
         console.error('[AutoPost] 状态提取解析失败:', error)

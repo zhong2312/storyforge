@@ -25,6 +25,7 @@
 
 | 区 | 标签 | 性质 | 主要存储表 | 主 store |
 |----|------|------|-----------|---------|
+| 设置区 | **消耗统计** | ⚙️系统(下游) | `aiUsageLog` | ai-usage |
 | 著作信息 | 项目概况 | 元数据 | `projects` | project |
 | 著作信息 | 灵感反推 | 🛠️工具(反向) | （写回 worldview/storyCore/characters） | inspiration→worldview/character |
 | 著作信息 | 项目参考 | 🛠️工具(分析) | `references` / `referenceChunkAnalysis` | reference |
@@ -133,6 +134,16 @@
 - **力量**：`worldview.powerHierarchy`(字段) + `powerSystems`(表) + 未来「修炼体系」。
 - 现状：世界地图仍读旧 `factionLayout`，词条尚未供它读 → **不贯通点**。（Phase 35-b 合并后消除）
 
+### 🔴 F. 「半截改版」读写错位全项目扫描结果（2026-06-04）
+
+> 按「面板写的字段 ≠ AI 读的字段 / 上下文漏注入」逐项排查，发现并修复三处：
+
+1. ✅ **世界观（单世界）**：`buildWorldContext` 原读 v2（summary/geography/society/rules），面板写 v3 且 summary 已无人写 → 单世界世界观喂不进 AI。已改读 v3。
+2. ✅ **故事核心（多世界）**：`buildCurrentWorldContext` 原不读 storyCore → 多世界写作缺主题/冲突/主线。已补注入。
+3. ✅ **创作规则（全模式）**：creativeRules（写作风格/视角/基调/禁忌/一致性/特殊要求）**从不进入任何生成 prompt**（只有 citedIds + 题材预设被用）→ 整张创作规则表对 AI 无效。已新增 `buildCreativeRulesContext` 并注入章节正文生成。
+
+> 这些全是「两条读取路径各读各的 + 加字段不收口」导致的漂移，正是统一读取层 R-1 要根治的；R-1 完成后此类不可能再发生。
+
 ### 🟠 D. 旧/新字段双轨（v2/v3）—— 单世界读取已修，双轨待清
 
 - worldview 有 v2 旧字段(`geography/society/rules/summary`) 与 v3 新字段(`worldOrigin/…`) 并存。
@@ -142,6 +153,20 @@
 ### 🟡 E. 部分下游未回流上游
 
 - 状态表/物品栏/故事年表是纯产物，默认不回流写作上下文（设计如此）；但「主角当前境界/位置」若能回流可防境界倒退（Phase 34 规划）。属可选增强，非 bug。
+
+---
+
+## 三-bis、AI 消耗统计（已实现 2026-06-04）
+
+> 设置区新增「消耗统计」页。在 AI 调用唯一出口（`client.ts` 的 `streamChat/chat`）记录每次用量，持久化到 `aiUsageLog`（DB v26）。
+
+- **字段**：`timestamp`（年月日时分秒）、`category`（消耗类型，来自 moduleKey，如 chapter.content → 正文生成）、`model`、`inputTokens`、`outputTokens`、`costUsd`。
+- **AI 读**：无（这是纯下游产物，记录 AI 行为本身）。
+- **生成 → 写回**：每次 AI 调用拿到 provider 返回的 usage → 计算费用 → 写 `aiUsageLog`。
+- **消耗类型分类**：`usage-log.ts` 的 `categoryMeta` 把 moduleKey 映射为友好标签 + 配色（正文生成/世界观生成/主角状态提取/大纲生成/角色生成/…/其他）。已在 ChapterEditor、Outline、Worldview-StoryCore、CreativeRules、Character 等高频入口打标；其余默认「其他」，随 R-1 统一执行层补全。
+- **费用**：`usage-log.ts` 的 `MODEL_PRICING`（每 1M token 美元单价，按模型名匹配，估算）× token；美元→人民币汇率可在页面调整（`localStorage`）。
+- **页面**：时间 / 类型标签 / 模型 / 输入 / 输出 / 花费（美元在上、人民币在下）；顶部汇总总输入/输出/总花费；支持「仅当前项目」筛选、调汇率、清空。
+- **关键文件**：`lib/ai/usage-log.ts`、`stores/ai-usage.ts`、`components/settings/UsageStatsPage.tsx`、`lib/ai/client.ts`（埋点）、`hooks/useAIStream.ts`（透传 category）。
 
 ---
 

@@ -138,7 +138,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     // Phase 32: 世界规则清单注入
     const rulesCtx = await buildWorldRulesContext(project.id!)
     const messages = buildVolumeOutlinePrompt(project.name, project.genre, worldCtx, scCtx, project.targetWordCount || 500000, hint, buildOpts(), charCtx, rulesCtx)
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'outline.volume', projectId: project.id! })
   }
 
   const handleAIChapters = async () => {
@@ -163,7 +163,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     // Phase 32: 世界规则清单注入
     const rulesCtx = await buildWorldRulesContext(project.id!)
     const messages = buildChapterOutlinePrompt(selectedVol.title, selectedVol.summary, worldCtx, prevSummary, hint, buildOpts(), charCtx, rulesCtx)
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'outline.chapter', projectId: project.id! })
   }
 
   // ── D1: 批量生成 ──

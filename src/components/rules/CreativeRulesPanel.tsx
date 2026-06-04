@@ -78,7 +78,7 @@ export default function CreativeRulesPanel({ project }: Props) {
       worldview?.summary || worldview?.worldOrigin?.slice(0, 200) || '',
       storyCore?.theme || storyCore?.centralConflict || '',
     )
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'rules.generate', projectId: project.id! })
   }
 
   const acceptAi = (text: string) => {

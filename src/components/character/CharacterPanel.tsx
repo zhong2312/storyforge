@@ -121,7 +121,7 @@ export default function CharacterPanel({ project }: Props) {
       } : undefined,
     }
     const messages = buildCharacterPrompt(project.name, project.genre ?? '', worldCtx, existing, enrichedHint, opts)
-    ai.start(messages)
+    ai.start(messages, undefined, { category: 'character.generate', projectId: project.id! })
   }
 
   return (

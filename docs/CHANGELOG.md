@@ -6,6 +6,18 @@
 
 ## 2026-06-04
 
+### 新增：AI 消耗统计页 + 修复多处「半截改版」上下文漏注入
+
+**消耗统计（设置区新页）**：在 AI 调用唯一出口记录每次用量并持久化（DB v26 `aiUsageLog`）。设置区新增「消耗统计」页，逐条展示：时间（年月日时分秒）、消耗类型（按 AI 行为分类的彩色标签：正文生成/世界观生成/主角状态提取/大纲生成/角色生成等）、模型、输入 token、输出 token、花费（美元在上、人民币在下，汇率可调）。顶部汇总总输入/输出/总花费；支持仅当前项目筛选、清空。费用按模型估算单价 × token 计算。关键文件：`lib/ai/usage-log.ts`、`stores/ai-usage.ts`、`components/settings/UsageStatsPage.tsx`、`lib/ai/client.ts`（埋点）、`hooks/useAIStream.ts`（透传类型）。
+
+**全项目「半截改版」扫描，修复三处上下文漏注入**：
+- 故事核心（多世界）：`buildCurrentWorldContext` 此前不读 storyCore → 多世界写作缺主题/冲突/主线。已补。
+- 创作规则（全模式）：creativeRules（写作风格/视角/基调/禁忌/一致性）此前从不进入任何生成 prompt，整张表对 AI 无效。新增 `buildCreativeRulesContext` 并注入章节正文生成。
+- （另见下条：单世界世界观读取错位修复。）
+- 三处均记入 `docs/DATA-FLOW-MAP.md` 第三节 F 项。
+
+---
+
 ### 修复：单世界模式世界观喂不进 AI（v2/v3 字段读写错位，重大）
 
 **来源**：盘数据流总表时发现

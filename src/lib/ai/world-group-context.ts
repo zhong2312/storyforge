@@ -60,6 +60,18 @@ export async function buildCurrentWorldContext(
     parts.push(`\n【力量体系】${ps.name}：${ps.description?.slice(0, 200) || ''}`)
   }
 
+  // 故事核心（项目级，与单世界 buildWorldContext 对齐——此前多世界遗漏）
+  const sc = await db.storyCores.where('projectId').equals(projectId).first()
+  if (sc) {
+    const scParts = [
+      sc.theme && `主题：${sc.theme}`,
+      sc.centralConflict && `核心冲突：${sc.centralConflict}`,
+      sc.plotPattern && `情节模式：${sc.plotPattern}`,
+      sc.mainPlot && `主线：${sc.mainPlot.slice(0, 200)}`,
+    ].filter(Boolean)
+    if (scParts.length) parts.push(`\n【故事核心】\n${scParts.join('\n')}`)
+  }
+
   // Phase 35-a：注入本世界的设定词条（上游设定）
   const codex = await buildCodexContext(projectId, worldGroupId)
   if (codex) parts.push(`\n${codex}`)

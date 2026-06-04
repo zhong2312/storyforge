@@ -45,6 +45,7 @@ import type {
   CodexCategory,
   CodexEntry,
 } from '../types'
+import type { AIUsageEntry } from '../ai/usage-log'
 
 class StoryForgeDB extends Dexie {
   projects!: Table<Project>
@@ -121,6 +122,9 @@ class StoryForgeDB extends Dexie {
   // Phase 35-a —— 词条系统（Codex）
   codexCategories!: Table<CodexCategory, number>
   codexEntries!: Table<CodexEntry, number>
+
+  // AI 消耗统计
+  aiUsageLog!: Table<AIUsageEntry, number>
 
   constructor() {
     super('storyforge')
@@ -267,6 +271,11 @@ class StoryForgeDB extends Dexie {
     this.version(25).stores({
       codexCategories: '++id, projectId, domain, parentId, builtInKey, worldGroupId, order',
       codexEntries: '++id, projectId, categoryId, worldGroupId, order',
+    })
+
+    // AI 消耗统计
+    this.version(26).stores({
+      aiUsageLog: '++id, projectId, timestamp, category, model',
     })
   }
 }

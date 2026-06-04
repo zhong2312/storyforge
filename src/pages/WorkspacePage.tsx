@@ -21,6 +21,7 @@ import PropertiesPanel from '../components/layout/PropertiesPanel'
 import ProjectInfoPanel from '../components/project/ProjectInfoPanel'
 import ReferencePanel from '../components/project/ReferencePanel'
 import SettingsPage from '../components/settings/SettingsPage'
+import UsageStatsPage from '../components/settings/UsageStatsPage'
 import VersionHistoryPanel from '../components/system/VersionHistoryPanel'
 import ImportDocPanel from '../components/system/ImportDocPanel'
 import PromptManagerPanel from '../components/settings/prompt/PromptManagerPanel'
@@ -243,6 +244,8 @@ export default function WorkspacePage() {
         return <ImportDocPanel project={project} />
       case 'settings':
         return <SettingsPage />
+      case 'usage-stats':
+        return <UsageStatsPage project={project} />
       case 'data-management':
       case 'backup':
       case 'export':

@@ -1,4 +1,4 @@
-import type { Worldview, StoryCore, PowerSystem, Character } from '../types'
+import type { Worldview, StoryCore, PowerSystem, Character, CreativeRules } from '../types'
 import type { HistoricalKeyword, HistoricalKeywordCategory } from '../types/history'
 import { KEYWORD_CATEGORY_LABELS } from '../types/history'
 import { DIMENSION_LABELS, ANALYSIS_DIMENSIONS } from '../types/reference'
@@ -10,6 +10,36 @@ export function getContextMemo(projectId: number): string {
   const memo = loadContextMemo(projectId)
   if (!memo) return ''
   return `【上下文快照 — 此前故事状态】\n${memo}\n【快照结束】`
+}
+
+const POV_LABELS: Record<string, string> = {
+  'first': '第一人称', 'third-limited': '第三人称限知', 'third-omniscient': '第三人称全知', 'second': '第二人称',
+}
+
+/**
+ * 构建「创作规则」上下文（写作风格/视角/基调/禁忌/一致性/特殊要求）。
+ * 此前创作规则面板填写的内容从不进入任何生成 prompt（仅 citedIds + 题材预设被用），
+ * 导致作者填的写作规范喂不进 AI。此函数补齐该缺口。
+ */
+export function buildCreativeRulesContext(rules: CreativeRules | null): string {
+  if (!rules) return ''
+  const parts: string[] = []
+  if (rules.writingStyle) parts.push(`写作风格：${rules.writingStyle.slice(0, 200)}`)
+  const pov = rules.narrativePOV
+  if (pov) parts.push(`叙事视角：${POV_LABELS[pov] || pov}`)
+  const atmosphere = rules.atmosphere || rules.toneAndMood
+  if (atmosphere) parts.push(`基调氛围：${atmosphere.slice(0, 150)}`)
+  if (rules.specialRequirements) parts.push(`特殊要求：${rules.specialRequirements.slice(0, 200)}`)
+  try {
+    const proh: string[] = JSON.parse(rules.prohibitions || '[]')
+    if (proh.length) parts.push(`禁止事项：${proh.join('；').slice(0, 200)}`)
+  } catch { /* ignore */ }
+  try {
+    const cons: string[] = JSON.parse(rules.consistencyRules || '[]')
+    if (cons.length) parts.push(`一致性规则：${cons.join('；').slice(0, 200)}`)
+  } catch { /* ignore */ }
+  if (!parts.length) return ''
+  return `【创作规则】（务必遵守）\n${parts.join('\n')}`
 }
 
 /** 构建世界观上下文摘要 */

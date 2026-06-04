@@ -5,7 +5,7 @@ import {
   Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
   Map, ClipboardList, GitBranch, Clock, Gem, MapPin, Scale,
-  Drama, Package, CalendarClock, ScanSearch, Boxes,
+  Drama, Package, CalendarClock, ScanSearch, Boxes, Coins,
 } from 'lucide-react'
 
 /**
@@ -55,6 +55,7 @@ export type SidebarModule =
   | 'version-history'       // 占位 (P9)
   | 'import-doc'            // 占位 (P10)
   | 'export'                // = DataManagementPanel (export 入口)
+  | 'usage-stats'           // = UsageStatsPage（AI 消耗统计）
   | 'settings'              // = AIConfigPanel
   | 'data-management'       // 数据管理
 
@@ -193,6 +194,7 @@ export const NAV_TREE: TreeSection[] = [
       leaf('version-history',  '版本历史', History),
       leaf('import-doc',       '导入',     Upload),
       leaf('export',           '导出',     Download),
+      leaf('usage-stats',      '消耗统计', Coins),
       leaf('settings',         '设置',     Settings),
     ],
   },
