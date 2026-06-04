@@ -217,6 +217,25 @@
 | **H 批量多世界** | 批量大纲/批量细纲在多世界下用单一上下文 | 中 | 批量 runner 加 `worldContextResolver`，逐卷/逐章按所属世界（`buildNodeWritingContext`） |
 | ⚠️ 顺带发现 | 多世界 export/import 的 `worldGroupId` 重映射键值错位（`remap` 用 export-index 表查 raw 旧 id）；单世界无影响，多世界备份恢复会丢世界归属 | 待修 | 已列入 ROADMAP「BUG-EXPORT-WG」（含问题机制 + 方案 A/B），独立于本次数据丢失修复 |
 
+### 第五批：导出格式 / 上下文快照 / 单例工厂 / 全代码扫（2026-06-04）
+
+| # | 问题 | 严重度 | 修复 |
+|---|------|--------|------|
+| **单例工厂重复记录** | `makeSingletonStore.save` 与旧 `saveWorldview` 同 bug（内存为 null 时新建重复）→ 影响 geography/history/itemSystem/creativeRules 四单例 | 🔴 数据 | 工厂层一次修复：先以 DB 为准定位再 update/add |
+| **HTML 导出世界观为空** | `html-builder` 的「世界观设定」只渲染世界树 worldNodes，**完全没渲染世界观字段** → 单世界导出设定集世界观空白 | 🟠 | 补全 v3 世界观字段渲染 + 角色卡补外貌/动机/能力/弧线 |
+| **上下文快照世界观为空** | `context-snapshot`（注入写作的「上下文快照」）只读 v2 字段 → v3 用户快照世界观空白 | 🟠 | 改读 v3，v2 仅兜底 |
+| **故事核心生成上下文过薄** | `StoryCorePanel` 世界上下文仅 worldOrigin 一个字段 | 🟡 | 补力量/种族/势力/历史线等关键字段 |
+| 消耗类型补标 | 故事年表提取/物品提取/批量章纲/工作流 的 AI 调用未分类 | — | 已补 category |
+
+**核对确认安全（排除嫌疑）**：
+- 版本快照还原复用 export/import（已含数据丢失修复）；`ensure-schema` REQUIRED_TABLES 保守（不误删老用户）。
+- WorldMapPanel / HistoryPanel 多世界正确（按当前世界）；EmotionBeat 经 prop 拿真实上下文。
+- 所有解析器（inventory/timeline/arc/relation/plot/character/outline/import）字段与表对齐、防御性默认。
+- 无跨项目查询泄漏（toArray 均带 projectId，除有意的全局表）；导入大纲正确重建 parentId 树。
+- 所有 `JSON.parse(AI 输出)` 均被 try/catch 保护（解析器内部 return null/[]，或调用方 try/catch + 错误展示，如 voronoi 地图）。
+- 提示词种子输出 v3 字段 key（worldOrigin/theme/mainPlot…），与解析/写回对齐。
+- 无藏 bug 的 TODO/FIXME（仅 Phase 37 占位、地图引擎内部注释）。
+
 ### 🟠 仍待处理（已记录，低优先 / 需权衡）
 
 > 以下为剩余已知项，均为低严重度或需 DB 改动，列出供决策；高价值 LIVE 漏洞已基本清完。
