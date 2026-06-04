@@ -230,6 +230,10 @@ export default function DetailedOutlinePanel({ project }: Props) {
         chapters: chapterNodes,
         existingDetails: detailedOutlines,
         worldContext: worldCtx,
+        // 多世界：逐章用本章所属世界的上下文
+        worldContextResolver: project.enableMultiWorld
+          ? (chId) => buildNodeWritingContext(project.id!, chId)
+          : undefined,
         characterContext: charCtx,
         foreshadowContext: foreshadowCtx,
         onSave: async (outlineNodeId, data) => {

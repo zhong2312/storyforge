@@ -6,6 +6,24 @@
 
 ## 2026-06-04
 
+### 修复严重数据丢失：导出/备份漏掉重要地点·真实与幻想·设定词条（重大）
+
+**来源**：全量审计交叉核对「DB 全部表 vs JSON 导出覆盖」
+
+JSON 导出（项目备份/恢复、Gist 同步）此前**完全没有包含**三类用户内容表：**重要地点（importantLocations）、真实与幻想（worldRulesProfiles）、设定词条（codexCategories/codexEntries）**。后果：用户导出项目做备份、再导入恢复时，会**丢失这三类全部内容**。
+
+- 修复：导出补全这三类（重要地点/词条分类按树结构导出 parentId、词条按 categoryId 引用导出、worldGroupId 重映射）；导入端对应补全还原（重建 parentId / categoryId / worldGroupId）。Gist 导出复用同一数据格式，一并修复。改动：`src/lib/export/json-export.ts`。
+- 顺带发现多世界 export/import 的 `worldGroupId` 重映射疑似键值错位（单世界无影响），已另列任务排查。
+
+### 清扫 + 多世界批量上下文 + 多处遗留字段
+
+- **死代码清扫**：移除侧栏不可达的旧 `WorldviewPanel` 及其专用的 v2 读取函数 `buildExistingWorldview`、对应路由与类型。
+- **批量生成多世界化**：批量大纲 / 批量细纲此前在多世界下用单一上下文；批量 runner 增加 `worldContextResolver`，逐卷/逐章按所属世界读取上下文。
+- **大纲读遗留字段**：`OutlinePanel` 故事核心上下文读 `storyLines`（v3 已改名 `mainPlot`）→ 改读 `mainPlot`。
+- **多世界覆盖**：场景/细纲/角色生成此前写死单世界上下文 → 新增 `buildNodeWritingContext` 按章节所属世界读取。
+
+---
+
 ### 全量贯通审计：补齐 6 处「填了 AI 读不到」+ 收口单/多世界字段漂移
 
 **来源**：用户要求全量重扫，确保字段精确、逻辑贯通

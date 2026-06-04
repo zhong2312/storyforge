@@ -77,7 +77,7 @@ export type SidebarModule =
   // 世界地图（Phase 20）
   | 'world-map'
   // legacy aliases，路由仍兼容但不再出现在 sidebar
-  | 'worldview' | 'power-system'
+  | 'power-system'
   | 'story-core' | 'factions' | 'backup'
 
 // ── 树节点 ────────────────────────────────────────────────────────────

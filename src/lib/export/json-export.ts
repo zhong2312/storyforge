@@ -11,6 +11,7 @@ import type {
   MasterWork, MasterChunkAnalysis, MasterChapterBeat,
   MasterStyleMetrics, MasterInsight,
   WorldGroup, WorldGroupLink, ItemLedgerEntry, StoryTimelineEvent,
+  ImportantLocation, WorldRulesProfile, CodexCategory, CodexEntry,
 } from '../types'
 
 /**
@@ -79,6 +80,12 @@ export interface ProjectExportData {
   itemLedger?: (Omit<ItemLedgerEntry, 'id' | 'projectId' | 'chapterId'> & { _chapterExportId: number | null })[]
   // ── v3: 故事进程年表（Phase 25.5.2-a，chapterId 可空）──
   storyTimelineEvents?: (Omit<StoryTimelineEvent, 'id' | 'projectId' | 'chapterId'> & { _chapterExportId: number | null })[]
+
+  // ── 此前漏导出（会丢数据），补全 ──
+  importantLocations?: (Omit<ImportantLocation, 'id' | 'projectId' | 'parentId'> & { _exportId: number; _parentExportId: number | null })[]
+  worldRulesProfiles?: Omit<WorldRulesProfile, 'id' | 'projectId'>[]
+  codexCategories?: (Omit<CodexCategory, 'id' | 'projectId' | 'parentId'> & { _exportId: number; _parentExportId: number | null })[]
+  codexEntries?: (Omit<CodexEntry, 'id' | 'projectId' | 'categoryId'> & { _categoryExportId: number })[]
 }
 
 /** 导出项目为 JSON */
@@ -99,6 +106,7 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
     masterWorks, masterInsights,
     // v3
     worldGroups, worldGroupLinks, itemLedger, storyTimelineEvents,
+    importantLocations, worldRulesProfiles, codexCategories, codexEntries,
   ] = await Promise.all([
     db.worldviews.where('projectId').equals(projectId).toArray(),
     db.storyCores.where('projectId').equals(projectId).toArray(),
@@ -134,6 +142,11 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
     db.itemLedger.where('projectId').equals(projectId).toArray(),
     // v3: 故事进程年表
     db.storyTimelineEvents.where('projectId').equals(projectId).toArray(),
+    // 补全：此前漏导出会丢数据
+    db.importantLocations.where('projectId').equals(projectId).toArray(),
+    db.worldRulesProfiles.where('projectId').equals(projectId).toArray(),
+    db.codexCategories.where('projectId').equals(projectId).toArray(),
+    db.codexEntries.where('projectId').equals(projectId).toArray(),
   ])
 
   // ── 构建 ID 映射 ──
@@ -157,6 +170,14 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
   // 世界节点 ID → 导出序号
   const worldNodeIdMap = new Map<number, number>()
   worldNodes.forEach((w, i) => { if (w.id) worldNodeIdMap.set(w.id, i) })
+
+  // 重要地点 ID → 导出序号（树）
+  const locationIdMap = new Map<number, number>()
+  importantLocations.forEach((l, i) => { if (l.id) locationIdMap.set(l.id, i) })
+
+  // 词条分类 ID → 导出序号（树 + 被词条引用）
+  const codexCatIdMap = new Map<number, number>()
+  codexCategories.forEach((c, i) => { if (c.id) codexCatIdMap.set(c.id, i) })
 
   // 参考书目 ID → 导出序号
   const refIdMap = new Map<number, number>()
@@ -294,6 +315,22 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
     storyTimelineEvents: storyTimelineEvents.map(({ id: _, projectId: _p, chapterId, ...rest }) => ({
       ...rest,
       _chapterExportId: chapterId != null ? (chapterIdMap.get(chapterId) ?? null) : null,
+    })),
+    // 补全：此前漏导出会丢数据
+    importantLocations: importantLocations.map(({ id: _, projectId: _p, parentId, ...rest }, i) => ({
+      ...rest,
+      _exportId: i,
+      _parentExportId: parentId != null ? (locationIdMap.get(parentId) ?? null) : null,
+    })),
+    worldRulesProfiles: worldRulesProfiles.map(({ id: _, projectId: _p, ...rest }) => rest),
+    codexCategories: codexCategories.map(({ id: _, projectId: _p, parentId, ...rest }, i) => ({
+      ...rest,
+      _exportId: i,
+      _parentExportId: parentId != null ? (codexCatIdMap.get(parentId) ?? null) : null,
+    })),
+    codexEntries: codexEntries.map(({ id: _, projectId: _p, categoryId, ...rest }) => ({
+      ...rest,
+      _categoryExportId: codexCatIdMap.get(categoryId) ?? 0,
     })),
   }
 }
@@ -602,6 +639,53 @@ export async function importProjectJSON(data: ProjectExportData): Promise<number
     } as StoryTimelineEvent)
   }
 
+  // 26.7 重要地点（树，重建 parentId）—— 此前漏导入
+  const newLocationIds = new Map<number, number>()
+  const sortedLocs = [...(data.importantLocations || [])].sort((a, b) => {
+    if (a._parentExportId === null && b._parentExportId !== null) return -1
+    if (a._parentExportId !== null && b._parentExportId === null) return 1
+    return (a._exportId ?? 0) - (b._exportId ?? 0)
+  })
+  for (const l of sortedLocs) {
+    const { _exportId, _parentExportId, ...rest } = l
+    const newParentId = _parentExportId !== null ? (newLocationIds.get(_parentExportId) ?? null) : null
+    const newId = await db.importantLocations.add({
+      ...rest, parentId: newParentId, projectId: newProjectId,
+    } as ImportantLocation) as number
+    newLocationIds.set(_exportId, newId)
+  }
+
+  // 26.8 真实与幻想（世界规则）—— 此前漏导入
+  for (const p of data.worldRulesProfiles || []) {
+    await db.worldRulesProfiles.add({ ...p, projectId: newProjectId } as WorldRulesProfile)
+  }
+
+  // 26.9 词条分类（树，重建 parentId）—— 此前漏导入
+  const newCodexCatIds = new Map<number, number>()
+  const sortedCats = [...(data.codexCategories || [])].sort((a, b) => {
+    if (a._parentExportId === null && b._parentExportId !== null) return -1
+    if (a._parentExportId !== null && b._parentExportId === null) return 1
+    return (a._exportId ?? 0) - (b._exportId ?? 0)
+  })
+  for (const c of sortedCats) {
+    const { _exportId, _parentExportId, ...rest } = c
+    const newParentId = _parentExportId !== null ? (newCodexCatIds.get(_parentExportId) ?? null) : null
+    const newId = await db.codexCategories.add({
+      ...rest, parentId: newParentId, projectId: newProjectId,
+    } as CodexCategory) as number
+    newCodexCatIds.set(_exportId, newId)
+  }
+
+  // 26.10 词条（重建 categoryId）—— 此前漏导入
+  for (const e of data.codexEntries || []) {
+    const { _categoryExportId, ...rest } = e
+    const newCategoryId = newCodexCatIds.get(_categoryExportId)
+    if (newCategoryId == null) continue
+    await db.codexEntries.add({
+      ...rest, categoryId: newCategoryId, projectId: newProjectId,
+    } as CodexEntry)
+  }
+
   // 27. 重映射所有 worldGroupId 引用
   // 导入的记录里 worldGroupId 还指向旧 ID，需要：
   //   - 旧 ID 在映射表中 → 替换为新 ID
@@ -673,6 +757,20 @@ export async function importProjectJSON(data: ProjectExportData): Promise<number
   for (const k of allHk) {
     if (k.worldGroupId !== undefined && k.worldGroupId !== null) {
       await db.historicalKeywords.update(k.id!, { worldGroupId: remap(k.worldGroupId) })
+    }
+  }
+  // codexCategories worldGroupId
+  const allCc = await db.codexCategories.where('projectId').equals(newProjectId).toArray()
+  for (const c of allCc) {
+    if (c.worldGroupId !== undefined && c.worldGroupId !== null) {
+      await db.codexCategories.update(c.id!, { worldGroupId: remap(c.worldGroupId) })
+    }
+  }
+  // codexEntries worldGroupId
+  const allCe = await db.codexEntries.where('projectId').equals(newProjectId).toArray()
+  for (const e of allCe) {
+    if (e.worldGroupId !== undefined && e.worldGroupId !== null) {
+      await db.codexEntries.update(e.id!, { worldGroupId: remap(e.worldGroupId) })
     }
   }
 

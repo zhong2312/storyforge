@@ -37,8 +37,10 @@ export interface BatchOutlineResult {
 export interface BatchOutlineOptions {
   /** 要处理的卷列表（已排序） */
   volumes: OutlineNode[]
-  /** 世界观上下文 */
+  /** 世界观上下文（单一，作为兜底） */
   worldContext: string
+  /** 多世界：按卷解析各自世界上下文（提供则逐卷覆盖 worldContext） */
+  worldContextResolver?: (volumeId: number) => Promise<string>
   /** 用户补充说明 */
   userHint?: string
   /** 角色上下文 */
@@ -59,7 +61,7 @@ export interface BatchOutlineOptions {
 export async function runBatchOutlineGeneration(
   options: BatchOutlineOptions,
 ): Promise<BatchOutlineResult> {
-  const { volumes, worldContext, userHint, characterContext, worldRulesContext, onProgress, signal } = options
+  const { volumes, worldContext, worldContextResolver, userHint, characterContext, worldRulesContext, onProgress, signal } = options
   const config = useAIConfigStore.getState().config
   const chaptersByVolume = new Map<number, ParsedChapter[]>()
   const startTime = Date.now()
@@ -88,10 +90,13 @@ export async function runBatchOutlineGeneration(
     const prevSummary = prevVolumeChaptersSummary
       || (i > 0 ? volumes[i - 1].summary : '')
 
+    // 多世界：用本卷所属世界的上下文
+    const volWorldContext = worldContextResolver ? await worldContextResolver(volId) : worldContext
+
     const messages = buildChapterOutlinePrompt(
       vol.title,
       vol.summary,
-      worldContext,
+      volWorldContext,
       prevSummary,
       userHint,
       undefined, // options

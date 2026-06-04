@@ -6,7 +6,7 @@ import { useWorldGroupStore } from '../../stores/world-group'
 import { useAIStream } from '../../hooks/useAIStream'
 import { buildVolumeOutlinePrompt, buildChapterOutlinePrompt } from '../../lib/ai/adapters/outline-adapter'
 import { buildWorldContext, buildCharacterContext } from '../../lib/ai/context-builder'
-import { buildCurrentWorldContext } from '../../lib/ai/world-group-context'
+import { buildCurrentWorldContext, buildNodeWritingContext } from '../../lib/ai/world-group-context'
 import { buildCodexContext } from '../../lib/ai/codex-context'
 import { buildWorldRulesContext } from '../../lib/ai/world-rules-manifest'
 import { useCharacterStore } from '../../stores/character'
@@ -187,6 +187,10 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
       const result = await runBatchOutlineGeneration({
         volumes,
         worldContext: worldCtx,
+        // 多世界：逐卷用本卷所属世界的上下文
+        worldContextResolver: project.enableMultiWorld
+          ? (volId) => buildNodeWritingContext(project.id!, volId)
+          : undefined,
         userHint: hint || undefined,
         characterContext: charCtx,
         worldRulesContext: rulesCtx,

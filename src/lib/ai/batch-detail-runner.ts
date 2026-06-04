@@ -36,8 +36,10 @@ export interface BatchDetailOptions {
   chapters: OutlineNode[]
   /** 已有细纲列表（用于跳过） */
   existingDetails: DetailedOutline[]
-  /** 世界观上下文 */
+  /** 世界观上下文（单一，作为兜底） */
   worldContext: string
+  /** 多世界：按章解析各自世界上下文（提供则逐章覆盖 worldContext） */
+  worldContextResolver?: (chapterNodeId: number) => Promise<string>
   /** 角色上下文（ID:name 列表） */
   characterContext: string
   /** 伏笔上下文 */
@@ -60,7 +62,7 @@ export interface BatchDetailResult {
 export async function batchGenerateDetails(
   opts: BatchDetailOptions,
 ): Promise<BatchDetailResult> {
-  const { chapters, existingDetails, worldContext, characterContext, foreshadowContext, onSave, onProgress, signal } = opts
+  const { chapters, existingDetails, worldContext, worldContextResolver, characterContext, foreshadowContext, onSave, onProgress, signal } = opts
   const config = useAIConfigStore.getState().config
   const start = Date.now()
 
@@ -92,17 +94,19 @@ export async function batchGenerateDetails(
     })
 
     try {
+      // 多世界：用本章所属世界的上下文
+      const chWorldContext = worldContextResolver ? await worldContextResolver(ch.id!) : worldContext
       const messages = buildEnhancedDetailPrompt(
         ch.title,
         ch.summary || '',
         prevSummary,
         nextSummary,
-        worldContext,
+        chWorldContext,
         characterContext,
         foreshadowContext,
       )
 
-      const rawOutput = await chat(messages, config)
+      const rawOutput = await chat(messages, config, { category: 'detail.scene', projectId: ch.projectId })
       if (signal?.aborted) {
         return { generated, skipped: chapters.length - todo.length, failed, cancelled: true, elapsed: Date.now() - start }
       }

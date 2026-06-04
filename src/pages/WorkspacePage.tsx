@@ -27,7 +27,6 @@ import ImportDocPanel from '../components/system/ImportDocPanel'
 import PromptManagerPanel from '../components/settings/prompt/PromptManagerPanel'
 // MasterStudiesPanel 已整合进 ReferencePanel（Phase 20）
 import DataManagementPanel from '../components/data/DataManagementPanel'
-import WorldviewPanel from '../components/worldview/WorldviewPanel'
 import WorldRulesPanel from '../components/worldview/WorldRulesPanel'
 import StoryCorePanel from '../components/worldview/StoryCorePanel'
 import PowerSystemPanel from '../components/worldview/PowerSystemPanel'
@@ -166,9 +165,6 @@ export default function WorkspacePage() {
         return <WorldviewNaturalPanel project={project} />
       case 'worldview-humanity':
         return <WorldviewHumanityPanel project={project} />
-      // 旧入口暂时映射到旧面板（P5/P6 改造时迁移到上面 3 个）
-      case 'worldview':
-        return <WorldviewPanel project={project} />
       case 'geography':
         return <GeographyPanel project={project} />
       case 'world-map':

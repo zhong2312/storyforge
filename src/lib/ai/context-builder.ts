@@ -301,19 +301,6 @@ export async function buildMasterInsightContext(insightIds: number[]): Promise<s
 }
 
 /** 构建世界观各维度已有内容（用于 AI 生成时做参考） */
-export function buildExistingWorldview(wv: Worldview | null): string {
-  if (!wv) return ''
-  const parts = [
-    wv.geography && `地理环境：${wv.geography.slice(0, 300)}`,
-    wv.history && `历史：${wv.history.slice(0, 300)}`,
-    wv.society && `社会：${wv.society.slice(0, 300)}`,
-    wv.culture && `文化：${wv.culture.slice(0, 300)}`,
-    wv.economy && `经济：${wv.economy.slice(0, 300)}`,
-    wv.rules && `规则：${wv.rules.slice(0, 300)}`,
-  ].filter(Boolean)
-  return parts.join('\n')
-}
-
 // ── Phase 31.1: 历史模式上下文注入 ──────────────────────────────
 
 /**
