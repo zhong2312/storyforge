@@ -99,8 +99,18 @@ export function createProjectSingletonStore<K extends string, T extends ProjectS
 
       save: async (data: Partial<T>) => {
         const state = get()
-        const current = (state as unknown as Record<string, T | null>)[key]
+        let current = (state as unknown as Record<string, T | null>)[key]
         const activeWorldGroupId = (state as unknown as { activeWorldGroupId: number | null }).activeWorldGroupId
+
+        // 以 DB 为准定位既有记录，避免内存为 null/陈旧时误新增重复记录
+        // （与 saveWorldview 同类修复：单例表应每 (projectId, worldGroupId) 仅一条）
+        const projectId = data.projectId ?? (current as { projectId?: number } | null)?.projectId
+        if (!current?.id && projectId != null) {
+          const all = await getTable().where('projectId').equals(projectId).toArray()
+          current = (activeWorldGroupId == null
+            ? (all.find(r => ((r as { worldGroupId?: number | null }).worldGroupId ?? null) === null) ?? all[0])
+            : all.find(r => (r as { worldGroupId?: number | null }).worldGroupId === activeWorldGroupId)) ?? null
+        }
 
         if (current?.id) {
           const ts = now()
