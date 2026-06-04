@@ -17,15 +17,32 @@ export function buildWorldContext(wv: Worldview | null, sc: StoryCore | null, ps
   if (!wv && !sc && !ps) return ''
   const parts: string[] = []
 
-  if (wv?.summary) {
-    parts.push(`【世界观摘要】\n${wv.summary}`)
-  } else if (wv) {
-    const dims = [
-      wv.geography && `地理：${wv.geography.slice(0, 200)}`,
-      wv.society && `社会：${wv.society.slice(0, 200)}`,
-      wv.rules && `规则：${wv.rules.slice(0, 200)}`,
+  if (wv) {
+    // v3 字段（与多世界 buildCurrentWorldContext 对齐）——面板实际写入的就是这些
+    const v3 = [
+      wv.summary && `摘要：${wv.summary.slice(0, 300)}`,
+      wv.worldOrigin && `世界来源：${wv.worldOrigin.slice(0, 300)}`,
+      wv.powerHierarchy && `力量体系：${wv.powerHierarchy.slice(0, 200)}`,
+      wv.worldStructure && `世界结构：${wv.worldStructure.slice(0, 150)}`,
+      wv.continentLayout && `地貌分布：${wv.continentLayout.slice(0, 200)}`,
+      wv.climateByRegion && `气候环境：${wv.climateByRegion.slice(0, 100)}`,
+      wv.mountainsRivers && `山川河流：${wv.mountainsRivers.slice(0, 120)}`,
+      wv.historyLine && `世界历史：${wv.historyLine.slice(0, 200)}`,
+      wv.races && `种族民族：${wv.races.slice(0, 150)}`,
+      wv.factionLayout && `势力分布：${wv.factionLayout.slice(0, 200)}`,
+      wv.politicsEconomyCulture && `政经文化：${wv.politicsEconomyCulture.slice(0, 150)}`,
     ].filter(Boolean)
-    if (dims.length) parts.push(`【世界观】\n${dims.join('\n')}`)
+    if (v3.length) {
+      parts.push(`【世界观】\n${v3.join('\n')}`)
+    } else {
+      // v2 兜底：仅当 v3 字段全空（极老项目）时，用旧字段
+      const v2 = [
+        wv.geography && `地理：${wv.geography.slice(0, 200)}`,
+        wv.society && `社会：${wv.society.slice(0, 200)}`,
+        wv.rules && `规则：${wv.rules.slice(0, 200)}`,
+      ].filter(Boolean)
+      if (v2.length) parts.push(`【世界观】\n${v2.join('\n')}`)
+    }
   }
 
   if (sc) {

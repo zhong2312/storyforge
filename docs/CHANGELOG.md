@@ -6,6 +6,17 @@
 
 ## 2026-06-04
 
+### 修复：单世界模式世界观喂不进 AI（v2/v3 字段读写错位，重大）
+
+**来源**：盘数据流总表时发现
+
+`buildWorldContext`（单世界写作上下文）原先只读 worldview 的 v2 旧字段（`summary`，无则 `geography/society/rules`），而世界观三个面板（世界起源/自然/人文）写入的是 v3 字段（`worldOrigin/continentLayout/races/factionLayout…`），且已无任何地方写 `summary`。导致**单世界模式下作者填写的整个世界观在 AI 写章节/大纲/角色等时基本读不到**（仅故事核心与力量体系漏过）。由于单世界是默认模式，影响面很大。
+
+- 修复：`buildWorldContext` 改为读取 v3 字段（与多世界 `buildCurrentWorldContext` 对齐），v2 字段仅在 v3 全空（极老项目）时兜底。改动：`src/lib/ai/context-builder.ts`。
+- 此修复同时收窄了「单世界读 v2 / 多世界读 v3」的字段不一致；彻底清除双轨在统一读取层 R-1 + 词条化 35-b 完成。
+
+---
+
 ### 修复：灵感反推采纳后世界观为空 + 新增数据流总表文档
 
 **来源**：社区反馈（精力无穷）「点写入世界观/一键采纳后，世界观面板仍为空」

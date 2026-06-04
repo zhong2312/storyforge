@@ -133,9 +133,11 @@
 - **力量**：`worldview.powerHierarchy`(字段) + `powerSystems`(表) + 未来「修炼体系」。
 - 现状：世界地图仍读旧 `factionLayout`，词条尚未供它读 → **不贯通点**。（Phase 35-b 合并后消除）
 
-### 🟠 D. 旧/新字段双轨（v2/v3）
+### 🟠 D. 旧/新字段双轨（v2/v3）—— 单世界读取已修，双轨待清
 
-- worldview 有 v2 旧字段(`geography/society/rules/summary`) 与 v3 新字段(`worldOrigin/…`) 并存；`buildWorldContext`(单世界) 读的是 v2，`buildCurrentWorldContext`(多世界) 读 v3 → **同一项目两种模式喂给 AI 的世界观字段不一致**。
+- worldview 有 v2 旧字段(`geography/society/rules/summary`) 与 v3 新字段(`worldOrigin/…`) 并存。
+- **已发现并修复的严重 bug（2026-06-04）**：`buildWorldContext`(单世界) 原只读 v2 字段，而三个世界观面板只写 v3 字段，且无任何地方再写 `summary` → **单世界模式下作者填的整个世界观喂不进 AI**（仅 storyCore/powerSystem 漏过）。已改为读 v3 字段（与多世界 `buildCurrentWorldContext` 对齐），v2 仅作极老项目兜底。
+- **仍待清理**：v2 旧字段本身仍存在于表结构中（双轨）；根治在统一读取层 R-1 + 词条化 35-b 一并收口。
 
 ### 🟡 E. 部分下游未回流上游
 
