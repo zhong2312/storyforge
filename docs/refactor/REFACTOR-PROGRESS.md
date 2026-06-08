@@ -31,7 +31,7 @@
 | 0.1 deleteGroup transaction scope | Done | `refactor/phase-0-task-0.1` / `45ac028` | `deleteGroup` uses temporary 45-table `PROJECT_TABLES_ALL`; `R-01` enabled and green. |
 | 0.2 migrateToMultiWorld transaction scope | Done | `refactor/phase-0-task-0.2` / `31cb206` | `migrateToMultiWorld` transaction includes `db.codexEntries`; `R-02` added and green. |
 | 0.3 ensureSchema delete-db risk | Done | `refactor/phase-0-task-0.3` / this task commit | Production schema self-check blocks reset instead of deleting IndexedDB; 45-table drift check added. |
-| 0.4 BUG-EXPORT-WG worldGroupId remap | Pending | TBD | Fix world group id export/import mapping for multiworld backups. |
+| 0.4 BUG-EXPORT-WG worldGroupId remap | Done | `refactor/phase-0-task-0.4` / this task commit | Multiworld backup ownership uses export ids and imports back to the corresponding new world groups. |
 | 0.5 importProjectJSON transaction + FK fail-fast | Pending | TBD | Make import atomic and reject invalid FK remaps without partial writes. |
 | 0.6 deleteProject indirect ownership cleanup | Pending | TBD | Delete import logs/files/jobs and master-study blobs with the project. |
 | 0.7 deleteNode chapter cascade | Pending | TBD | Ensure outline deletion cascades through chapter cleanup paths. |

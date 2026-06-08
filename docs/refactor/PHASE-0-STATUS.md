@@ -9,7 +9,7 @@
 | 0.1 deleteGroup transaction scope | Done | `refactor/phase-0-task-0.1` / `45ac028` | Fix deleteGroup Dexie transaction table scope. | `npm test -- R-01`; `npm test`; `npx tsc --noEmit`; `npm run build` |
 | 0.2 migrateToMultiWorld transaction scope | Done | `refactor/phase-0-task-0.2` / `31cb206` | Add `db.codexEntries` to migration transaction scope. | `npm test -- R-02`; `npm test -- R-01 R-02`; `npm test`; `npx tsc --noEmit`; `npm run build` |
 | 0.3 ensureSchema delete-db risk | Done | `refactor/phase-0-task-0.3` / this task commit | Prevent production schema self-check from calling `Dexie.delete()`; align required table list with DB v26. | `npm test -- R-17`; `npm run check:required-tables`; `npm test`; `tsc`; build |
-| 0.4 BUG-EXPORT-WG worldGroupId remap | Pending | TBD | Export world group ownership by export ids and import with correct remap. | Multiworld export/import roundtrip regression; `npm test`; `tsc`; build |
+| 0.4 BUG-EXPORT-WG worldGroupId remap | Done | `refactor/phase-0-task-0.4` / this task commit | Export world group ownership by export ids and import with correct remap. | `npm test -- R-03`; Phase 0 regression suite; `npm test`; `tsc`; build |
 | 0.5 importProjectJSON transaction + FK fail-fast | Pending | TBD | Wrap import in transaction and abort/rollback on invalid remapped FK. | Broken JSON import rollback regression; `npm test`; `tsc`; build |
 | 0.6 deleteProject indirect ownership cleanup | Pending | TBD | Delete import sessions/logs/files/jobs and master-study blobs when deleting project. | Delete-project residue regression; `npm test`; `tsc`; build |
 | 0.7 deleteNode chapter cascade | Pending | TBD | Make outline node deletion use chapter cascade so child tables such as emotionBeatCards are cleaned. | Delete-node cascade regression; `npm test`; `tsc`; build |
@@ -123,3 +123,29 @@ Execution note: because the reviewer is temporarily unavailable, Phase 0 tasks a
 - Result: passed. Vite emitted existing bundle-size/dynamic-import warnings; no build failure.
 - Command: `npm run check:required-tables`.
 - Result: passed, 45 tables match `schema.ts`.
+
+## Phase 0.4 - BUG-EXPORT-WG worldGroupId Remap
+
+### 2026-06-08 17:29:30 CST
+
+- Status: Phase 0.4 code path implemented and regression added.
+- Branch: `refactor/phase-0-task-0.4`.
+- Branch base: stacked on top of `refactor/phase-0-task-0.3`.
+- Changed `src/lib/export/json-export.ts`: new exports convert `worldGroupId`/`homeWorldGroupId` into `_worldGroupExportId`/`_homeWorldGroupExportId`; imports create world groups first, then write remapped world ids directly into world-scoped rows.
+- Added `tests/regression/R-03-export-world-group-remap.test.ts`: verifies export JSON no longer contains raw world ids and imported records point to the imported side world.
+- Command: `npm test -- R-03`.
+- Result: passed, 1 file / 1 test.
+
+### 2026-06-08 17:31:52 CST
+
+- Status: Phase 0.4 verification passed.
+- Command: `npm test -- R-01 R-02 R-03 R-17`.
+- Result: passed, 4 files / 6 tests.
+- Command: `npm test`.
+- Result: passed, 5 files / 10 tests.
+- Command: `npm run check:required-tables`.
+- Result: passed, 45 tables match `schema.ts`.
+- Command: `npx tsc --noEmit`.
+- Result: passed with zero errors.
+- Command: `npm run build`.
+- Result: passed. Vite emitted existing bundle-size/dynamic-import warnings; no build failure.
