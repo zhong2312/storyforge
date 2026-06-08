@@ -278,7 +278,7 @@ export const useWorldGroupStore = create<WorldGroupStore>((set, get) => ({
     const proceed = await requireBackupBefore({
       operation: '启用多世界模式',
       projectId,
-      details: '此操作将把现有项目数据迁移到「主世界」归属。当前代码存在已知的迁移 bug(详见 MASTER-BLUEPRINT § P0-8),建议先导出备份。',
+      details: '此操作将把现有项目数据(世界观、力量体系、大纲、词条等)迁移到「主世界」归属。建议先导出备份。',
     })
     if (!proceed) return  // 用户取消
 
@@ -289,6 +289,7 @@ export const useWorldGroupStore = create<WorldGroupStore>((set, get) => ({
     await db.transaction('rw', [
       db.worldviews, db.powerSystems, db.geographies, db.histories, db.worldNodes,
       db.historicalTimelineEvents, db.historicalKeywords, db.codexEntries,
+      db.outlineNodes, // Phase 0.8: 大纲节点也带 worldGroupId,漏盖章会导致升级后大纲整体不可见
     ], async () => {
       const stamp = async <T extends { id?: number; worldGroupId?: number | null }>(
         table: { toArray: () => Promise<T[]>; update: (id: number, c: Partial<T>) => Promise<number> },
@@ -310,6 +311,10 @@ export const useWorldGroupStore = create<WorldGroupStore>((set, get) => ({
       // 设定词条：只盖章「词条」到主世界（使其归属主世界，与 worldview 一致）；
       // 内置/自定义「分类」保持 worldGroupId=null 为全局结构，所有世界共用，不盖章。
       await stamp(db.codexEntries, await db.codexEntries.where('projectId').equals(projectId).toArray())
+      // Phase 0.8 (Gemini P0-8): 大纲节点(卷/故事块/章节)漏盖章。
+      // 灾难:老用户启用多世界后,所有大纲 worldGroupId=null,UI 按主世界过滤显示空白,
+      //       用户会以为几个月的大纲被吃了(数据其实还在,只是失去归属)。
+      await stamp(db.outlineNodes, await db.outlineNodes.where('projectId').equals(projectId).toArray())
     })
   },
 

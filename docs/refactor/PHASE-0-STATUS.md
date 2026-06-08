@@ -13,7 +13,7 @@
 | 0.5 importProjectJSON transaction + FK fail-fast | Done | `refactor/phase-0-task-0.5` / this task commit | Wrap import in transaction and abort/rollback on invalid remapped FK. | `npm test -- R-04`; `npm test -- R-03 R-04`; Phase 0 regression suite; `npm test`; `npm run check:required-tables`; `tsc`; build |
 | 0.6 deleteProject indirect ownership cleanup | Done | `refactor/phase-0-task-0.6` / this task commit | Collect sessionIds before transaction; bulk-delete importLogs/importFiles by sessionId; bulk-delete master blobs via masterBlobId(workId); clean importJobs by projectId. | `npm test -- R-05`; full regression suite; `npm run check:required-tables`; `tsc`; build |
 | 0.7 deleteNode chapter cascade | Done | `refactor/phase-0-task-0.7` / this task commit | Extract `cascadeDeleteChapters` as the single chapter-deletion entry; deleteChapter and deleteNode both route through it so emotionBeatCards are always cleaned. | `npm test -- R-06`; full regression suite; `npm run check:required-tables`; `tsc`; build |
-| 0.8 migrateToMultiWorld outlineNodes stamping | Pending | TBD | Stamp outline nodes to primary world during multiworld migration. | Outline visibility/stamping regression; `npm test`; `tsc`; build |
+| 0.8 migrateToMultiWorld outlineNodes stamping | Done | `refactor/phase-0-task-0.8` / this task commit | Add db.outlineNodes to migration transaction scope and stamp outline nodes to primary world. | `npm test -- R-07`; full regression suite; `npm run check:required-tables`; `tsc`; build |
 
 Execution note: because the reviewer is temporarily unavailable, Phase 0 tasks after 0.1 are being implemented as stacked task branches and commits. They still require later independent review before main merge.
 
@@ -299,3 +299,64 @@ GPT 5.5 限额暂停。审查者 Claude 接管 0.6 / 0.7 / 0.8 实施。
   - `npm run build` → success
 
 - **灾难场景**:✅ 已根治。删大纲卷/章后,情感节拍卡不再残留孤儿。
+
+---
+
+## Phase 0.8 - migrateToMultiWorld outlineNodes Stamping
+
+### 2026-06-08 by Claude(接手者)
+
+- **任务**:MASTER-BLUEPRINT §4.0.8 — migrateToMultiWorld 漏给 outlineNodes 盖章(Gemini-3.1 独立发现 P0-8)
+- **位置**:`src/stores/world-group.ts`
+- **改法**:
+  - 事务声明加入 `db.outlineNodes`
+  - stamp 列表加入 `await stamp(db.outlineNodes, await db.outlineNodes.where('projectId').equals(projectId).toArray())`
+  - 顺手清理 requireBackupBefore 的 details 文案(原本提到"已知迁移 bug",现已修)
+
+- **新增反例测试**:`tests/regression/R-07-migrate-outline-stamp.test.ts`
+  - Test 1:启用多世界后,卷/故事块/章节全部盖章到主世界 + worldview 旁证
+  - Test 2:灾难复现验证 — 50 卷大纲启用多世界后,主世界视图仍能看到全部 50 卷(旧 bug 会显示 0 卷)
+
+- **完成判据**:
+  - [x] 事务声明含 outlineNodes
+  - [x] stamp 列表含 outlineNodes
+  - [x] R-07 通过(2 tests)
+  - [x] tsc 零错
+  - [x] 全部 17 个反例测试通过
+  - [x] `npm run check:required-tables` 通过
+  - [x] build 通过
+
+- **Verification**:
+  - `npm test -- R-07` → 2 passed
+  - `npm test` → 17 passed(9 files)
+  - `npx tsc --noEmit` → TSC=0
+  - `npm run check:required-tables` → ok
+  - `npm run build` → success
+
+- **灾难场景**:✅ 已根治。老用户启用多世界后,大纲不再"消失"。
+
+---
+
+## 🎉 Phase 0 全部完成(8/8)
+
+| # | 任务 | 实施者 | 反例测试 |
+|---|---|---|---|
+| 0.1 | deleteGroup 事务作用域 | GPT-5.5 | R-01 |
+| 0.2 | migrateToMultiWorld 补 codexEntries | GPT-5.5 | R-02 |
+| 0.3 | ensureSchema 禁删库 | GPT-5.5 | R-17 |
+| 0.4 | BUG-EXPORT-WG | GPT-5.5 | R-03 |
+| 0.5 | importProjectJSON 事务化 | GPT-5.5 | R-04 |
+| 0.6 | deleteProject 间接归属表 | Claude | R-05 |
+| 0.7 | deleteNode 章节级联唯一入口 | Claude | R-06 |
+| 0.8 | migrateToMultiWorld 补 outlineNodes | Claude | R-07 |
+
+**反例测试网**:17 个测试全绿(R-01~R-06 + R-07 + R-17 + smoke)。
+**所有 8 个 P0 灾难场景已根治。**
+
+### 下一步(待项目作者决策)
+
+1. 项目作者最终审查 0.6/0.7/0.8(Claude 自审已过,但跨人复核更稳)
+2. 把所有 phase-0 分支合并到 main(或 squash 成 phase-0 合并提交)
+3. 打 tag `phase-0-complete`
+4. 部署 + 群通告 + 观察 2-3 天
+5. 启动 Phase 1(三注册表地基)
