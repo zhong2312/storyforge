@@ -9,8 +9,8 @@ import type { CollectionAdoptionSpec } from './types'
 export const ADOPTION_SCHEMAS: CollectionAdoptionSpec[] = [
   {
     target: 'characters',
-    identity: 'name',
-    duplicatePolicy: 'skip',
+    identity: { kind: 'composite', fields: ['homeWorldGroupId', 'name'] },
+    duplicatePolicy: 'merge',
     required: ['name', 'role'],
     autoStamps: ['projectId', 'homeWorldGroupId', 'createdAt', 'updatedAt'],
   },

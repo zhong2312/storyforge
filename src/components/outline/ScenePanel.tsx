@@ -13,6 +13,7 @@ import { buildCharacterContext } from '../../lib/ai/context-builder'
 import { buildNodeWritingContext } from '../../lib/ai/world-group-context'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import { nanoid } from '../../lib/utils/id'
+import { adopt } from '../../lib/registry/adopt'
 import type { DetailedScene, ScenePace } from '../../lib/types'
 
 const PACE_LABELS: Record<ScenePace, string> = {
@@ -56,6 +57,16 @@ export default function ScenePanel({ projectId, outlineNodeId, chapterTitle, cha
     const dt = await ensureDetailed()
     if (!dt?.id) return
     await save(dt.id, { scenes: nextScenes })
+  }
+
+  const adoptScenes = async (nextScenes: DetailedScene[]) => {
+    await adopt({
+      projectId,
+      target: 'detailedOutlines',
+      mode: 'add',
+      data: { outlineNodeId, scenes: nextScenes },
+    })
+    await loadAll(projectId)
   }
 
   const addScene = async () => {
@@ -137,15 +148,17 @@ export default function ScenePanel({ projectId, outlineNodeId, chapterTitle, cha
               onAccept={async (text) => {
                 try {
                   if (!detailed || detailed.scenes.length === 0) {
-                    await addScene()
-                    const fresh = useDetailedOutlineStore.getState().detailedOutlines.find(d => d.outlineNodeId === outlineNodeId)
-                    if (fresh && fresh.scenes[0]) {
-                      await updateScenes(fresh.scenes.map((s, i) =>
-                        i === 0 ? { ...s, notes: text } : s
-                      ))
+                    const newScene: DetailedScene = {
+                      sceneId: nanoid(),
+                      title: '新场景', summary: '',
+                      characterIds: [], location: '', conflict: '',
+                      pace: 'medium', estimatedWords: 0, notes: text,
                     }
+                    await adoptScenes([newScene])
                   } else {
-                    await updateScene(detailed.scenes[0].sceneId, { notes: text })
+                    await adoptScenes(detailed.scenes.map((s, i) =>
+                      i === 0 ? { ...s, notes: text } : s
+                    ))
                   }
                 } catch (err) {
                   console.error('[ScenePanel] 采纳失败:', err)

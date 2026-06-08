@@ -14,7 +14,8 @@ import { buildNodeWritingContext } from '../../lib/ai/world-group-context'
 import { batchGenerateDetails, type BatchProgress } from '../../lib/ai/batch-detail-runner'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import { nanoid } from '../../lib/utils/id'
-import type { Project, DetailedScene, ScenePace, EmotionArc } from '../../lib/types'
+import { adopt } from '../../lib/registry/adopt'
+import type { Project, DetailedOutline, DetailedScene, ScenePace, EmotionArc } from '../../lib/types'
 
 interface Props {
   project: Project
@@ -107,6 +108,20 @@ export default function DetailedOutlinePanel({ project }: Props) {
     await updateScenes(currentDetailed.scenes.filter(s => s.sceneId !== sceneId))
   }
 
+  const adoptDetailedPatch = useCallback(async (
+    outlineNodeId: number,
+    patch: Partial<DetailedOutline>,
+  ) => {
+    const result = await adopt({
+      projectId: project.id!,
+      target: 'detailedOutlines',
+      mode: 'add',
+      data: { outlineNodeId, ...patch },
+    })
+    await loadDetailed(project.id!)
+    return result
+  }, [project.id, loadDetailed])
+
   const handleAIGenerate = async () => {
     if (!currentChapter) return
     // 多世界下按本章所属世界读取上下文
@@ -155,10 +170,9 @@ export default function DetailedOutlinePanel({ project }: Props) {
       alert('解析增强细纲失败，请重试')
       return
     }
-    const dt = await ensureDetailed()
-    if (!dt?.id) return
+    if (!currentChapter?.id) return
 
-    const patch: Partial<import('../../lib/types').DetailedOutline> = {}
+    const patch: Partial<DetailedOutline> = {}
     if (parsed.openingHook) patch.openingHook = parsed.openingHook
     if (parsed.endingCliffhanger) patch.endingCliffhanger = parsed.endingCliffhanger
     if (parsed.sceneLocation) patch.sceneLocation = parsed.sceneLocation
@@ -184,7 +198,7 @@ export default function DetailedOutlinePanel({ project }: Props) {
 
     // Phase 30.3: 同时快照当前大纲摘要
     patch.lastUsedSummary = currentChapter?.summary || ''
-    await save(dt.id, patch)
+    await adoptDetailedPatch(currentChapter.id, patch)
     enhanceAI.reset()
   }
 
@@ -237,8 +251,7 @@ export default function DetailedOutlinePanel({ project }: Props) {
         characterContext: charCtx,
         foreshadowContext: foreshadowCtx,
         onSave: async (outlineNodeId, data) => {
-          const dt = await getOrCreate(project.id!, outlineNodeId)
-          if (dt.id) await save(dt.id, data)
+          await adoptDetailedPatch(outlineNodeId, data)
         },
         onProgress: setBatchProgress,
         signal: ac.signal,
@@ -253,7 +266,7 @@ export default function DetailedOutlinePanel({ project }: Props) {
       // 3 秒后清除进度信息
       setTimeout(() => setBatchProgress(null), 3000)
     }
-  }, [batchProgress, worldview, storyCore, characters, foreshadows, chapterNodes, detailedOutlines, getOrCreate, save, project.id, loadDetailed])
+  }, [batchProgress, worldview, storyCore, characters, foreshadows, chapterNodes, detailedOutlines, project.id, loadDetailed, adoptDetailedPatch])
 
   const handleBatchStop = useCallback(() => {
     batchAbortRef.current?.abort()
@@ -397,24 +410,25 @@ export default function DetailedOutlinePanel({ project }: Props) {
                     // AI 输出粘贴到第一个场景的备注里，让用户参考着手动拆
                     // 后续 P10 可以做结构化解析
                     try {
+                      if (!currentChapter.id) return
                       if (!currentDetailed || currentDetailed.scenes.length === 0) {
-                        await addScene()
-                        const fresh = useDetailedOutlineStore.getState().detailedOutlines.find(d => d.outlineNodeId === currentChapter.id)
-                        if (fresh && fresh.scenes[0]) {
-                          await updateScenes(fresh.scenes.map((s, i) =>
-                            i === 0 ? { ...s, notes: text } : s
-                          ))
+                        const newScene: DetailedScene = {
+                          sceneId: nanoid(),
+                          title: '新场景', summary: '',
+                          characterIds: [], location: '', conflict: '',
+                          pace: 'medium', estimatedWords: 0, notes: text,
                         }
-                        // Phase 30.3: 快照当前大纲摘要
-                        if (fresh?.id) {
-                          await save(fresh.id, { lastUsedSummary: currentChapter.summary || '' })
-                        }
+                        await adoptDetailedPatch(currentChapter.id, {
+                          scenes: [newScene],
+                          lastUsedSummary: currentChapter.summary || '',
+                        })
                       } else {
-                        await updateScene(currentDetailed.scenes[0].sceneId, { notes: text })
-                        // Phase 30.3: 快照当前大纲摘要
-                        if (currentDetailed.id) {
-                          await save(currentDetailed.id, { lastUsedSummary: currentChapter.summary || '' })
-                        }
+                        await adoptDetailedPatch(currentChapter.id, {
+                          scenes: currentDetailed.scenes.map((s, i) =>
+                            i === 0 ? { ...s, notes: text } : s
+                          ),
+                          lastUsedSummary: currentChapter.summary || '',
+                        })
                       }
                     } catch (err) {
                       console.error('[DetailedOutline] 采纳失败:', err)

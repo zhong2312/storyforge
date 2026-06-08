@@ -16,6 +16,7 @@ import {
 } from '../../lib/ai/parse-outline-output'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { runBatchOutlineGeneration, type BatchOutlineProgress } from '../../lib/ai/batch-outline-runner'
+import { adopt } from '../../lib/registry/adopt'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
 import PanelLayout from '../shared/PanelLayout'
@@ -50,6 +51,22 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const [batchProgress, setBatchProgress] = useState<BatchOutlineProgress | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
   const batchAbortRef = useRef<AbortController | null>(null)
+
+  const addOutlineNodeByAdopt = useCallback(async (node: {
+    parentId: number | null
+    type: 'volume' | 'chapter'
+    title: string
+    summary: string
+    order: number
+  }): Promise<number | null> => {
+    const result = await adopt({
+      projectId: project.id!,
+      target: 'outlineNodes',
+      mode: 'add',
+      data: node,
+    })
+    return result.written[0]?.id ?? null
+  }, [project.id])
   const [batchResult, setBatchResult] = useState<Map<number, ParsedChapter[]> | null>(null)
 
   const ai = useAIStream()
@@ -219,16 +236,17 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     for (const [volId, chapters] of batchResult) {
       const existingCount = nodes.filter(n => n.parentId === volId && n.type === 'chapter').length
       for (let i = 0; i < chapters.length; i++) {
-        await addNode({
-          projectId: project.id!, parentId: volId, type: 'chapter',
+        await addOutlineNodeByAdopt({
+          parentId: volId, type: 'chapter',
           title: chapters[i].title, summary: chapters[i].summary,
           order: existingCount + i,
         })
       }
     }
+    await loadAll(project.id!)
     setBatchResult(null)
     setBatchProgress(null)
-  }, [batchResult, nodes, addNode, project.id])
+  }, [batchResult, nodes, addOutlineNodeByAdopt, loadAll, project.id])
 
   // ── 采纳预览 + 确认 ──
 
@@ -262,13 +280,14 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     const existingCount = volumes.length
     let firstId: number | null = null
     for (let i = 0; i < previewVolumes.length; i++) {
-      const id = await addNode({
-        projectId: project.id!, parentId: null, type: 'volume',
+      const id = await addOutlineNodeByAdopt({
+        parentId: null, type: 'volume',
         title: previewVolumes[i].title, summary: previewVolumes[i].summary,
         order: existingCount + i,
       })
       if (i === 0) firstId = id
     }
+    await loadAll(project.id!)
     setPreviewVolumes(null)
     if (firstId) setSelectedVolId(firstId)
   }
@@ -278,12 +297,13 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     ai.reset()
     const existingCount = selectedVolChapters.length
     for (let i = 0; i < previewChapters.length; i++) {
-      await addNode({
-        projectId: project.id!, parentId: selectedVol.id!, type: 'chapter',
+      await addOutlineNodeByAdopt({
+        parentId: selectedVol.id!, type: 'chapter',
         title: previewChapters[i].title, summary: previewChapters[i].summary,
         order: existingCount + i,
       })
     }
+    await loadAll(project.id!)
     setPreviewChapters(null)
   }
 

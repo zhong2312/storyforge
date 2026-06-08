@@ -8,6 +8,8 @@
 import { useCharacterStore } from '../../stores/character'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useOutlineStore } from '../../stores/outline'
+import { db } from '../db/schema'
+import { adopt } from '../registry/adopt'
 import type { UnifiedParseResult } from '../types'
 import type { CharacterRole } from '../types'
 import {
@@ -61,7 +63,8 @@ export async function applyChunkResult(
       }
     }
     if (Object.keys(patch).length > 0) {
-      await wvStore.saveWorldview({ projectId, ...patch })
+      await adopt({ projectId, target: 'worldviews', mode: 'replace', data: patch })
+      await wvStore.loadAll(projectId)
     }
   }
 
@@ -107,32 +110,46 @@ export async function applyChunkResult(
             arc: existing.arc || '',
           }
           const merged = mergeCharacterFields(existingFields, incomingFields)
-          await chStore.updateCharacter(dedup.existingId, merged)
+          await adopt({
+            projectId,
+            target: 'characters',
+            mode: 'add',
+            data: {
+              name: c.name.trim(),
+              role,
+              ...merged,
+            },
+          })
           charactersAdded++ // 仍然计数（表示处理了一个角色）
         }
       } else {
         // 新角色 → 直接创建
         const charName = String(c.name).trim()
-        await chStore.addCharacter({
+        await adopt({
           projectId,
-          name: charName,
-          role,
-          shortDescription: incomingFields.shortDescription,
-          appearance: incomingFields.appearance,
-          personality: incomingFields.personality,
-          background: incomingFields.background,
-          motivation: incomingFields.motivation,
-          abilities: incomingFields.abilities,
-          relationships: incomingFields.relationships,
-          arc: incomingFields.arc,
+          target: 'characters',
+          mode: 'add',
+          data: {
+            name: charName,
+            role,
+            shortDescription: incomingFields.shortDescription,
+            appearance: incomingFields.appearance,
+            personality: incomingFields.personality,
+            background: incomingFields.background,
+            motivation: incomingFields.motivation,
+            abilities: incomingFields.abilities,
+            relationships: incomingFields.relationships,
+            arc: incomingFields.arc,
+          },
         })
         // 更新映射以便同块内后续角色也能去重
-        const newChars = useCharacterStore.getState().characters
+        const newChars = await db.characters.where('projectId').equals(projectId).toArray()
         const added = newChars.find(ch => ch.name === charName)
         if (added?.id != null) nameMap.set(added.name, added.id)
         charactersAdded++
       }
     }
+    await chStore.loadAll(projectId)
   }
 
   // ── 大纲：递归写（Phase 28.4: 支持将章节挂到已存在的同名卷下） ──
@@ -217,14 +234,20 @@ export async function applyChunkResult(
         return
       }
 
-      const id = await olStore.addNode({
+      const adopted = await adopt({
         projectId,
-        parentId,
-        type: isVolume ? 'volume' : 'chapter',
-        title: node.title.trim(),
-        summary: String(node.summary || ''),
-        order: orderRef.value++,
+        target: 'outlineNodes',
+        mode: 'add',
+        data: {
+          parentId,
+          type: isVolume ? 'volume' : 'chapter',
+          title: node.title.trim(),
+          summary: String(node.summary || ''),
+          order: orderRef.value++,
+        },
       })
+      const id = adopted.written[0]?.id
+      if (id == null) return
       outlineAdded++
       // 更新 existingNodes 以便同块内后续节点也能去重
       existingNodes.push({
@@ -252,6 +275,7 @@ export async function applyChunkResult(
     for (const n of result.outline) {
       await writeNode(n as Record<string, unknown>, null, ref)
     }
+    await olStore.loadAll(projectId)
   }
 
   return {

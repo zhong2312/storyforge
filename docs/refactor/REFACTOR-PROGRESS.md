@@ -16,9 +16,9 @@
 | Core Item | Phase | Status | Scope |
 |---|---|---|---|
 | `PROJECT_TABLES` registry | 1.1 | Done | 45 Dexie tables registered; lifecycle selectors/APIs added; `deleteProject` / `deleteGroup` / `migrateToMultiWorld` now use registry-derived APIs. |
-| `FIELD_REGISTRY` | 1.2 | In progress | Register writable singleton fields, aliases, types, enums, enum aliases, sanitizers, and world-scoped write rules. |
-| `AdoptionSchema` | 1.2 | In progress | Register collection writes such as characters, foreshadows, outline nodes, codex entries, dedupe policy, FK checks, array member checks, and merge strategies. |
-| `adopt()` unified write path | 1.2 | In progress | Route AI output and structured adoption through validation, alias mapping, dedupe, FK checks, and typed DB writes. |
+| `FIELD_REGISTRY` | 1.2 | Done | Writable singleton/collection fields, aliases, types, enums, enum aliases, sanitizers, and world-scoped write rules are registered for the 1.2 write layer. |
+| `AdoptionSchema` | 1.2 | Done | Collection writes for characters, foreshadows, outline nodes, chapters, detailed outlines, story arcs, codex categories, and codex entries now declare identity, dedupe policy, FK checks, array member checks, and stamps. |
+| `adopt()` unified write path | 1.2 | Done | AI output and structured adoption paths for 1.2b callers now route through validation, alias mapping, dedupe, FK checks, and typed DB writes. |
 | `CONTEXT_SOURCES` registry | 1.3 | Pending | Register AI context sources, scope, budgets, worldGroupId requirements, enablement rules, and test assertions. |
 | `assembleContext()` unified read path | 1.3 | Pending | Replace scattered hand-built AI context with one budgeted, world-aware, truly trimmed context assembly API. |
 | Registry validation and lint | 1.1-1.3 / 3.3 | Pending | Validate Dexie tables vs registries, prompt keys, AI meta coverage, transaction scope, manual sync, and source isolation. |
@@ -44,7 +44,7 @@
 | 1.1a PROJECT_TABLES registry + derived APIs | Done | `refactor/phase-1-task-1.1a` / `6cf0613` | Added `src/lib/registry/`, 45-table registry, lifecycle selectors/APIs, and registry tests. |
 | 1.1b lifecycle callers switch + startup validation | Done | `refactor/phase-1-task-1.1b` / `fdd02e5` | `deleteProject` / `deleteGroup` / `migrateToMultiWorld` now use derived lifecycle APIs; `main.tsx` validates registry at startup. |
 | 1.2a FIELD_REGISTRY + AdoptionSchema + adopt() | Done | `refactor/phase-1-task-1.2a` / this task commit | Pure-add unified write layer; no existing caller migration in this task. |
-| 1.2b adopt() caller migration | Pending | TBD | Switch AI/writeback callers to `adopt()` with focused regressions. |
+| 1.2b adopt() caller migration | Done | `refactor/phase-1-task-1.2b` / this task commit | Switched inspiration reverse, world expansion, WorkflowRunner, chunk-writer, saveXxx thin wrappers, and focused AI adoption paths to `adopt()`; added caller regressions. |
 | 1.3a CONTEXT_SOURCES + assembleContext() | Pending | TBD | Pure-add unified read/context layer. |
 | 1.3b AI generation caller migration | Pending | TBD | Switch generation entrances to `assembleContext()` by priority. |
 

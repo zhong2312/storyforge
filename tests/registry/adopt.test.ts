@@ -90,7 +90,7 @@ describe('Phase 1.2a · 统一写回层', () => {
     expect(row?.theme).toBe('自由意志')
   })
 
-  it('集合写回:characters 中文 role 归一,同名角色自动跳过', async () => {
+  it('集合写回:characters 中文 role 归一,同名角色自动合并', async () => {
     const projectId = await createProject()
     const result = await adopt({
       projectId,
@@ -103,16 +103,40 @@ describe('Phase 1.2a · 统一写回层', () => {
       ],
     })
 
-    expect(result.written.length).toBe(1)
-    expect(result.skipped.some(s => s.reason.includes('重复'))).toBe(true)
+    expect(result.written.length).toBe(2)
+    expect(result.skipped).toHaveLength(0)
     expect(result.aliasMapped).toContainEqual({ from: 'summary', to: 'shortDescription' })
 
     const rows = await db.characters.where('projectId').equals(projectId).toArray()
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('燕飞')
-    expect(rows[0].role).toBe('protagonist')
-    expect(rows[0].shortDescription).toBe('背负旧王血脉')
+    expect(rows[0].role).toBe('antagonist')
+    expect(rows[0].shortDescription).toBe('重复角色')
     expect(rows[0].homeWorldGroupId).toBe(7)
+  })
+
+  it('集合写回:characters 同名不同世界不误合并', async () => {
+    const projectId = await createProject()
+    await adopt({
+      projectId,
+      worldGroupId: 1,
+      target: 'characters',
+      mode: 'add',
+      data: { name: '燕飞', role: '主角', summary: '主世界角色' },
+    })
+    await adopt({
+      projectId,
+      worldGroupId: 2,
+      target: 'characters',
+      mode: 'add',
+      data: { name: '燕飞', role: '反派', summary: '副世界角色' },
+    })
+
+    const rows = await db.characters.where('projectId').equals(projectId).toArray()
+    expect(rows).toHaveLength(2)
+    expect(rows.map(r => r.homeWorldGroupId).sort()).toEqual([1, 2])
+    expect(rows.find(r => r.homeWorldGroupId === 1)?.role).toBe('protagonist')
+    expect(rows.find(r => r.homeWorldGroupId === 2)?.role).toBe('antagonist')
   })
 
   it('集合写回:codexEntries 校验 categoryId,无效 FK 不落库', async () => {

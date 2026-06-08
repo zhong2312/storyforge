@@ -11,8 +11,10 @@ import { useForeshadowStore } from '../../../stores/foreshadow'
 import { useAIStream } from '../../../hooks/useAIStream'
 import { renderPrompt } from '../../../lib/ai/prompt-engine'
 import { extractJSON } from '../../../lib/ai/adapters/import-adapter'
+import { adopt } from '../../../lib/registry/adopt'
+import { db } from '../../../lib/db/schema'
 import type { PromptWorkflow, PromptWorkflowStep, SaveTarget } from '../../../lib/types/workflow'
-import type { Project, CharacterRole } from '../../../lib/types'
+import type { Project } from '../../../lib/types'
 import type { TokenUsage } from '../../../lib/ai/logger'
 import { targetLabel } from './workflow-helpers'
 
@@ -30,6 +32,19 @@ interface StepResult {
   tokenUsage?: TokenUsage | null
 }
 
+async function findExistingOutlineNode(
+  projectId: number,
+  node: { parentId: number | null; type: string; title: string },
+): Promise<number | null> {
+  const rows = await db.outlineNodes.where('projectId').equals(projectId).toArray()
+  const hit = rows.find(n =>
+    (n.parentId ?? null) === (node.parentId ?? null) &&
+    n.type === node.type &&
+    n.title === node.title
+  )
+  return hit?.id ?? null
+}
+
 /**
  * 工作流执行器：按顺序运行一个 PromptWorkflow 的所有步骤，
  * 每步可暂停让用户审核、重试、跳过、或自动写入 SaveTarget。
@@ -37,11 +52,11 @@ interface StepResult {
  */
 export default function WorkflowRunner({ workflow, project, onClose }: RunnerProps) {
   const ai = useAIStream()
-  const { worldview, saveWorldview, storyCore, saveStoryCore, loadAll: loadWorldview } = useWorldviewStore()
-  const { creativeRules, save: saveCreativeRules, loadAll: loadCreativeRules } = useCreativeRulesStore()
-  const { addCharacter, loadAll: loadCharacters } = useCharacterStore()
-  const { addNode, loadAll: loadOutline } = useOutlineStore()
-  const { addForeshadow, loadAll: loadForeshadows } = useForeshadowStore()
+  const { loadAll: loadWorldview } = useWorldviewStore()
+  const { loadAll: loadCreativeRules } = useCreativeRulesStore()
+  const { loadAll: loadCharacters } = useCharacterStore()
+  const { loadAll: loadOutline } = useOutlineStore()
+  const { loadAll: loadForeshadows } = useForeshadowStore()
   const [savedSteps, setSavedSteps] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -60,91 +75,90 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
       alert('未关联项目，无法自动保存。请进入某个项目后再运行。')
       return
     }
+    const projectId = project.id
     try {
       if (target.type === 'worldview-field') {
-        const existing = (worldview?.[target.field as keyof typeof worldview] as string) || ''
-        const next = target.mode === 'append' && existing ? `${existing}\n\n${output}` : output
-        await saveWorldview({ projectId: project.id, [target.field]: next })
+        await adopt({
+          projectId,
+          target: 'worldviews',
+          mode: target.mode === 'append' ? 'append' : 'replace',
+          data: { [target.field]: output },
+        })
+        await loadWorldview(projectId)
       } else if (target.type === 'storyCore-field') {
-        const existing = (storyCore?.[target.field as keyof typeof storyCore] as string) || ''
-        const next = target.mode === 'append' && existing ? `${existing}\n\n${output}` : output
-        await saveStoryCore({ projectId: project.id, [target.field]: next })
+        await adopt({
+          projectId,
+          target: 'storyCores',
+          mode: target.mode === 'append' ? 'append' : 'replace',
+          data: { [target.field]: output },
+        })
+        await loadWorldview(projectId)
       } else if (target.type === 'creativeRules-field') {
-        const existing = (creativeRules?.[target.field as keyof typeof creativeRules] as string) || ''
-        const next = target.mode === 'append' && existing ? `${existing}\n\n${output}` : output
-        await saveCreativeRules({ projectId: project.id, [target.field]: next })
+        await adopt({
+          projectId,
+          target: 'creativeRules',
+          mode: target.mode === 'append' ? 'append' : 'replace',
+          data: { [target.field]: output },
+        })
+        await loadCreativeRules(projectId)
       } else if (target.type === 'create-characters') {
         const parsed = extractJSON(output) as unknown[]
         if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
-        let n = 0
-        for (const raw of parsed) {
-          if (typeof raw !== 'object' || raw === null) continue
-          const c = raw as Record<string, unknown>
-          if (typeof c.name !== 'string') continue
-          await addCharacter({
-            projectId: project.id,
-            name: c.name,
-            role: ((c.role as string) || 'minor') as CharacterRole,
-            shortDescription: String(c.shortDescription || ''),
-            appearance: String(c.appearance || ''),
-            personality: String(c.personality || ''),
-            background: String(c.background || ''),
-            motivation: String(c.motivation || ''),
-            abilities: String(c.abilities || ''),
-            relationships: String(c.relationships || ''),
-            arc: String(c.arc || ''),
-          })
-          n++
-        }
-        alert(`已写入 ${n} 个角色`)
+        const result = await adopt({ projectId, target: 'characters', mode: 'add-many', data: parsed as Record<string, unknown>[] })
+        await loadCharacters(projectId)
+        alert(`已写入 ${result.written.length} 个角色${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}`)
       } else if (target.type === 'create-outline-nodes') {
         const parsed = extractJSON(output) as unknown[]
         if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
         let order = 0, n = 0
-        const writeNode = async (raw: Record<string, unknown>, parentId: number | null) => {
-          if (typeof raw.title !== 'string') return
+        const writeNode = async (raw: Record<string, unknown>, parentId: number | null): Promise<number | null> => {
+          if (typeof raw.title !== 'string') return null
           const isVolume = raw.type === 'volume' || (Array.isArray(raw.children) && raw.children.length > 0)
-          const id = await addNode({
-            projectId: project.id!,
+          const normalized = {
+            projectId,
             parentId,
             type: isVolume ? 'volume' : 'chapter',
             title: raw.title,
             summary: String(raw.summary || ''),
             order: order++,
+          }
+          const adopted = await adopt({
+            projectId,
+            target: 'outlineNodes',
+            mode: 'add',
+            data: normalized,
           })
-          n++
-          if (Array.isArray(raw.children)) {
+          const id = adopted.written[0]?.id ?? (await findExistingOutlineNode(projectId, normalized))
+          if (adopted.written.length) n++
+          if (id != null && Array.isArray(raw.children)) {
             for (const child of raw.children) {
               await writeNode(child as Record<string, unknown>, id)
             }
           }
+          return id
         }
         for (const x of parsed) {
           if (typeof x === 'object' && x) await writeNode(x as Record<string, unknown>, null)
         }
+        await loadOutline(projectId)
         alert(`已写入 ${n} 个大纲节点`)
       } else if (target.type === 'create-foreshadows') {
         const parsed = extractJSON(output) as unknown[]
         if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
-        let n = 0
-        for (const raw of parsed) {
-          if (typeof raw !== 'object' || raw === null) continue
-          const f = raw as Record<string, unknown>
-          if (typeof f.name !== 'string') continue
-          await addForeshadow({
-            projectId: project.id,
-            name: f.name,
-            type: ((f.type as string) || 'chekhov') as 'chekhov',
-            status: 'planned',
-            description: String(f.description || ''),
-            plantChapterId: null,
-            echoChapterIds: '[]',
-            resolveChapterId: null,
-            notes: '',
-          })
-          n++
-        }
-        alert(`已写入 ${n} 个伏笔`)
+        const normalized = parsed
+          .filter((raw): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null)
+          .map(f => ({
+            ...f,
+            status: f.status || 'planned',
+            type: f.type || 'chekhov',
+            echoChapterIds: f.echoChapterIds || [],
+            plantChapterId: f.plantChapterId ?? null,
+            resolveChapterId: f.resolveChapterId ?? null,
+            notes: f.notes || '',
+          }))
+        const result = await adopt({ projectId, target: 'foreshadows', mode: 'add-many', data: normalized })
+        await loadForeshadows(projectId)
+        alert(`已写入 ${result.written.length} 个伏笔${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}`)
       }
       setSavedSteps(prev => new Set(prev).add(stepId))
     } catch (e) {

@@ -13,7 +13,7 @@
 | 1.1a 建 PROJECT_TABLES 注册表 + 派生 API(纯新增) | ✅ Done | `refactor/phase-1-task-1.1a` | 新建 `src/lib/registry/`,登记 45 表;派生 API 单测 10 条通过;现有调用方一行未改 |
 | 1.1b 生命周期切换到派生 API + 启动校验 | ✅ Done | `refactor/phase-1-task-1.1b` | deleteProject/deleteGroup/migrate 改派生;main.tsx 接入 validateRegistry;手写表清单全消失;27 测试持续全绿 |
 | 1.2a 建 FIELD_REGISTRY + AdoptionSchema + adopt() | ✅ Done | `refactor/phase-1-task-1.2a` | 纯新增写回层;不切现有调用方 |
-| 1.2b 写回调用方切换到 adopt() | Pending | TBD | 灵感反推/导入/工作流/saveXxx |
+| 1.2b 写回调用方切换到 adopt() | ✅ Done | `refactor/phase-1-task-1.2b` | 灵感反推/导入/工作流/saveXxx/AI 采纳路径切到 `adopt()` |
 | 1.3a 建 CONTEXT_SOURCES + assembleContext() | Pending | TBD | 纯新增读取层 |
 | 1.3b 生成入口切换到 assembleContext() | Pending | TBD | 32+ 生成入口,章节正文优先 |
 
@@ -113,3 +113,20 @@
 - 验证: `npm run build` 通过。Vite 仍输出既有 chunk-size / dynamic-import warning,无构建失败。
 
 **下一步(1.2b)**:把灵感反推 / 多世界扩展 / 导入 chunk-writer / WorkflowRunner / saveXxx 薄壳逐步切到 `adopt()`,每个切换点补反例测试。
+
+### 2026-06-08 22:17:04 CST · 1.2b 完成(by Codex)
+
+- `saveWorldview` / `saveStoryCore` 改为 `adopt()` 薄壳,保留 DB 定位与 store 刷新,防内存为空时重复创建单例。
+- 灵感反推、多世界扩展、WorkflowRunner 保存目标、导入 `chunk-writer`、角色/伏笔/大纲/细纲/创作规则 AI 采纳路径切到 `adopt()`。
+- `characters` AdoptionSchema 改为 `homeWorldGroupId + name` 复合身份:同世界同名合并,不同世界同名不误合并。
+- 细纲增强 / 批量细纲 / 嵌入式场景拆分采纳经 `detailedOutlines` schema,顶层角色/伏笔 ID 由统一数组成员校验过滤。
+- 新增 `tests/registry/adopt-callers.test.ts`,覆盖 `saveWorldview` 薄壳与 `chunk-writer` 同名角色合并。
+
+**验证**:
+- `npm test -- tests/registry/adopt.test.ts tests/registry/adopt-callers.test.ts` 通过(2 files / 9 tests)
+- `npx tsc --noEmit` 通过
+- `npm test` 通过(12 files / 36 tests)
+- `npm run check:required-tables` 通过(45 tables match schema.ts)
+- `npm run build` 通过。Vite 仍输出既有 dynamic-import / chunk-size warning,无构建失败。
+
+**下一步(1.3a)**:新增 `CONTEXT_SOURCES + assembleContext()` 统一上下文层,先纯新增不切调用方。

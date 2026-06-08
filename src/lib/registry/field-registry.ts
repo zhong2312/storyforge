@@ -93,6 +93,14 @@ function enumeration(
 }
 
 export const FIELD_REGISTRY: FieldSpec[] = [
+  // worldviews: legacy free-text fields still used by existing panels.
+  longtext('worldviews', 'geography', ['地理']),
+  longtext('worldviews', 'history', ['旧历史']),
+  longtext('worldviews', 'society', ['社会']),
+  longtext('worldviews', 'culture', ['文化']),
+  json('worldviews', 'economy', ['货币体系', '经济']),
+  longtext('worldviews', 'rules', ['旧世界规则']),
+
   // worldviews: v3 结构字段。summary 作为 AI 反推别名归一到 worldOrigin。
   longtext('worldviews', 'worldOrigin', ['summary', 'origin', 'worldSummary', '世界来源', '世界起源']),
   longtext('worldviews', 'powerHierarchy', ['powerSystem', 'power', '力量体系']),
