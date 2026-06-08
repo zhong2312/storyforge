@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 2.1 Phase 40 `worldRulesProfiles` multiworld | Done | `refactor/phase-2-task-2.1` / this task commit | `worldRulesProfiles` is now project+world scoped, loaded by world tab, exported/imported with world-group remap, lifecycle-covered by `PROJECT_TABLES`, and injected through `CONTEXT_SOURCES` with per-world timeline/keyword filtering. |
 | 2.2 `chapter-adapter` real `worldRulesContext` | Done | `refactor/phase-2-task-2.2` / this task commit | `buildChapterContentPrompt` now accepts and renders `worldRulesContext`; `ChapterEditor` passes the assembled `worldRules` segment into chapter prose generation. |
-| 2.3 `AIFieldCard` current value injection | Pending | - | Single-field AI generation should include the current field value by default and support rewrite/expand/polish modes. |
+| 2.3 `AIFieldCard` current value injection | Done | `refactor/phase-2-task-2.3` / this task commit | Single-field AI generation now has expand/rewrite/polish modes; expand/polish include current value, rewrite ignores current value. |
 | 2.4 `chunk-writer` target `worldGroupId` | Pending | - | Import sessions and chunk writes should route imported data to the selected world. |
 | 2.5 Batch detail/content `worldContextResolver` | Pending | - | Batch detailed outline/content generation should resolve context per chapter/world. |
 | 2.6 Character JSON reference remap | Pending | - | Character delete/merge should remove or rewrite JSON-array references. |
@@ -45,3 +45,19 @@
 - `buildChapterContentPrompt` now passes `worldRulesContext` into `renderPrompt` for the `chapter.content` seed.
 - `ChapterEditor` extracts the `worldRules` segment from `assembleContext()` and sends it as a dedicated adapter variable.
 - R-11 verifies the actual rendered prompt messages contain the real-vs-fiction rule text.
+
+## 2.3 Verification Evidence
+
+- `npx tsc --noEmit`: passed.
+- `npm test -- tests/regression/R-12-ai-field-current-value.test.ts`: 1 file / 2 tests passed.
+- `npm test`: 15 files / 43 tests passed.
+- `npm run check:required-tables`: 45 tables match `schema.ts`.
+- `npm run build`: passed; existing Vite dynamic-import/chunk-size warnings only.
+
+## 2.3 Completion Notes
+
+- Added `FieldGenerationMode` and a shared `AIFieldModeTabs` segmented control.
+- `AIFieldCard` now passes current value and selected mode to its `buildMessages` callback.
+- `story.generate`, `worldview.dimension`, and `character.dimension` adapters include mode guidance; expand/polish include current field content, rewrite deliberately ignores it.
+- Existing story core and worldview single-field generation controls now pass their current field value and expose expand/rewrite/polish mode selection.
+- R-12 verifies rendered prompts include current value in expand mode and omit it in rewrite mode.

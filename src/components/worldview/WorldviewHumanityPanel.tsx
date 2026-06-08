@@ -9,7 +9,9 @@ import { buildWorldviewPrompt } from '../../lib/ai/adapters/worldview-adapter'
 import { assembleContext } from '../../lib/registry/assemble-context'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
+import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import type { Project } from '../../lib/types'
+import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -186,6 +188,7 @@ function HumanityFieldEditor({
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
+  const [mode, setMode] = useState<FieldGenerationMode>('expand')
   const ai = useAIStream()
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
 
@@ -206,7 +209,7 @@ function HumanityFieldEditor({
       } : undefined,
     }
     const messages = buildWorldviewPrompt(
-      meta.label, project.name, project.genre || '', contextSummary, hint, opts,
+      meta.label, project.name, project.genre || '', contextSummary, hint, opts, value, mode,
     )
     ai.start(messages)
   }
@@ -228,6 +231,7 @@ function HumanityFieldEditor({
       </div>
 
       <div className="flex items-center gap-2">
+        <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
           placeholder="给 AI 的补充说明（可选）"

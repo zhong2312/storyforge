@@ -11,7 +11,9 @@ import { assembleContext } from '../../lib/registry/assemble-context'
 import { streamChat } from '../../lib/ai/client'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
+import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import type { Project, DivineDesign } from '../../lib/types'
+import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -200,6 +202,7 @@ function TextFieldEditor({
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
+  const [mode, setMode] = useState<FieldGenerationMode>('expand')
   const ai = useAIStream()
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
 
@@ -221,7 +224,7 @@ function TextFieldEditor({
       } : undefined,
     }
     const messages = buildWorldviewPrompt(
-      field.label, project.name, project.genre || '', contextSummary, hint, opts,
+      field.label, project.name, project.genre || '', contextSummary, hint, opts, value, mode,
     )
     ai.start(messages)
   }
@@ -240,6 +243,7 @@ function TextFieldEditor({
       </div>
 
       <div className="flex items-center gap-2">
+        <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
           placeholder="给 AI 的补充说明（可选）"
@@ -282,6 +286,7 @@ function DivineFieldEditor({
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
+  const [mode, setMode] = useState<FieldGenerationMode>('expand')
   const ai = useAIStream()
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
 
@@ -306,6 +311,12 @@ function DivineFieldEditor({
       project.name, project.genre || '', contextSummary,
       hint || '请设计完整的信仰体系，包含：1）主流信仰与层级 2）主要神明/信仰名号与职司 3）规则、风俗与禁忌。分三个小节输出。',
       opts,
+      [
+        divineDesign.divineRank && `信仰层级:${divineDesign.divineRank}`,
+        divineDesign.divineNames && `神明名号:${divineDesign.divineNames}`,
+        divineDesign.divineRules && `信仰规则:${divineDesign.divineRules}`,
+      ].filter(Boolean).join('\n'),
+      mode,
     )
     ai.start(messages)
   }
@@ -417,6 +428,7 @@ function DivineFieldEditor({
 
       {/* AI 生成 */}
       <div className="flex items-center gap-2">
+        <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
           placeholder="给 AI 的补充说明（可选）"

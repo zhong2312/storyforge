@@ -6,7 +6,9 @@ import { buildStoryGeneratePrompt } from '../../lib/ai/adapters/story-adapter'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import PromptRunPanel from '../shared/PromptRunPanel'
 import { InlineTextarea } from '../shared/InlineEdit'
+import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import type { Project } from '../../lib/types'
+import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 
 // ── 字段定义 ──────────────────────────────────────────────────
 
@@ -162,6 +164,7 @@ function FieldEditor({
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
+  const [mode, setMode] = useState<FieldGenerationMode>('expand')
   const ai = useAIStream()
 
   // 通知父组件 streaming 状态
@@ -178,7 +181,7 @@ function FieldEditor({
       } : undefined,
     }
     const messages = buildStoryGeneratePrompt(
-      field.dimension, project.name, project.genre || '', worldCtx(), hint, opts,
+      field.dimension, project.name, project.genre || '', worldCtx(), hint, opts, value, mode,
     )
     ai.start(messages, undefined, { category: 'story.generate', projectId: project.id! })
   }
@@ -205,6 +208,7 @@ function FieldEditor({
       {/* AI 生成区 */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
+          <AIFieldModeTabs value={mode} onChange={setMode} />
           <input
             value={hint}
             onChange={e => setHint(e.target.value)}
