@@ -10,7 +10,7 @@
 | 2.2 `chapter-adapter` real `worldRulesContext` | Done | `refactor/phase-2-task-2.2` / this task commit | `buildChapterContentPrompt` now accepts and renders `worldRulesContext`; `ChapterEditor` passes the assembled `worldRules` segment into chapter prose generation. |
 | 2.3 `AIFieldCard` current value injection | Done | `refactor/phase-2-task-2.3` / this task commit | Single-field AI generation now has expand/rewrite/polish modes; expand/polish include current value, rewrite ignores current value. |
 | 2.4 `chunk-writer` target `worldGroupId` | Done | `refactor/phase-2-task-2.4` / this task commit | Import sessions record a target world, the confirm modal lets multiworld users choose it, and chunk writes stamp worldview/characters/outline to that world. |
-| 2.5 Batch detail/content `worldContextResolver` | Pending | - | Batch detailed outline/content generation should resolve context per chapter/world. |
+| 2.5 Batch detail/content `worldContextResolver` | Done | `refactor/phase-2-task-2.5` / this task commit | Batch chapter content generation now supports per-chapter world context resolution; batch detail already used this resolver and remains covered. |
 | 2.6 Character JSON reference remap | Pending | - | Character delete/merge should remove or rewrite JSON-array references. |
 | 2.7 Selective state extraction | Pending | - | State extraction should use selective state recall instead of full state context. |
 | 2.8 Remaining P1 fixes | Pending | - | Close remaining P1 issues listed in `MASTER-BLUEPRINT.md`. |
@@ -79,3 +79,17 @@
 - `pipeline` passes `session.targetWorldGroupId` into `applyChunkResult`.
 - `chunk-writer` scopes worldview merge, character de-duplication, and outline volume reuse to the target world, then stamps new rows through `adopt()`.
 - R-13 verifies imported worldview, characters, and outline nodes land in the selected world and do not merge same-name characters from another world.
+
+## 2.5 Verification Evidence
+
+- `npx tsc --noEmit`: passed.
+- `npm test -- tests/regression/R-14-batch-chapter-world-context.test.ts`: 1 file / 1 test passed.
+- `npm test`: 17 files / 45 tests passed.
+- `npm run check:required-tables`: 45 tables match `schema.ts`.
+- `npm run build`: passed; existing Vite dynamic-import/chunk-size warnings only.
+
+## 2.5 Completion Notes
+
+- `BatchChapterOptions` now accepts `worldContextResolver?(chapterNodeId)`.
+- `batchGenerateChapters` resolves `chWorldContext` per chapter before building `chapter.content` messages.
+- R-14 mocks `chat()` and verifies each generated prompt uses the resolver context instead of the fallback context.
