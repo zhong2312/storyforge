@@ -240,9 +240,11 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     const parts = [assembled.text]
     if (genreCtx) parts.push(genreCtx)
     if (styleCtx) parts.push(styleCtx)
+    const worldRulesIdx = assembled.included.indexOf('worldRules')
     return {
       text: parts.filter(Boolean).join('\n\n'),
       segments: assembled.segments,
+      worldRulesContext: worldRulesIdx >= 0 ? assembled.segments[worldRulesIdx]?.content ?? '' : '',
     }
   }
 
@@ -250,8 +252,15 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     if (!outlineNode) return
     const prevChapter = chapters.filter(c => c.order < (currentChapter?.order || 0)).pop()
     const prevEnding = htmlToPlainText(prevChapter?.content || '').slice(-500)
-    const { text: fullCtx, segments: assembledSegments } = await buildFullWorldCtx('write')
-    const messages = buildChapterContentPrompt(outlineNode.title, outlineNode.summary, fullCtx, charCtx, prevEnding)
+    const { text: fullCtx, segments: assembledSegments, worldRulesContext } = await buildFullWorldCtx('write')
+    const messages = buildChapterContentPrompt(
+      outlineNode.title,
+      outlineNode.summary,
+      fullCtx,
+      charCtx,
+      prevEnding,
+      worldRulesContext,
+    )
 
     // Phase 21.3: 计算上下文预算
     const segments = analyzeContextSegments([
