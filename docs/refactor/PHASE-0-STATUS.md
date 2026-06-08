@@ -40,3 +40,37 @@
 - Result: passed. Vite emitted existing bundle-size/dynamic-import warnings; no build failure.
 - Command: `npm test`.
 - Result: passed, 2 files / 6 tests.
+
+## Phase 0.2 - migrateToMultiWorld Transaction Scope
+
+### 2026-06-08 17:09:00 CST
+
+- Status: started.
+- Branch: `refactor/phase-0-task-0.2`.
+- Branch base: stacked on top of `refactor/phase-0-task-0.1` because the project author explicitly requested continuing before Phase 0.1 review/merge.
+- Scope: only `MASTER-BLUEPRINT.md` Phase 0.2, `migrateToMultiWorld` transaction declaration and corresponding `R-02` regression verification.
+- Existing dirty files before Phase 0.2 work:
+  - `docs/MASTER-BLUEPRINT.md` existed dirty before Phase 0.1.
+  - `docs/refactor/HANDOFF.md` existed dirty before Phase 0.1.
+  - `docs/refactor/PROJECT_TABLES_ALL.md` was updated before Phase 0.1 per project-author request.
+- Rule: unrelated dirty files will not be reverted or included in the Phase 0.2 commit.
+
+### 2026-06-08 17:09:48 CST
+
+- Status: Phase 0.2 code path implemented and regression added.
+- Changed `src/stores/world-group.ts`: added `db.codexEntries` to the `migrateToMultiWorld` transaction scope.
+- Added `tests/regression/R-02-migrate-multiworld.test.ts`: verifies that existing codex entries are stamped to the primary world and migration does not throw.
+- Command: `npm test -- R-02`.
+- Result: passed, 1 file / 1 test.
+
+### 2026-06-08 17:10:08 CST
+
+- Status: Phase 0.2 verification passed.
+- Command: `npm test -- R-01 R-02`.
+- Result: passed, 2 files / 3 tests.
+- Command: `npm test`.
+- Result: passed, 3 files / 7 tests.
+- Command: `npx tsc --noEmit`.
+- Result: passed with zero errors.
+- Command: `npm run build`.
+- Result: passed. Vite emitted existing bundle-size/dynamic-import warnings; no build failure.

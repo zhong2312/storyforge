@@ -288,7 +288,7 @@ export const useWorldGroupStore = create<WorldGroupStore>((set, get) => ({
     // 2. 把现有 worldGroupId 为空的项目级数据归属到主世界组
     await db.transaction('rw', [
       db.worldviews, db.powerSystems, db.geographies, db.histories, db.worldNodes,
-      db.historicalTimelineEvents, db.historicalKeywords,
+      db.historicalTimelineEvents, db.historicalKeywords, db.codexEntries,
     ], async () => {
       const stamp = async <T extends { id?: number; worldGroupId?: number | null }>(
         table: { toArray: () => Promise<T[]>; update: (id: number, c: Partial<T>) => Promise<number> },
