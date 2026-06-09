@@ -3,7 +3,7 @@
 > 🔒 **接手者必读宪法**: [`/CLAUDE.md`](../CLAUDE.md) — 三注册表铁律 + 动手前的「四问」+ 反面教材
 > 📐 **施工权威**: [`docs/MASTER-BLUEPRINT.md`](MASTER-BLUEPRINT.md) — 重构 Phase 0/1/2/3 完整流程
 >
-> **最后更新**: 2026-06-04
+> **最后更新**: 2026-06-09（新增「社区反馈批次」FB-1~FB-5）
 > **说明**: 本文档是唯一的功能规划文档。旧文档已归档至 `docs/archive/`。
 > **结构**: 上半部分「已完成」，下半部分「待开发」按优先级排列。完成后从待办挪到已完成区。
 > **重要**: 任何"加功能 / 修 bug"前，先过 CLAUDE.md 的「四问」。**头疼医头 = 永远拒绝**。
@@ -191,6 +191,82 @@
 
 > 📐 **施工权威已转移**：项目重构请以 `docs/MASTER-BLUEPRINT.md`（v2 · 最终蓝图）为唯一依据。
 > 本 ROADMAP 中所有"架构地基级"任务均已纳入 MASTER-BLUEPRINT 的 Phase 0/1/2/3，本节保留索引但不再独立维护。
+
+---
+
+# ═══ 社区反馈批次（2026-06-09 · 群内用户反馈）═══
+
+> 来源：社区群内真实用户反馈（light莫言 / 江也 / 你的生命过客 等）。
+> 本批次共 5 条，已逐条对照「重构版三注册表架构」给出根因与改法。**所有改法必须过 CLAUDE.md「四问」**。
+> 处理顺序：先修 P0 数据/正确性 bug（FB-1），再做用户高频功能（FB-2/FB-5），最后做大消耗特性（FB-4）。
+
+## ✅ FB-1（P0 重大 bug · 已修复 2026-06-09）— 工作流多步链：第 2 步「世界起源」串到别的书 / 不读第 1 步
+
+> **修复分支**：`fix/fb-1-workflow-context`。**网络抓包现场验证(NVIDIA llama-3.3)**：修复前步骤2请求 `小说名称/类型/维度` 全空、无步骤1内容；修复后步骤2请求含 `小说名称：测试 / 小说类型：other / 维度：世界起源 / 已有世界观设定 + 步骤1故事核心`。
+> **改动**：①`WorkflowRunner.tsx` 用 `useRef` 累加器替代陈旧 `results` 闭包(缺陷A);②每步走 `assembleContext` 注入项目设定+真实与幻想规则,并补 projectName/genres/dimension(缺陷B);③整形纯逻辑抽到 `workflow-helpers.ts:assembleWorkflowStepVars`(可测)。④反例测试 `tests/regression/R-WF-*`(5条)。**零新增组件文件,改入口+加一行注册表式调用。**
+
+### 〔原始记录〕
+
+> 反馈人：江也（截图：模板|工作流，步骤 1「一句话故事」→ 步骤 2「世界起源」`worldview.dimension`）。
+> 原话：「到第二步生成世界起源时，没有根据第一步一句话故事的背景生成，反而跟我创建的其他书籍背景混乱了」。群主判定「隔离没做好，属于重大 bug」。
+> 文件：`src/components/settings/prompt/WorkflowRunner.tsx`
+
+**已定位的两个真实根因（读代码确认，非猜测）**：
+
+1. **缺陷 A · `results` 闭包陈旧（串味真因）**：`runStep(idx)` 第 222 行用 `await runStep(idx+1)` 递归推进下一步，但第 196 行 `results.get(prevStep.stepId)` 读的是**渲染闭包里的旧 `results`**。`setResults` 是异步的，下一步执行时上一步的 `output` **还没进 state** → `previousOutput` 永远取不到 → 模板里 `{{worldContext}}` 为空 → AI 失去本项目依据 → 自由发挥/套用模板示例，被用户感知为「串到其他书」。
+2. **缺陷 B · 工作流未走 `assembleContext`（违反第一铁律①）**：每步 ctx 只塞了 `previousOutput`+`userHint`，`{{projectName}}`/`{{genres}}`/`{{worldContext}}`/`{{dimension}}` 全空。这是 Phase 1.3b「生成入口切换到 assembleContext」**只切了章节正文、漏切工作流入口**的遗留。
+
+**改法（贴合三注册表）**：
+- **修缺陷 A**：用**局部累加器**在递归链内传递每步输出（如 `runStep(idx, accOutputs: Map)`），不依赖 React state 读上一步结果；或改递归为 `for` 循环 + 局部变量。确保「上一步 output → 下一步 inputMapping」严格生效。
+- **修缺陷 B（四问①）**：每步执行前调用 `assembleContext({ projectId, worldGroupId, sourceKeys: [...] })`，把项目级上下文并入 ctx；步骤声明里补 `dimension`（如「世界起源」）等模板必填变量。**不在 WorkflowRunner 里手挑 buildWorldContext**，一律走注册表。
+- **反例测试（防复现）**：新增 `R-WF-1` —— 构造两步工作流（step1 输出固定串 X → step2 模板含 `{{worldContext}}`），断言 step2 渲染出的 messages **必含 X**；`R-WF-2` —— 断言 step2 ctx 中 `projectName` 等于当前项目名（隔离）。
+- **完成判据**：① 两步工作流第 2 步稳定读到第 1 步输出；② 不同项目运行同一工作流，上下文互不串台；③ tsc=0 / build OK / 新增反例测试绿。
+
+## 🟠 FB-2（高频功能）— 大纲章节「拖动排序 / 任意位置插入」
+
+> 反馈人：light莫言。原话：「大纲里面添加章节，能不能弄一个拖动章节位置的功能，现在添加章节只能添加在最后，有时候想自己添加章节很麻烦」。群主已答应「这个可以有」。
+> 文件：`src/stores/outline.ts`（已有 `order` 字段 + `.sortBy('order')`）、`src/components/outline/OutlinePanel.tsx`
+
+**现状**：`outlineNodes` 已有 `order` 字段、按 order 排序，但只支持「追加到末尾」，无拖动重排、无指定位置插入。
+
+**改法（四问③ 走 PROJECT_TABLES / 四问②走 adopt）**：
+- store 新增 `reorderNodes(projectId, parentId, orderedIds[])` 与 `insertNodeAt(node, index)`：**批量重写同层 `order`** 字段。写回经 `adopt({ target: 'outlineNodes', mode: 'update' })`，不裸 `db.outlineNodes.update`（守 CI 架构 lint）。
+- UI：OutlinePanel 同层节点支持 HTML5 drag-and-drop 或既有依赖中的轻量 dnd；拖动结束 → 计算新 `order` 序列 → 调 `reorderNodes`。
+- 注意多世界：`order` 重排须限定在「当前 worldGroupId + 同 parentId」范围内，避免跨世界错排。
+- **完成判据**：拖动后顺序持久化、刷新不乱；可在任意两章之间插入新章；导出/导入后顺序保持。
+
+## 🟡 FB-3（部分已修 2026-06-09）— 「世界起源」字段应允许用户自行编辑 + 读不到一句话故事
+
+> **已修(storyCore 缺口)**：`WorldviewOriginPanel.tsx` 世界起源/神明生成现已 `assembleContext({ sourceKeys:['storyCore'] })` 带上「一句话故事」(此前面板漏读该上游源,工作流则全空)。storyCore 早已登记在 `CONTEXT_SOURCES`,本次只让调用方 `need` 它——改一处,面板生成即贯通。
+> **仍待办(手动编辑保护)**：见下方 `BUG-INPUT-WITH-GEN`——字段手改后不被下次 AI 生成无脑覆盖(带 currentValue 改写),尚未统一审计。
+
+> 反馈人：light莫言 + 江也（「对，可以选择自行更改」）。
+> **本条已并入既有条目 `BUG-INPUT-WITH-GEN`**（见下方「优先级：高」区）——其「通用约定：所有文本框可自行输入 + AI 生成带上用户已输入内容」正是此诉求。
+> 补充确认：`worldview.worldOrigin` 等「下游自动总结」字段当前 UI 上**可编辑但改动未经测试**，需在 BUG-INPUT-WITH-GEN 实施时一并验证「手动改 → 保存 → 不被下次 AI 生成无脑覆盖（带 currentValue 改写而非另起）」。
+
+## 🟡 FB-4（大消耗特性 · 需评估）— 原稿上传后「按原作风格+剧情续写」
+
+> 反馈人：大佬 / 江也。诉求：上传原稿后，AI 接着上一部作品的结局、按原作者风格与剧情**续写**。群主已答复：现有「作品学习」侧重手法技巧分析，未做「直接用原剧情续写」；上下文消耗大（需提取整本并随时调用）。江也表示用 DS、成本可接受。
+> 关联：`src/lib/master-study/*`（作品学习系统，已具备分块/五维分析/Blob 持久化地基）
+
+**改法（建议立项 Phase 42，分两段）**：
+- **段一·剧情记忆**：在「作品学习」已有分块/向量化基础上，新增「剧情主线提取」产物（人物/事件/结局状态），作为一个**新的 `CONTEXT_SOURCE`**（如 `masterPlotMemory`）登记进注册表 ①。
+- **段二·续写入口**：创作区新增「续写上一部」动作，`assembleContext({ sourceKeys: ['masterPlotMemory', 'masterStyleMetrics', ...] })` 召回剧情记忆+风格画像 → 注入续写 prompt。**严禁**在面板里手拼整本原文。
+- **成本护栏**：默认走「提取后的结构化记忆」而非全文回灌；UI 明示预计 token 量级，让用户知情。
+- **依赖**：建议在 FB-5（文风画像）落地后做，二者共享「风格画像」基建。
+
+## 🟡 FB-5（高价值功能）— 创作区「自适应文风学习」（按用户改稿前后学习其文风）
+
+> 反馈人：你的生命过客（管理员）。诉求：AI 生成前 5 章 → 用户去 AI 味 + 亲自改 → 让 AI 对比「改前/改后」学习用户文风习惯 → 后续章节按此文风生成（一种自我学习）。群主已答应「记一下，之后开发」。
+
+**改法（建议立项 Phase 43，纯三注册表范式）**：
+- **新增上下文源（注册表①）**：`userStyleProfile` —— 由「用户已定稿章节」+（可选）「改前/改后对照」经 **AI 总结**出用词习惯/句式/节奏画像（**严守全局原则：用 AI 总结，不用正则统计**）。产物存新表（注册表③登记 owner/worldScoped/exportable）。
+- **注入下游（注册表①）**：章节正文生成时 `assembleContext({ need: [..., 'userStyleProfile'] })` 自动带上文风画像，无需面板手挑。
+- **触发方式**：用户在创作区点「学习我的文风」→ 选取已定稿章节（或自动取最近 N 章定稿）→ AI 产出画像 → 写回经 `adopt()`。
+- **与 FB-4 的关系**：FB-5 学「用户自己的」文风，FB-4 学「原作者的」文风+剧情，二者共用「风格画像」数据结构与召回链路，建议合并基建、分别立项。
+- **完成判据**：开启后，新章节生成在 prompt 中可见文风画像注入；关闭则不注入；画像随项目导出/导入。
+
+---
 
 ## 🔴 优先级：高
 

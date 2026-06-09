@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Play, Square, Sparkles, Check, X, Loader2, ChevronRight, Save, ClipboardCopy,
 } from 'lucide-react'
@@ -8,15 +8,17 @@ import { useCreativeRulesStore } from '../../../stores/project-singletons'
 import { useCharacterStore } from '../../../stores/character'
 import { useOutlineStore } from '../../../stores/outline'
 import { useForeshadowStore } from '../../../stores/foreshadow'
+import { useWorldGroupStore } from '../../../stores/world-group'
 import { useAIStream } from '../../../hooks/useAIStream'
 import { renderPrompt } from '../../../lib/ai/prompt-engine'
 import { extractJSON } from '../../../lib/ai/adapters/import-adapter'
 import { adopt } from '../../../lib/registry/adopt'
+import { assembleContext } from '../../../lib/registry/assemble-context'
 import { db } from '../../../lib/db/schema'
 import type { PromptWorkflow, PromptWorkflowStep, SaveTarget } from '../../../lib/types/workflow'
 import type { Project } from '../../../lib/types'
 import type { TokenUsage } from '../../../lib/ai/logger'
-import { targetLabel } from './workflow-helpers'
+import { targetLabel, assembleWorkflowStepVars } from './workflow-helpers'
 
 interface RunnerProps {
   workflow: PromptWorkflow
@@ -57,7 +59,16 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
   const { loadAll: loadCharacters } = useCharacterStore()
   const { loadAll: loadOutline } = useOutlineStore()
   const { loadAll: loadForeshadows } = useForeshadowStore()
+  const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
   const [savedSteps, setSavedSteps] = useState<Set<string>>(new Set())
+
+  /**
+   * 步骤输出累加器(FB-1 修复 · 缺陷 A)。
+   * 用 ref 存每一步的输出,而非读 React state `results`——递归推进下一步时
+   * `results` 闭包是上一次渲染的旧值(setResults 异步),会导致 previousOutput 永远取空。
+   * ref.current 始终是最新值,且能跨「暂停/继续/重试」存活。
+   */
+  const stepOutputsRef = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     if (project?.id) {
@@ -183,32 +194,70 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
     })
   }
 
+  /**
+   * 为第 idx 步装配上下文(FB-1 修复 · 缺陷 B：走 assembleContext,不再裸 renderPrompt)。
+   * - 项目元信息 projectName/genres + 维度 dimension + userHint(此前全空,AI 失去依据)
+   * - 经注册表 assembleContext 拉取已存项目设定(故事核心/世界观/角色/力量/词条)+ 真实与幻想规则
+   * - 上一步输出经 ref 累加器取得(缺陷 A),与已存设定一起注入「通用前序上下文」槽位 worldContext
+   *   (worldContext 是所有工作流步骤模板都读取的通用槽位,因此 step2 世界起源也能拿到 step1 一句话故事)
+   * - 同时保留步骤声明的 inputMapping(供 chapter.content 的 chapterSummary 等特定变量)
+   */
+  const buildStepContext = async (
+    step: PromptWorkflowStep,
+    idx: number,
+  ): Promise<Record<string, string | number | undefined>> => {
+    // ① 上一步输出(经 ref 累加器 → 修复闭包陈旧 · 缺陷 A)
+    const prevStep = idx > 0 ? workflow.steps[idx - 1] : undefined
+    const prevOut = prevStep ? (stepOutputsRef.current.get(prevStep.stepId) ?? '') : ''
+
+    // ② 走注册表拉取已存项目设定 + 真实与幻想规则(单一事实源,不在此手挑 buildXxxContext · 缺陷 B)
+    let assembledText = ''
+    let worldRulesText = ''
+    if (project?.id) {
+      const wg = project.enableMultiWorld ? activeGroupId : null
+      try {
+        assembledText = (await assembleContext({
+          projectId: project.id,
+          worldGroupId: wg,
+          sourceKeys: ['storyCore', 'worldview', 'powerSystem', 'characters', 'codex'],
+        })).text
+      } catch { /* 上下文装配失败不应阻断生成 */ }
+      try {
+        worldRulesText = (await assembleContext({
+          projectId: project.id,
+          worldGroupId: wg,
+          sourceKeys: ['worldRules'],
+        })).text
+      } catch { /* ignore */ }
+    }
+
+    // ③ 纯逻辑整形(可单测,见 tests/regression/R-WF-*)
+    return assembleWorkflowStepVars({
+      step,
+      prevOutput: prevOut,
+      projectName: project?.name,
+      genres: project?.genre,
+      assembledContext: assembledText,
+      worldRulesContext: worldRulesText,
+    })
+  }
+
   /** 执行第 idx 步 */
   const runStep = async (idx: number) => {
     const step = workflow.steps[idx]
     if (!step) return
     const tpl = usePromptStore.getState().getActive(step.promptModuleKey)
 
-    // 拼上下文：前一步的输出作为 inputMapping
-    const ctx: Record<string, string | number | undefined> = {}
-    const prevStep = workflow.steps[idx - 1]
-    if (prevStep && step.inputMapping) {
-      const prevResult = results.get(prevStep.stepId)
-      if (prevResult?.output) {
-        for (const [from, to] of Object.entries(step.inputMapping)) {
-          if (from === 'previousOutput') ctx[to] = prevResult.output
-        }
-      }
-    }
-    if (step.userHint) ctx.userHint = step.userHint
-
     updateResult(step.stepId, { status: 'running', output: '', error: undefined })
 
     try {
+      const ctx = await buildStepContext(step, idx)
       const { messages } = renderPrompt(tpl, ctx, {
         parameterValues: step.parameterValues,
       })
       const output = await ai.start(messages, undefined, { category: step.promptModuleKey, projectId: project?.id })
+      // FB-1 修复 · 缺陷 A：把本步输出存进 ref(而非只存 React state),供下一步取用
+      stepOutputsRef.current.set(step.stepId, output)
       updateResult(step.stepId, { status: 'done', output, tokenUsage: ai.tokenUsage })
       setCurrentIndex(idx + 1)
 
@@ -231,6 +280,7 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
   }
 
   const handleStart = () => {
+    stepOutputsRef.current.clear() // 全新运行:清空上一轮的步骤输出累加器
     setGlobalStatus('running')
     runStep(currentIndex)
   }
