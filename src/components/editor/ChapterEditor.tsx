@@ -215,6 +215,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       sourceKeys: [
         'contextMemo',
         'chapterOutline',
+        'detailedOutline', // FB-9:正文生成读入本章场景细纲
         'worldview',
         'storyCore',
         'powerSystem',

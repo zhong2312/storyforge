@@ -306,14 +306,16 @@
 - 设置区"AI 模型配置"加一个"上下文窗口(高级,可选)"输入框,提示"本地/自定义模型请按实际填写,如 131072";
 - **完成判据**:本地模型填 170000 后,预算面板按 170K 计算,不再误报超窗。
 
-## 🟠 FB-9（功能缺口 · 旧路径症状）— 场景细纲(detailed outline)不被正文生成吃进去
+## ✅ FB-9（已修复 2026-06-09）— 场景细纲(detailed outline)不被正文生成吃进去
 
 > 反馈人：zzjj。诉求:"让 AI 在生成正文的时候去吃这部分细纲的信息挺重要,这样用精度高的模型、较小上下文就能生成好文字"。
-> 文件:`src/lib/ai/adapters/chapter-adapter.ts`(`buildChapterContentPrompt`)、`src/components/editor/ChapterEditor.tsx`、`src/lib/ai/memory-builder.ts`
+> 文件:`src/lib/registry/context-sources.ts`、`src/components/editor/ChapterEditor.tsx`(分支 `fix/fb-9-detailed-outline-source`)
 
-**已确认现状**(读代码核对):正文生成走旧的 `buildChapterContentPrompt(chapterTitle, chapterSummary, worldContext, characterContext, previousChapterEnding, ...)`——**参数列表里根本没有细纲**;`memory-builder` 工作记忆层也只含"当前章节大纲 + 近3章摘要 + 情感节拍",无细纲字段;`ChapterEditor` 调用时只传了 `outlineNode.summary`(大纲摘要),没传场景细纲。**所以细纲只用于展示/批量流程中间步,从未进正文生成的 prompt。**
+**✅ 已修复 · 精确根因**(更正早先误判):细纲(detailedOutlines)**在"基础表"里其实是登记了的**——它是 DB 表、有 adopt 写回规则、有删除级联,所以写得进、删得掉、导得出。**唯独没有登记到"读"那一层(`CONTEXT_SOURCES`)** → `assembleContext` 从来没有任何入口去读它 → 正文/任何生成都吃不到细纲。一句话:**"存得下但读不到"**。(早先曾误写"正文没走 assembleContext",实际 ChapterEditor 已用 assembleContext,缺的是细纲这个**源**。)
 
-**根因**:这正是「旧代码残留」的症状——正文生成至今没切到新的 `assembleContext`,走的是旧 `chapter-adapter`,该旧路径当初就没设计吃细纲。
+**改法**(标准三注册表"加一行·改一处"):① `context-sources.ts` 新增 `detailedOutline` 源(按当前章节节点读出开头衔接 + 逐场景拆解 + 结尾悬念);② ChapterEditor 正文生成 sourceKeys 加 `detailedOutline`(write/continue/expand/polish 共用,一并生效);③ 反例测试 R-FB9(3条)+ 重生成 AI 说明书。**零新增组件文件。**
+
+**遗留(可选)**:批量正文 runner 如需也吃细纲,可后续同样 `need:['detailedOutline']`。
 
 **改法(与旧代码清除联动)**:
 - 把 `detailedOutlines`(场景细纲)登记/确认为一个 `CONTEXT_SOURCE`(若未登记则加一行),正文生成 `assembleContext({ need:[...,'detailedOutline'] })` 自动带上。
