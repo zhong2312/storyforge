@@ -272,7 +272,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       ...assembledSegments,
       { label: 'User Prompt', content: messages.find(m => m.role === 'user')?.content || '', layer: 'L1' },
     ])
-    setContextBudget(calculateBudget(aiConfig.provider, aiConfig.model, segments))
+    setContextBudget(calculateBudget(aiConfig.provider, aiConfig.model, segments, aiConfig.contextWindow))
 
     setAIAction('generate')
     ai.start(messages, undefined, { category: 'chapter.content', projectId: project.id! })
