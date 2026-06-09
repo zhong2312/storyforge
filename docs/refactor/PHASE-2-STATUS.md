@@ -148,3 +148,55 @@
 - Status: complete pending external review and main merge.
 - Final verification on `refactor/phase-2-task-2.8`: `npx tsc --noEmit`, `npm test` (20 files / 57 tests), `npm run check:required-tables`, and `npm run build` all passed.
 - Build warnings are unchanged Vite dynamic-import/chunk-size warnings.
+
+---
+
+## 🔍 审查者复核记录(Claude · 2026-06-09)
+
+> 按 HANDOFF.md §四 7 步流程对 GPT 5.5 的 Phase 1.2a→2.8(12 个 commit)做独立审查。
+
+### 审查结论:✅ 通过,质量高于预期
+
+| Step | 检查项 | 结果 |
+|---|---|---|
+| 1 | 改动范围 | ✅ 12 个独立 commit,每个对应一任务,可单独回滚 |
+| 2 | tsc + build | ✅ tsc=0 / build 成功(3352 模块) |
+| 3 | 测试 | ✅ **57 个全绿**(从 27 → 57,新增 30:adopt 7 + assemble-context 4 + R-11~R-18) |
+| 4 | 反模式 grep（Phase 1 形态核心） | ✅ **三条全 0 命中** |
+| 5 | 灾难场景反推 | ✅ Phase 2 所有 P1 对应反例测试(R-11~R-18)全绿 |
+| 6 | 高风险审查(schema v27/v28 迁移) | ✅ 迁移正确,逻辑安全 |
+| 7 | 结论 | ✅ 通过 |
+
+### 反模式 grep 详情(三注册表真落地的铁证)
+
+- 面板手挑 `buildWorldContext/buildCharacterContext`：**0 命中**(都走 assembleContext)
+- 组件直接 `db.xxx.add/update`：**0 命中**(都走 adopt)
+- stores 手写 `db.transaction([...大清单...])`：**0 命中**(都走派生 API)
+
+→ "屎山"的三个根源(读侧手挑 / 写侧散落 / 生命周期手写表清单)被真正收口。
+
+### 逐项功能逻辑核验(确认不是假壳)
+
+- 2.1：schema v27 真改 `worldRulesProfiles` 为 `projectId, worldGroupId`;PROJECT_TABLES 真标 `worldScoped: true` + exportRemap;world-rules store 真按 worldGroupId 维护;`buildWorldRulesContext(projectId, worldGroupId?)` 真接世界参数 → Phase 40 完整落地。
+- 2.2：ChapterEditor 真 `import assembleContext` 并调用,worldRules segment 真传入章节正文 prompt(非假壳)。
+- 2.3~2.8：各有对应 R-12~R-18 反例测试且全绿。
+- adopt.ts(338 行):别名映射 / enum 归一 / sanitize / FK 校验 / 数组成员校验 / 以 DB 为准定位防重复 / 4 种 duplicatePolicy 全实现。
+- assemble-context.ts:真裁剪 L3→L2→L1 真实现(L0 不可裁),非 Phase 0 时"只算不裁"。
+
+### 加分项(超出蓝图)
+
+1. 抽出 `character-references.ts` 处理 JSON 数组引用 remap(单一入口,未硬写进 store)。
+2. validateRegistry 扩展到校验 FIELD_REGISTRY / AdoptionSchema / CONTEXT_SOURCES(world source 必须声明 worldGroupId,启动期抓漏)。
+3. 进度文档每任务带独立 Verification Evidence,自陈"pending external review and main merge"无夸大。
+
+### ⚠️ 合并前必做(非阻断,但涉及真实用户数据)
+
+- **schema v27/v28 是真实用户数据迁移**。Dexie `version().stores()` 只改索引;`worldRulesProfiles` 从 `&projectId`(唯一)→ 非唯一,老数据 worldGroupId=undefined=null=默认主世界,逻辑安全。
+- **建议合并 main 前,在浏览器用一份真实老用户数据(单世界 + 多世界各一个项目)实测一次升级**:打开应用→确认数据无损→删项目/删世界组/启用多世界/导出导入各走一遍→确认无报错无残留。
+- 这是唯一一道"自动测试覆盖不到、必须真人在浏览器验证"的关口。
+
+### 🟡 流程小注(下次注意,本次不阻断)
+
+- 12 个任务用了堆叠在 `phase-2-task-2.8` 的单分支链,本应一任务一分支。但 commit 独立、可逐个 revert,影响小。
+
+**审查者签字:本批次(0.6 起至 2.8)通过,可进入 Phase 3。合并 main 前请完成上方"真实数据升级实测"。**

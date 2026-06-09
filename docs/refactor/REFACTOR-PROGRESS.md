@@ -8,7 +8,7 @@
 |---|---|---|---|
 | Phase 0 - Emergency fixes | Done | Remove immediate data-loss and invalid-transaction risks before building new architecture. | P0.1-P0.8 all fixed, regression tests green, build green. |
 | Phase 1 - Three registries foundation | Done | Build `PROJECT_TABLES`, `FIELD_REGISTRY + AdoptionSchema`, and `CONTEXT_SOURCES + assembleContext` as single sources of truth. | Lifecycle/read/write paths use registry-derived APIs; lint and registry tests pass. |
-| Phase 2 - Multiworld and content integrity | Done | Finish multiworld linkage, context completeness, AI current-value usage, import/world routing, JSON reference cleanup, and remaining P1 content integrity fixes. | Complete on stacked task branches 2.1-2.8; pending external review and main merge. |
+| Phase 2 - Multiworld and content integrity | Done (Reviewed) | Finish multiworld linkage, context completeness, AI current-value usage, import/world routing, JSON reference cleanup, and remaining P1 content integrity fixes. | Complete on stacked task branches 2.1-2.8. Reviewed & approved by Claude 2026-06-09 (57 tests green, 3 anti-pattern greps clean). Pending main merge + real-data upgrade smoke test (see PHASE-2-STATUS review record). |
 | Phase 3 - Project polish | Pending | Add generated AI manual, CI, coverage, safety, performance, README, contributing docs, and i18n preparation. | CI green, coverage target met, generated docs match code, project is presentable as a mature open-source tool. |
 
 ## Core Architecture Work
