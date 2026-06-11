@@ -709,6 +709,16 @@ function ChapterRow({ ch, idx, onUpdate, onDelete, onOpen }: {
   onDelete: (id: number) => void
   onOpen?: (id: number) => void
 }) {
+  // FB-3:章节摘要(章节大纲)由单行 input 升级为多行自增 textarea —— 单行下改 1-2 句大纲很难受
+  //       (横向滚、看不全、改中间费劲)。本地草稿 + 失焦保存(IME 安全:组合输入结束后才 onBlur 写库)。
+  const [summaryDraft, setSummaryDraft] = useState(ch.summary || '')
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { setSummaryDraft(ch.summary || '') }, [ch.summary])
+  useEffect(() => {
+    const ta = taRef.current
+    if (ta) { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px` }
+  }, [summaryDraft])
+
   return (
     <div className="flex items-start gap-2 px-3 py-2 bg-bg-surface border border-border rounded-md hover:border-accent/30 group transition-colors">
       <span className="text-xs text-text-muted mt-1.5 shrink-0 w-5 text-right">{idx + 1}</span>
@@ -718,11 +728,14 @@ function ChapterRow({ ch, idx, onUpdate, onDelete, onOpen }: {
           onChange={e => onUpdate(ch.id!, { title: e.target.value })}
           className="w-full bg-transparent text-text-primary text-sm font-medium outline-none"
         />
-        <CInput
-          value={ch.summary}
-          onChange={e => onUpdate(ch.id!, { summary: e.target.value })}
-          placeholder="章节摘要..."
-          className="w-full bg-transparent text-text-muted text-xs outline-none mt-0.5"
+        <textarea
+          ref={taRef}
+          value={summaryDraft}
+          onChange={e => setSummaryDraft(e.target.value)}
+          onBlur={() => { if (ch.id != null && summaryDraft !== (ch.summary || '')) onUpdate(ch.id, { summary: summaryDraft }) }}
+          rows={1}
+          placeholder="章节摘要（可编辑，失焦自动保存）"
+          className="w-full bg-transparent text-text-muted text-xs outline-none mt-0.5 resize-none overflow-hidden leading-relaxed"
         />
       </div>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1">
