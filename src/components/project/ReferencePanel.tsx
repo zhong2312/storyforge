@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import {
   Trash2, Library, BookMarked, Palette, Upload,
-  Globe, Users2, ListTree, PenTool, ChevronDown, ChevronRight,
+  Globe, Users2, ListTree, ChevronDown, ChevronRight,
   Microscope, Loader2, UploadCloud, StopCircle, BarChart3,
 } from 'lucide-react'
 import { InlineInput, InlineTextarea } from '../shared/InlineEdit'
@@ -10,7 +10,6 @@ import type {
   Project, Reference, ReferenceType,
   ReferenceChunkAnalysis, ReferenceAnalysisDepth,
 } from '../../lib/types'
-import type { WritingTechniques } from '../../lib/types/import-session-data'
 import {
   planRefChunks,
   registerRefChunks,
@@ -45,22 +44,6 @@ const WV_LABELS: Record<string, string> = {
   politicsEconomyCulture: '政治/经济/文化',
   internalConflicts: '矛盾冲突',
   itemDesign: '道具设计',
-}
-
-/** 写作技法字段 → 中文标签映射 */
-const WT_LABELS: Record<string, string> = {
-  narrativeStyle: '叙事视角与手法',
-  proseStyle: '文笔风格',
-  openingTechnique: '开篇技法 / 黄金三章',
-  plotStructure: '情节结构与套路',
-  climaxDesign: '高潮设计',
-  pacingControl: '节奏控制',
-  characterCraft: '人物塑造手法',
-  dialogueTechnique: '对话技巧',
-  conflictEscalation: '冲突设计与升级',
-  emotionalBeats: '爽点 / 情绪节拍',
-  foreshadowing: '伏笔与回收',
-  otherTechniques: '其他技巧',
 }
 
 const GLYPH_COLORS = [
@@ -226,14 +209,11 @@ function ReferenceDetailCard({
   const worldviewEntries = data?.worldview ? Object.entries(data.worldview).filter(([, v]) => v?.trim()) : []
   const characters = data?.characters || []
   const outline = data?.outline || []
-  const wt = data?.writingTechniques
-  const wtEntries = wt ? Object.entries(wt).filter(([, v]) => typeof v === 'string' && v.trim()) : []
 
   const availableTabs: { key: DetailTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }[] = []
-  // 深度分析始终显示（可上传文件触发分析）
-  availableTabs.push({ key: 'deep-analysis', label: '深度分析', icon: Microscope })
+  // 作品分析(13 维统一):始终显示。「写作技法」已并入此处,不再单独成页。
+  availableTabs.push({ key: 'deep-analysis', label: '作品分析', icon: Microscope })
   if (hasTabs) {
-    if (wtEntries.length > 0) availableTabs.push({ key: 'techniques', label: '写作技法', icon: PenTool, count: wtEntries.length })
     if (worldviewEntries.length > 0) availableTabs.push({ key: 'worldview', label: '世界观', icon: Globe, count: worldviewEntries.length })
     if (characters.length > 0) availableTabs.push({ key: 'characters', label: '角色', icon: Users2, count: characters.length })
     if (outline.length > 0) availableTabs.push({ key: 'outline', label: '大纲', icon: ListTree, count: outline.length })
@@ -318,9 +298,6 @@ function ReferenceDetailCard({
         )}
         {activeTab === 'outline' && (
           <OutlineTab outline={outline} />
-        )}
-        {activeTab === 'techniques' && (
-          <TechniquesTab techniques={data?.writingTechniques} />
         )}
         {activeTab === 'deep-analysis' && (
           <DeepAnalysisTab reference={reference} onUpdate={onUpdate} />
@@ -466,28 +443,6 @@ function OutlineTab({ outline }: { outline: Array<Record<string, unknown>> }) {
   )
 }
 
-function TechniquesTab({ techniques }: { techniques?: WritingTechniques }) {
-  if (!techniques) return <div className="text-sm text-text-muted py-4">暂无写作技法分析</div>
-
-  const entries = Object.entries(techniques).filter(([, v]) => typeof v === 'string' && v.trim())
-  if (entries.length === 0) return <div className="text-sm text-text-muted py-4">暂无写作技法分析</div>
-
-  return (
-    <div className="space-y-0 divide-y divide-border/40">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex gap-4 py-3">
-          <span className="w-28 shrink-0 text-xs text-purple-400 pt-0.5 text-right font-medium">
-            {WT_LABELS[key] || key}
-          </span>
-          <div className="flex-1 min-w-0 text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
-            {String(value)}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── 深度分析 Tab ────────────────────────────────────────────────
 
 function DeepAnalysisTab({
@@ -498,7 +453,7 @@ function DeepAnalysisTab({
 }) {
   const { getChunkAnalyses, clearChunkAnalyses } = useReferenceStore()
   const [chunks, setChunks] = useState<ReferenceChunkAnalysis[]>([])
-  const [depth, setDepth] = useState<ReferenceAnalysisDepth>(reference.analysisDepth || 'standard')
+  const [depth, setDepth] = useState<ReferenceAnalysisDepth>(reference.analysisDepth || 'quick')
   const [progress, setProgress] = useState(reference.analysisProgress || 0)
   const [statusMsg, setStatusMsg] = useState('')
   const [activityLog, setActivityLog] = useState<{ level: string; msg: string }[]>([])
@@ -623,9 +578,8 @@ function DeepAnalysisTab({
               onChange={e => setDepth(e.target.value as ReferenceAnalysisDepth)}
               className="bg-bg-elevated border border-border rounded px-2 py-1 text-xs text-text-primary"
             >
-              <option value="quick">快速（大块，省 token）</option>
-              <option value="standard">标准（推荐）</option>
-              <option value="deep">深度（细块，最详尽）</option>
+              <option value="quick">浅层 · 快速摸底（每维 50-100 字，省 token）</option>
+              <option value="deep">深层 · 拆成模板（每维 300-500 字 + 原文佐证）</option>
             </select>
           </div>
 

@@ -24,14 +24,13 @@ import { chunkDocument, quickHash, type ChunkPlan } from '../import/chunker'
 import { extractJSON } from '../ai/adapters/import-adapter'
 import type { AIConfig, ChatMessage, Reference, ReferenceChunkAnalysis, ReferenceAnalysisDepth } from '../types'
 
-/** 不同深度对应的分块字符数 + maxTokens 上限 */
+/** 两档:浅层(大块·轻析) / 深层(小块·深析) */
 const DEPTH_PRESET: Record<ReferenceAnalysisDepth, {
   targetChars: number
   maxTokens: number
 }> = {
-  quick:    { targetChars: 40000, maxTokens: 4096 },
-  standard: { targetChars: 25000, maxTokens: 6144 },
-  deep:     { targetChars: 15000, maxTokens: 8192 },
+  quick: { targetChars: 40000, maxTokens: 4096 },  // 浅层
+  deep:  { targetChars: 15000, maxTokens: 8192 },  // 深层
 }
 
 const MAX_ATTEMPTS = 3
@@ -83,10 +82,54 @@ export function hasRefChunks(refId: number): boolean {
   return !!IN_MEM_CHUNKS[refId]?.length
 }
 
-// ── 主入口 ─────────────────────────────────────────────────
+// ── 浅层:直接用导入解析已出的 13 维写作技法,零额外 AI ──────────
 
 /**
- * 跑一次参考作品八维深度分析。
+ * 浅层分析:把导入解析顺手产出的 13 维 writingTechniques 落成一条「全书」分析行。
+ * 不额外调 AI(随导入解析免费得到),写完即 done。
+ */
+export async function writeShallowAnalysisFromTechniques(
+  refId: number,
+  wt: import('../types').WritingTechniques | undefined,
+): Promise<void> {
+  // 清掉旧分析(可能之前跑过)
+  await db.referenceChunkAnalysis.where('referenceId').equals(refId).delete()
+  const w = wt || {}
+  const hasAny = Object.values(w).some(v => typeof v === 'string' && v.trim())
+  if (hasAny) {
+    const row: ReferenceChunkAnalysis = {
+      referenceId: refId,
+      chunkIndex: 0,
+      label: '全书',
+      narrativeStyle: trim(w.narrativeStyle),
+      openingTechnique: trim(w.openingTechnique),
+      plotStructure: trim(w.plotStructure),
+      pacingControl: trim(w.pacingControl),
+      climaxDesign: trim(w.climaxDesign),
+      conflictEscalation: trim(w.conflictEscalation),
+      characterCraft: trim(w.characterCraft),
+      dialogueTechnique: trim(w.dialogueTechnique),
+      proseStyle: trim(w.proseStyle),
+      emotionalBeats: trim(w.emotionalBeats),
+      foreshadowing: trim(w.foreshadowing),
+      worldBuilding: trim(w.worldBuilding),
+      otherTechniques: trim(w.otherTechniques),
+      createdAt: Date.now(),
+    }
+    await db.referenceChunkAnalysis.add(row)
+  }
+  await patchRef(refId, {
+    analysisDepth: 'quick',
+    analysisStatus: hasAny ? 'done' : 'failed',
+    analysisProgress: 100,
+    analysisError: hasAny ? undefined : '解析未产出写作技法,无法生成浅层分析',
+  })
+}
+
+// ── 深层主入口 ─────────────────────────────────────────────────
+
+/**
+ * 跑一次参考作品深层分析(逐块深析)。
  * 前置：必须已经 registerRefChunks()，Reference 记录存在。
  */
 export async function runRefAnalysis(refId: number): Promise<void> {
@@ -107,7 +150,7 @@ export async function runRefAnalysis(refId: number): Promise<void> {
     return
   }
 
-  const depth = ref.analysisDepth || 'standard'
+  const depth = ref.analysisDepth || 'quick'
   activeController = new AbortController()
   activePaused = { value: false }
   activeRefId = refId
@@ -157,15 +200,21 @@ export async function runRefAnalysis(refId: number): Promise<void> {
             label: chunk.label,
             startOffset: chunk.startChar,
             endOffset: chunk.endChar,
-            narrativeStructure: trim(analysis.narrativeStructure),
+            // 13 小说维度
+            narrativeStyle:     trim(analysis.narrativeStyle),
             openingTechnique:   trim(analysis.openingTechnique),
-            plotRhythm:         trim(analysis.plotRhythm),
-            characterCraft:     trim(analysis.characterCraft),
+            plotStructure:      trim(analysis.plotStructure),
+            pacingControl:      trim(analysis.pacingControl),
+            climaxDesign:       trim(analysis.climaxDesign),
             conflictEscalation: trim(analysis.conflictEscalation),
+            characterCraft:     trim(analysis.characterCraft),
+            dialogueTechnique:  trim(analysis.dialogueTechnique),
+            proseStyle:         trim(analysis.proseStyle),
+            emotionalBeats:     trim(analysis.emotionalBeats),
             foreshadowing:      trim(analysis.foreshadowing),
-            proseAndDialogue:   trim(analysis.proseAndDialogue),
             worldBuilding:      trim(analysis.worldBuilding),
-            // 历史维度
+            otherTechniques:    trim(analysis.otherTechniques),
+            // 5 历史维度（仅历史题材）
             historicalContext:  trim(analysis.historicalContext),
             socialInstitutions: trim(analysis.socialInstitutions),
             dailyLife:          trim(analysis.dailyLife),
@@ -231,16 +280,22 @@ export async function runRefAnalysis(refId: number): Promise<void> {
 
 // ── 十三维分析 prompt ─────────────────────────────────────────
 
-interface RawEightDimAnalysis {
-  narrativeStructure?: string
+interface RawAnalysis {
+  // 13 小说维度
+  narrativeStyle?: string
   openingTechnique?: string
-  plotRhythm?: string
-  characterCraft?: string
+  plotStructure?: string
+  pacingControl?: string
+  climaxDesign?: string
   conflictEscalation?: string
+  characterCraft?: string
+  dialogueTechnique?: string
+  proseStyle?: string
+  emotionalBeats?: string
   foreshadowing?: string
-  proseAndDialogue?: string
   worldBuilding?: string
-  // 历史维度
+  otherTechniques?: string
+  // 5 历史维度
   historicalContext?: string
   socialInstitutions?: string
   dailyLife?: string
@@ -257,14 +312,12 @@ async function analyzeChunkOnce(args: {
   knownContext: string
   maxTokens: number
   signal?: AbortSignal
-}): Promise<RawEightDimAnalysis> {
+}): Promise<RawAnalysis> {
   const { ref, depth, chunk, totalChunks, knownContext } = args
 
   const depthGuide = depth === 'deep'
-    ? '请进行深度分析，每个维度详尽论述（300-500字），引用原文佐证。'
-    : depth === 'standard'
-    ? '请做中等深度分析，每个维度 100-200 字。'
-    : '请做快速分析，每个维度 50-100 字，抓核心要点。'
+    ? '【深层·拆成模板】请逐维度详尽论述（每维 300-500 字），并引用原文片段佐证。'
+    : '【浅层·快速摸底】请快速提炼，每维 50-100 字抓核心套路，不必引用原文。'
 
   const isHistorical = ref.type === 'historical'
 
@@ -283,18 +336,23 @@ ${knownContext ? `**前文已识别的关键信息**：\n${knownContext}\n` : ''
 **分析要求**：
 ${depthGuide}
 
-请从以下 13 个维度分析本块文本（前 8 个为文学创作维度，后 5 个为历史考证维度），输出**纯 JSON**（不要 markdown 包裹）：
+请从以下 18 个维度分析本块文本（前 13 个为文学创作维度，后 5 个为历史考证维度），输出**纯 JSON**（不要 markdown 包裹）：
 
 {
-  "narrativeStructure": "叙事架构 —— 本块使用的叙事视角、时间线安排、POV 切换技巧、叙事距离调控（若为纯史料，分析其史料叙述视角与可信度）",
-  "openingTechnique": "开篇与黄金三章 —— 分析本块的场景切入方式、信息引入节奏",
-  "plotRhythm": "情节结构与节奏 —— 本块所记录的历史事件的起承转合节奏、高潮/冲突分布、张弛有度的处理",
-  "characterCraft": "人物塑造 —— 历史人物的多维刻画手法、人物关系动态变化、历史人物的性格特征提炼",
-  "conflictEscalation": "冲突与升级 —— 历史事件中的外在冲突（政治斗争/战争/阶级冲突）和内在冲突（心理/道德困境）的设计、冲突升级的节奏",
-  "foreshadowing": "伏笔与悬念 —— 历史事件的因果链条、前兆与后续影响、历史悬念设置",
-  "proseAndDialogue": "文笔与对话 —— 史料的修辞手法、叙述密度、历史人物的言论/对话风格、氛围营造",
-  "worldBuilding": "世界观构建 —— 历史设定如何融入叙事、细节构建沉浸感、文化/政治/经济体系的暗示",
-  
+  "narrativeStyle": "叙事视角与手法 —— 叙事视角、时间线安排、POV 切换（若为纯史料，分析其史料叙述视角与可信度）",
+  "openingTechnique": "开篇技法 / 黄金三章 —— 本块的场景切入方式、信息引入节奏",
+  "plotStructure": "情节结构与套路 —— 本块所记录历史事件的起承转合、因果布局",
+  "pacingControl": "节奏控制 —— 张弛有度的处理、信息释放速率",
+  "climaxDesign": "高潮设计 —— 历史事件的高潮/转折点的铺垫与呈现",
+  "conflictEscalation": "冲突设计与升级 —— 历史事件中外在冲突（政治/战争/阶级）与内在冲突（心理/道德）、冲突升级节奏",
+  "characterCraft": "人物塑造 —— 历史人物的多维刻画、关系动态、性格特征提炼",
+  "dialogueTechnique": "对话技巧 —— 历史人物的言论/对话风格、潜台词",
+  "proseStyle": "文笔风格 —— 史料的修辞、叙述密度、氛围营造",
+  "emotionalBeats": "爽点 / 情绪节拍 —— 历史叙述中的情绪张力与读者代入",
+  "foreshadowing": "伏笔与回收 —— 历史事件的因果链条、前兆与后续影响、历史悬念",
+  "worldBuilding": "世界观构建 —— 历史设定如何融入叙事、细节沉浸感、文化/政治/经济体系暗示",
+  "otherTechniques": "其他值得学习的技巧 —— 上述未覆盖的史料写作手法",
+
   "historicalContext": "历史背景与时代特征 —— 提炼本块中体现的时代大势、历史转折点、政治气候、重大历史事件的真实背景",
   "socialInstitutions": "社会制度与等级 —— 提炼本块中体现的官制、科举、法律、阶层划分、社会流动性、行会/组织运作机制",
   "dailyLife": "日常生活细节 —— 提炼本块中体现的衣食住行、岁时节日、娱乐消遣、民间信仰、日常消费水平",
@@ -308,7 +366,7 @@ ${depthGuide}
 - 如果某个维度在本块中无明显体现，写"本块未涉及"即可
 - 重点提炼真实、地道、能直接丰富小说细节的历史考证内容，而非简单复述情节
 - 分析应当具体、可操作，让作者能直接作为写作素材使用`
-    : `你是一位资深文学评论家和网文创作方法论研究者。你正在逐块分析一部小说，从 8 个维度提炼创作方法论。
+    : `你是一位资深文学评论家和网文创作方法论研究者。你正在逐块分析一部小说，从 13 个维度提炼创作方法论。
 
 **作品信息**：
 - 标题：${ref.title}
@@ -322,17 +380,22 @@ ${knownContext ? `**前文已识别的关键信息**：\n${knownContext}\n` : ''
 **分析要求**：
 ${depthGuide}
 
-请从以下 8 个维度分析本块文本，输出**纯 JSON**（不要 markdown 包裹）：
+请从以下 13 个维度分析本块文本，输出**纯 JSON**（不要 markdown 包裹）：
 
 {
-  "narrativeStructure": "叙事架构 —— 本块使用的叙事视角（第几人称、全知/限知）、时间线安排（顺叙/倒叙/插叙）、POV 切换技巧、叙事距离调控",
-  "openingTechnique": "开篇与黄金三章 —— 如果是开头部分：分析钩子设计、角色引入方式、世界展示节奏、前三章的信息密度控制；如果不是开头：分析本块的段落开头技巧、场景切入方式",
-  "plotRhythm": "情节结构与节奏 —— 本块的起承转合节奏、高潮/爽点分布、张弛有度的处理、情节推进的动力机制、章末钩子/悬念设置",
-  "characterCraft": "人物塑造 —— 人物的多维刻画手法（行为/对话/内心/他人视角）、弧线推进、标签化与去标签化、人物关系动态变化",
-  "conflictEscalation": "冲突与升级 —— 外在冲突（人vs人/人vs环境/人vs势力）和内在冲突（心理/道德困境）的设计、冲突升级的节奏、压力曲线",
-  "foreshadowing": "伏笔与悬念 —— 本块埋设的伏笔、回收的前文伏笔、悬念管理技巧、读者预期的建立与打破",
-  "proseAndDialogue": "文笔与对话 —— 修辞手法、句式变化、叙述密度、对话的个性化与功能性（推动情节/揭示人物/传递信息）、氛围营造",
-  "worldBuilding": "世界观构建 —— 设定如何融入叙事（而非info-dump）、规则展示时机、细节构建沉浸感、文化/政治/经济体系的暗示",
+  "narrativeStyle": "叙事视角与手法 —— 第几人称、全知/限知、时间线安排、POV 切换、叙事距离调控",
+  "openingTechnique": "开篇技法 / 黄金三章 —— 若为开头：钩子设计、角色引入、世界展示节奏、信息密度；否则：本块的段落/场景切入技巧",
+  "plotStructure": "情节结构与套路 —— 起承转合、伏笔回收布局、悬念设置、情节推进的动力机制",
+  "pacingControl": "节奏控制 —— 快慢交替、张弛有度、信息释放速率、章末钩子",
+  "climaxDesign": "高潮设计 —— 爽点/高潮的铺垫与引爆、情绪峰值的制造",
+  "conflictEscalation": "冲突设计与升级 —— 外在冲突（人vs人/环境/势力）与内在冲突（心理/道德）、冲突升级节奏、压力曲线",
+  "characterCraft": "人物塑造 —— 多维刻画（行为/对话/内心/他人视角）、弧线推进、标签化与去标签化、关系动态",
+  "dialogueTechnique": "对话技巧 —— 对话的个性化与功能性（推动情节/揭示人物/传递信息）、潜台词、节奏",
+  "proseStyle": "文笔风格 —— 修辞手法、句式变化、叙述密度、语言特色、氛围营造",
+  "emotionalBeats": "爽点 / 情绪节拍 —— 情绪起伏的设计、读者代入与情绪出口、节拍布置",
+  "foreshadowing": "伏笔与回收 —— 本块埋设的伏笔、回收的前文伏笔、悬念管理、读者预期的建立与打破",
+  "worldBuilding": "世界观构建 —— 设定如何融入叙事（而非 info-dump）、规则展示时机、细节沉浸感、文化/政治/经济体系暗示",
+  "otherTechniques": "其他值得学习的技巧 —— 上述未覆盖但有特色的写作手法",
   "rawExcerpt": "（选取本块中最能体现写作技巧的精彩片段，约100-200字原文引用）"
 }
 
@@ -350,7 +413,7 @@ ${depthGuide}
   const config: AIConfig = { ...baseConfig, maxTokens: args.maxTokens }
   if (!config.apiKey) throw new Error('未配置 AI API Key（请先到「系统设置 → AI 配置」填写）')
   const output = await chatWithAbort(messages, config, args.signal)
-  const obj = extractJSON(output) as RawEightDimAnalysis
+  const obj = extractJSON(output) as RawAnalysis
   return obj || {}
 }
 
@@ -369,7 +432,7 @@ async function chatWithAbort(
 
 function buildRollingContext(prev: string, row: ReferenceChunkAnalysis): string {
   const pieces: string[] = []
-  if (row.plotRhythm) pieces.push(`情节：${row.plotRhythm.slice(0, 120)}`)
+  if (row.plotStructure) pieces.push(`情节：${row.plotStructure.slice(0, 120)}`)
   if (row.foreshadowing) pieces.push(`伏笔：${row.foreshadowing.slice(0, 120)}`)
   if (row.characterCraft) pieces.push(`角色：${row.characterCraft.slice(0, 100)}`)
   if (row.conflictEscalation) pieces.push(`冲突：${row.conflictEscalation.slice(0, 100)}`)

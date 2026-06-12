@@ -16,6 +16,8 @@ interface ImportSessionStore {
   load: (sessionId: number) => Promise<ImportSession | null>
   /** 扫描项目里的未完成 session（用于断点续跑提示） */
   findUnfinished: (projectId: number) => Promise<ImportSession | null>
+  /** 扫描项目里"已完成、可复用解析"的最新 session（解析一次·多次落地） */
+  findReusableCompleted: (projectId: number) => Promise<ImportSession | null>
   /** 清除内存中的 current（不删除 DB） */
   clear: () => void
   /** 创建新 session 并持久化 */
@@ -59,6 +61,22 @@ export const useImportSessionStore = create<ImportSessionStore>((set, get) => ({
       .reverse().sortBy('updatedAt')
     const s = all.find(x => x.status !== 'done' && x.status !== 'cancelled') || null
     return s
+  },
+
+  findReusableCompleted: async (projectId) => {
+    // 已完成且 merged 有内容的最新会话 → 可复用解析,免重新解析
+    const all = await db.importSessions
+      .where('projectId').equals(projectId)
+      .reverse().sortBy('updatedAt')
+    return all.find(x => {
+      if (x.status !== 'done') return false
+      const m = x.merged
+      const hasWv = m?.worldview && Object.keys(m.worldview).length > 0
+      const hasCh = Array.isArray(m?.characters) && m.characters.length > 0
+      const hasOl = Array.isArray(m?.outline) && m.outline.length > 0
+      const hasWt = m?.writingTechniques && Object.values(m.writingTechniques).some(v => typeof v === 'string' && v.trim())
+      return hasWv || hasCh || hasOl || hasWt
+    }) || null
   },
 
   clear: () => set({ current: null }),

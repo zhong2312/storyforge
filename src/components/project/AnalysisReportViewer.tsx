@@ -26,14 +26,19 @@ import { useReferenceStore } from '../../stores/reference'
 import { extractJSON } from '../../lib/ai/adapters/import-adapter'
 
 const DIM_COLORS: Partial<Record<AnalysisDimension, string>> = {
-  narrativeStructure: 'text-blue-400',
+  narrativeStyle:     'text-blue-400',
   openingTechnique:   'text-amber-400',
-  plotRhythm:         'text-green-400',
-  characterCraft:     'text-purple-400',
+  plotStructure:      'text-green-400',
+  pacingControl:      'text-lime-400',
+  climaxDesign:       'text-orange-400',
   conflictEscalation: 'text-red-400',
+  characterCraft:     'text-purple-400',
+  dialogueTechnique:  'text-fuchsia-400',
+  proseStyle:         'text-pink-400',
+  emotionalBeats:     'text-rose-400',
   foreshadowing:      'text-cyan-400',
-  proseAndDialogue:   'text-pink-400',
   worldBuilding:      'text-teal-400',
+  otherTechniques:    'text-slate-400',
   historicalContext:   'text-[#C17D5E]',
   socialInstitutions: 'text-[#B06B7B]',
   dailyLife:          'text-[#7BA08A]',

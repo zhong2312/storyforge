@@ -65,7 +65,7 @@ export async function migrateMasterDataToReferences(): Promise<{
       totalChars: work.totalChars,
       fileHash: work.fileHash,
       importSessionId: work.importSessionId,
-      analysisDepth: work.analysisDepth,
+      analysisDepth: work.analysisDepth === 'deep' ? 'deep' : 'quick',  // 旧 standard → 浅层
       analysisStatus: work.status === 'done' ? 'done' : work.status === 'failed' ? 'failed' : 'none',
       analysisProgress: work.progress,
       analysisError: work.errorMessage,
@@ -75,7 +75,7 @@ export async function migrateMasterDataToReferences(): Promise<{
 
     const refId = await db.references.add(ref) as number
 
-    // 迁移分块分析（5 维 → 8 维）
+    // 迁移分块分析（旧 5 维 → 新 13 维,仅映射能对上的几维,其余留空待用户重跑）
     const chunks = await db.masterChunkAnalysis
       .where('workId').equals(work.id!)
       .sortBy('chunkIndex')
@@ -87,14 +87,11 @@ export async function migrateMasterDataToReferences(): Promise<{
         label: chunk.label,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
-        // 5 维映射到 8 维
-        narrativeStructure: undefined,  // 旧数据无此维度
-        openingTechnique: undefined,    // 旧数据无此维度
-        plotRhythm: chunk.plotRhythm,
+        // 旧 5 维 → 新 13 维（仅对得上的)
+        plotStructure: chunk.plotRhythm,
         characterCraft: chunk.characterDesign,
-        conflictEscalation: undefined,  // 旧数据无此维度
         foreshadowing: chunk.foreshadowing,
-        proseAndDialogue: chunk.proseStyle,
+        proseStyle: chunk.proseStyle,
         worldBuilding: chunk.worldviewPattern,
         rawExcerpt: chunk.rawExcerpt,
         createdAt: chunk.createdAt,

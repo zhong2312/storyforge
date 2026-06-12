@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { X, Wand2, AlertTriangle, Info, Gauge, Timer, Coins, BookOpen, ChevronDown, ChevronRight } from 'lucide-react'
+import { X, Wand2, AlertTriangle, Info, Gauge, Timer, Coins, BookOpen, ChevronDown, ChevronRight, Microscope } from 'lucide-react'
 import type { ChunkPlan } from '../../../lib/import/chunker'
 import type { VolumeDetectResult } from '../../../lib/import/volume-detector'
-import type { WorldGroup } from '../../../lib/types'
+import type { WorldGroup, ReferenceAnalysisDepth } from '../../../lib/types'
 
 interface Props {
   filename: string
@@ -17,7 +17,7 @@ interface Props {
   targetWorldGroupId?: number | null
   onTargetWorldGroupChange?: (id: number | null) => void
   onChunkSizeChange: (size: number) => void
-  onConfirm: (target: 'project' | 'reference', targetWorldGroupId?: number | null) => void
+  onConfirm: (target: 'project' | 'reference', targetWorldGroupId?: number | null, depth?: ReferenceAnalysisDepth) => void
   onCancel: () => void
 }
 
@@ -37,6 +37,8 @@ export default function ImportConfirmModal({
   onChunkSizeChange, onConfirm, onCancel,
 }: Props) {
   const [showStructure, setShowStructure] = useState(false)
+  const [refDepth, setRefDepth] = useState<ReferenceAnalysisDepth>('quick')
+  const [showExample, setShowExample] = useState(false)
   const stats = useMemo(() => {
     const totalChunks = chunks.length
     const totalSeconds = totalChunks * estSecondsPerChunk
@@ -55,6 +57,16 @@ export default function ImportConfirmModal({
       estRmbHigh,
     }
   }, [chunks, chunkSize, totalChars, estSecondsPerChunk])
+
+  // 深层分析额外成本估算（浅层随解析免费,深层逐块深析:15k/块,每维 ~400 字 → ~5k 输出/块）
+  const deepCost = useMemo(() => {
+    const nChunks = Math.max(1, Math.ceil(totalChars / 15000))
+    const inTok = nChunks * (15000 + 800)
+    const outTok = nChunks * 5000
+    const low = (inTok * 0.001 + outTok * 0.002) / 1000
+    return { nChunks, low, high: low * 4, seconds: nChunks * estSecondsPerChunk }
+  }, [totalChars, estSecondsPerChunk])
+  const fmtRmb = (low: number, high: number) => `¥${low.toFixed(2)} ~ ¥${high.toFixed(2)}`
 
   const fmtDuration = (sec: number) => {
     if (sec < 60) return `约 ${sec} 秒`
@@ -233,13 +245,45 @@ export default function ImportConfirmModal({
             </div>
             <div className="bg-bg-base border border-purple-400/30 rounded-lg p-2.5">
               <div className="font-medium text-purple-400 mb-0.5">📚 导入项目参考</div>
-              <div className="text-text-muted leading-relaxed">存入「项目参考」页面，作为创作参照，不影响当前项目</div>
+              <div className="text-text-muted leading-relaxed mb-2">存入「项目参考」页面，作为创作参照，不影响当前项目。<span className="text-text-secondary">导入即做 13 维作品分析</span>，选个深度：</div>
+              {/* 浅 / 深 档位 */}
+              <div className="space-y-1.5">
+                {([
+                  { key: 'quick' as const, name: '浅层 · 快速摸底', desc: '13 维每维 50-100 字提炼，通读一遍', cost: '随解析免费（¥0 额外）', time: '' },
+                  { key: 'deep' as const, name: '深层 · 拆成模板', desc: '13 维每维 300-500 字 + 原文佐证，逐块精读', cost: fmtRmb(deepCost.low, deepCost.high), time: fmtDuration(deepCost.seconds) },
+                ]).map(opt => (
+                  <label key={opt.key} className={`block rounded border p-1.5 cursor-pointer transition-colors ${refDepth === opt.key ? 'border-purple-400 bg-purple-400/10' : 'border-border hover:border-purple-400/40'}`}>
+                    <div className="flex items-center gap-1.5">
+                      <input type="radio" name="refDepth" checked={refDepth === opt.key} onChange={() => setRefDepth(opt.key)} className="accent-purple-400" />
+                      <span className="text-[11px] font-medium text-text-primary">{opt.name}</span>
+                    </div>
+                    <div className="pl-5 text-[10px] text-text-muted leading-snug">{opt.desc}</div>
+                    <div className="pl-5 text-[10px]"><span className="text-amber-400">{opt.cost}</span>{opt.time && <span className="text-text-muted"> · {opt.time}</span>}</div>
+                  </label>
+                ))}
+              </div>
+              <button onClick={() => setShowExample(v => !v)} className="mt-1.5 flex items-center gap-0.5 text-[10px] text-purple-400 hover:underline">
+                <Microscope className="w-3 h-3" /> {showExample ? '收起示例' : '看示例：浅 vs 深'}
+              </button>
+              {showExample && (
+                <div className="mt-1 text-[10px] leading-relaxed bg-bg-surface rounded p-2 space-y-1.5 border border-border">
+                  <div className="text-text-muted">以《斗破苍穹》「开篇技法」维度为例：</div>
+                  <div><span className="text-green-400 font-medium">浅层</span>：用"天才陨落"制造反差钩子，黄金三章走完"被退婚→发现戒指有老爷爷→立誓打脸"的闭环，憋屈感拉满又立刻给希望。</div>
+                  <div><span className="text-red-400 font-medium">深层</span>：① 钩子=高起点骤跌（"斗之力三段"钉耻辱柱）；② 情绪锚点=退婚戏+金句"莫欺少年穷"；③ 金手指先断后给、踩在最绝望处；④ 三章一个压抑→释放周期；⑤ 可复用套路：落差要狠、锚点要有金句、外挂别太早给。<span className="text-text-muted">（+原文引用佐证）</span></div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border bg-bg-base">
+        {/* Footer：按钮左右对齐上方卡片（导入当前项目=左，取消居中，导入项目参考=右） */}
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-border bg-bg-base">
+          <button
+            onClick={() => onConfirm('project', targetWorldGroupId)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm rounded hover:bg-accent-hover"
+          >
+            <Wand2 className="w-4 h-4" /> 导入当前项目（{stats.totalChunks} 块）
+          </button>
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover rounded"
@@ -247,16 +291,10 @@ export default function ImportConfirmModal({
             取消
           </button>
           <button
-            onClick={() => onConfirm('reference', null)}
+            onClick={() => onConfirm('reference', null, refDepth)}
             className="flex items-center gap-1.5 px-4 py-2 bg-purple-500/80 text-white text-sm rounded hover:bg-purple-500 transition-colors"
           >
-            📚 导入项目参考
-          </button>
-          <button
-            onClick={() => onConfirm('project', targetWorldGroupId)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm rounded hover:bg-accent-hover"
-          >
-            <Wand2 className="w-4 h-4" /> 导入当前项目（{stats.totalChunks} 块）
+            📚 导入项目参考 · {refDepth === 'deep' ? '深层' : '浅层'}
           </button>
         </div>
       </div>

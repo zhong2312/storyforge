@@ -1,8 +1,12 @@
+import { FICTION_DIMENSIONS, FICTION_DIMENSION_LABELS } from './import-session-data'
+export type { FictionDimension } from './import-session-data'
+export { FICTION_DIMENSIONS, FICTION_DIMENSION_LABELS } from './import-session-data'
+
 /** 参考书目类型 */
 export type ReferenceType = 'story' | 'style' | 'historical'
 
-/** 深度分析深度档位 */
-export type ReferenceAnalysisDepth = 'quick' | 'standard' | 'deep'
+/** 作品分析档位:浅层(快速摸底) / 深层(拆成模板) */
+export type ReferenceAnalysisDepth = 'quick' | 'deep'
 
 /** 深度分析状态 */
 export type ReferenceAnalysisStatus = 'none' | 'pending' | 'analyzing' | 'done' | 'failed'
@@ -91,25 +95,35 @@ export interface ReferenceChunkAnalysis {
   startOffset?: number
   endOffset?: number
 
-  // ── 八维分析内容（每个维度一段 Markdown 文字） ──
-  /** 叙事架构：视角选择、时间线编排、POV 切换技巧 */
-  narrativeStructure?: string
-  /** 开篇与黄金三章：钩子设计、角色引入、世界展示节奏 */
+  // ── 13 个小说维度（每个维度一段 Markdown 文字；key 与 WritingTechniques 统一） ──
+  /** 叙事视角与手法 */
+  narrativeStyle?: string
+  /** 开篇技法 / 黄金三章 */
   openingTechnique?: string
-  /** 情节结构与节奏：起承转合、高潮分布、爽点设计、节奏曲线 */
-  plotRhythm?: string
-  /** 人物塑造：多维人物刻画、弧线设计、标签化、动态变化 */
-  characterCraft?: string
-  /** 冲突与升级：外在/内在冲突链、压力曲线、升级节奏 */
+  /** 情节结构与套路 */
+  plotStructure?: string
+  /** 节奏控制 */
+  pacingControl?: string
+  /** 高潮设计 */
+  climaxDesign?: string
+  /** 冲突设计与升级 */
   conflictEscalation?: string
-  /** 伏笔与悬念：伏笔埋设与回收、悬念管理、读者预期操控 */
+  /** 人物塑造 */
+  characterCraft?: string
+  /** 对话技巧 */
+  dialogueTechnique?: string
+  /** 文笔风格 */
+  proseStyle?: string
+  /** 爽点 / 情绪节拍 */
+  emotionalBeats?: string
+  /** 伏笔与回收 */
   foreshadowing?: string
-  /** 文笔与对话：修辞手法、句式变化、对话个性化、叙述密度 */
-  proseAndDialogue?: string
-  /** 世界观构建：设定融入叙事、规则展示、沉浸感营造 */
+  /** 世界观构建 */
   worldBuilding?: string
+  /** 其他值得学习的技巧 */
+  otherTechniques?: string
 
-  // ── 历史考证维度（PHASE-H3 历史资料专属） ──
+  // ── 历史考证维度（PHASE-H3 历史资料专属；仅 type==='historical' 分析/展示） ──
   /** 历史背景与时代特征：时代大势、历史转折点、政治气候 */
   historicalContext?: string
   /** 社会制度与等级：官制、科举、法律、阶层划分、社会流动性 */
@@ -127,19 +141,8 @@ export interface ReferenceChunkAnalysis {
   createdAt: number
 }
 
-/**
- * 十三维分析维度键名列表，用于遍历
- */
-export const ANALYSIS_DIMENSIONS = [
-  'narrativeStructure',
-  'openingTechnique',
-  'plotRhythm',
-  'characterCraft',
-  'conflictEscalation',
-  'foreshadowing',
-  'proseAndDialogue',
-  'worldBuilding',
-  // 历史维度
+/** 5 个历史考证维度（仅历史题材参考分析/展示） */
+export const HISTORY_DIMENSIONS = [
   'historicalContext',
   'socialInstitutions',
   'dailyLife',
@@ -147,19 +150,22 @@ export const ANALYSIS_DIMENSIONS = [
   'languageCustoms',
 ] as const
 
+export type HistoryDimension = (typeof HISTORY_DIMENSIONS)[number]
+
+/**
+ * 全部分析维度键名 = 13 小说维度 + 5 历史维度（用于遍历）。
+ * 小说题材只用前 13;历史题材两段都用。
+ */
+export const ANALYSIS_DIMENSIONS = [
+  ...FICTION_DIMENSIONS,
+  ...HISTORY_DIMENSIONS,
+] as const
+
 export type AnalysisDimension = (typeof ANALYSIS_DIMENSIONS)[number]
 
-/** 十三维维度中文标签 */
+/** 维度中文标签（13 小说 + 5 历史） */
 export const DIMENSION_LABELS: Record<AnalysisDimension, string> = {
-  narrativeStructure: '叙事架构',
-  openingTechnique: '开篇与黄金三章',
-  plotRhythm: '情节结构与节奏',
-  characterCraft: '人物塑造',
-  conflictEscalation: '冲突与升级',
-  foreshadowing: '伏笔与悬念',
-  proseAndDialogue: '文笔与对话',
-  worldBuilding: '世界观构建',
-  // 历史维度
+  ...FICTION_DIMENSION_LABELS,
   historicalContext: '历史背景与时代特征',
   socialInstitutions: '社会制度与等级',
   dailyLife: '日常生活细节',

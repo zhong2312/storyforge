@@ -855,6 +855,7 @@ D) 以上的混合
     "conflictEscalation": "冲突设计与升级模式（矛盾层层递进、敌人体系、打脸套路、实力提升节奏）",
     "emotionalBeats": "爽点与情绪节拍设计（读者情绪曲线、爽点密度与分布、泪点催泪技法）",
     "foreshadowing": "伏笔与回收（伏笔设置位置、回收时机、暗线设计）",
+    "worldBuilding": "世界观构建（设定如何融入叙事而非info-dump、规则展示时机、细节沉浸感、文化/政治/经济体系暗示）",
     "otherTechniques": "其他值得学习的写作技巧（独特亮点、创新手法）"
   }
 }
@@ -925,7 +926,7 @@ D) 以上的混合
     "narrativeStyle":"", "proseStyle":"", "openingTechnique":"",
     "plotStructure":"", "climaxDesign":"", "pacingControl":"",
     "characterCraft":"", "dialogueTechnique":"", "conflictEscalation":"",
-    "emotionalBeats":"", "foreshadowing":"", "otherTechniques":""
+    "emotionalBeats":"", "foreshadowing":"", "worldBuilding":"", "otherTechniques":""
   }
 }
 \`\`\`

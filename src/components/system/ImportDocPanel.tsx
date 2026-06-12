@@ -9,7 +9,9 @@ import { detectVolumeStructure, type VolumeDetectResult } from '../../lib/import
 import {
   runSession, pausePipeline, cancelPipeline, retryFailedChunks,
   registerChunkTexts, hasChunkTexts, clearChunkTexts,
+  applyReferenceFromSession,
 } from '../../lib/import/pipeline'
+import type { ReferenceAnalysisDepth } from '../../lib/types'
 import { useImportSessionStore } from '../../stores/import-session'
 import { useImportStatusStore } from '../../stores/import-status'
 import { useWorldGroupStore } from '../../stores/world-group'
@@ -60,6 +62,9 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
   // 报告 modal + 未完成会话
   const [reportSession, setReportSession] = useState<ImportSession | null>(null)
   const [unfinished, setUnfinished] = useState<ImportSession | null>(null)
+  /** 已完成可复用解析的会话(解析一次·多次落地) */
+  const [reusable, setReusable] = useState<ImportSession | null>(null)
+  const [applyingReuse, setApplyingReuse] = useState(false)
   /** 当前未完成任务的 Blob 是否已恢复到内存（决定"立即续跑"是否可点） */
   const [blobRestored, setBlobRestored] = useState(false)
   const [restoringBlob, setRestoringBlob] = useState(false)
@@ -108,6 +113,10 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
   useEffect(() => {
     let cancelled = false
     const scan = async () => {
+      // 解析一次·多次落地:找已完成可复用的会话
+      useImportSessionStore.getState().findReusableCompleted(project.id!).then(r => {
+        if (!cancelled) setReusable(r)
+      })
       const s = await useImportSessionStore.getState().findUnfinished(project.id!)
       if (cancelled || !s?.id) {
         setUnfinished(s || null)
@@ -227,7 +236,7 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
   }
 
   // ── 在 Confirm Modal 里确认：创建 session 并启动 ───────────
-  const handleConfirmStart = async (importTarget: ImportTarget, selectedWorldGroupId?: number | null) => {
+  const handleConfirmStart = async (importTarget: ImportTarget, selectedWorldGroupId?: number | null, depth?: import('../../lib/types').ReferenceAnalysisDepth) => {
     if (!plans) return
     if (importTarget === 'project' && project.enableMultiWorld && selectedWorldGroupId == null) {
       alert('请先选择本次导入要写入的目标世界。')
@@ -258,6 +267,7 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
       merged: { worldview: {}, characters: [], outline: [] },
       rollingContext: '',
       importTarget,
+      analysisDepth: importTarget === 'reference' ? (depth ?? 'quick') : undefined,
       targetWorldGroupId: importTarget === 'project' ? (selectedWorldGroupId ?? null) : null,
       status: 'pending',
     }
@@ -318,6 +328,28 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
     runSession({ sessionId, projectId: project.id! }).catch(err => {
       console.error('[import] runSession 崩了：', err)
     })
+  }
+
+  // ── 解析一次·多次落地:复用已完成会话,应用到项目参考(浅/深),不再解析 ──
+  const handleReuseToReference = async (depth: ReferenceAnalysisDepth) => {
+    if (!reusable?.id || applyingReuse) return
+    setApplyingReuse(true)
+    const statusStore = useImportStatusStore.getState()
+    statusStore.reset()
+    statusStore.setPhase('preparing')
+    statusStore.pushActivity('info', `♻️ 复用已解析《${reusable.filename}》→ 项目参考·${depth === 'deep' ? '深层' : '浅层'}（不重新解析）`)
+    try {
+      await applyReferenceFromSession(project.id!, reusable, reusable.id!, statusStore, depth)
+      statusStore.setPhase('done')
+      setReusable(null)
+      onNavigate?.('references')
+    } catch (err) {
+      console.error('[import] 复用应用到参考失败：', err)
+      statusStore.setPhase('failed')
+      alert(`复用失败：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setApplyingReuse(false)
+    }
   }
 
   // ── 续跑入口（Blob 已恢复 → 直接跑） ─────────────────────
@@ -490,6 +522,32 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
             setBlobRestored(false)
           }}
         />
+      )}
+
+      {/* 解析一次·多次落地:已完成会话可复用解析,直接做项目参考分析(不重新解析) */}
+      {reusable && phase === 'idle' && !unfinished && (
+        <div className="rounded-lg border border-purple-400/40 bg-purple-400/5 p-3 text-xs">
+          <div className="flex items-center gap-1.5 font-medium text-purple-300 mb-1">
+            📦 检测到已解析《{reusable.filename}》（{reusable.totalChars.toLocaleString()} 字 · {reusable.totalChunks} 块）
+          </div>
+          <div className="text-text-muted mb-2 leading-relaxed">
+            无需重新上传或解析，可直接复用这份解析做「项目参考」13 维作品分析{!hasChunkTexts(reusable.id!) && '（原文已不在内存，深层将退回浅层；如需深层请重新上传）'}：
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button disabled={applyingReuse} onClick={() => handleReuseToReference('quick')}
+              className="px-3 py-1.5 rounded bg-purple-500/80 text-white hover:bg-purple-500 disabled:opacity-50">
+              ♻️ 应用到 项目参考 · 浅层（免费）
+            </button>
+            <button disabled={applyingReuse} onClick={() => handleReuseToReference('deep')}
+              className="px-3 py-1.5 rounded border border-purple-400/60 text-purple-200 hover:bg-purple-400/10 disabled:opacity-50">
+              🔬 应用到 项目参考 · 深层
+            </button>
+            <button disabled={applyingReuse} onClick={() => setReusable(null)}
+              className="px-3 py-1.5 rounded text-text-muted hover:bg-bg-hover">
+              忽略
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 上传区 */}
