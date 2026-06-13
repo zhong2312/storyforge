@@ -6,8 +6,8 @@
  */
 import { create } from 'zustand'
 import {
-  exportToGist, importFromGist, validateGitHubPAT, listStoryforgeGists,
-  type GistBackupMeta,
+  exportToGist, importFromGist, validateGitHubPAT, listStoryforgeGists, listGistRevisions,
+  type GistBackupMeta, type GistRevisionMeta,
 } from '../lib/export/gist-export'
 import { exportProjectJSON, importProjectJSON } from '../lib/export/json-export'
 
@@ -38,10 +38,12 @@ interface GistState {
   setAutoBackup: (on: boolean) => void
   /** 备份指定项目到云端(创建/更新该项目的 Gist) */
   backupProject: (projectId: number) => Promise<{ url: string } | null>
-  /** 从指定 Gist 恢复(新建一个项目),返回新项目 id */
-  restoreFromGist: (gistId: string) => Promise<number | null>
+  /** 从指定 Gist 恢复(新建一个项目),返回新项目 id;传 sha 则恢复该历史版本 */
+  restoreFromGist: (gistId: string, sha?: string) => Promise<number | null>
   /** 列出该账号下所有故事熔炉备份(换设备找回用) */
   listBackups: () => Promise<GistBackupMeta[]>
+  /** 列出某项目云备份 Gist 的历史版本(版本回溯用) */
+  listRevisions: (projectId: number) => Promise<GistRevisionMeta[]>
   /** 读某项目的本地备份状态(gistId / 上次备份时间) */
   projBackup: (projectId: number) => ProjBackup | null
 }
@@ -96,12 +98,12 @@ export const useGistStore = create<GistState>((set, get) => ({
     }
   },
 
-  restoreFromGist: async (gistId) => {
+  restoreFromGist: async (gistId, sha) => {
     const { pat } = get()
     if (!pat) { set({ error: '未连接 GitHub' }); return null }
     set({ busy: true, error: null })
     try {
-      const data = await importFromGist(gistId, pat)
+      const data = await importFromGist(gistId, pat, sha)
       const newId = await importProjectJSON(data as any)
       set({ busy: false })
       return newId
@@ -115,6 +117,13 @@ export const useGistStore = create<GistState>((set, get) => ({
     const { pat } = get()
     if (!pat) return []
     return listStoryforgeGists(pat)
+  },
+
+  listRevisions: async (projectId) => {
+    const { pat } = get()
+    const proj = readProj(projectId)
+    if (!pat || !proj?.gistId) return []
+    return listGistRevisions(proj.gistId, pat)
   },
 
   projBackup: (projectId) => readProj(projectId),

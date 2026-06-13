@@ -5,9 +5,9 @@
  * 需要用户提供一个带 `gist` 权限的 GitHub Personal Access Token（opt-in）。
  */
 import { useState } from 'react'
-import { Cloud, CloudUpload, CloudDownload, Check, Loader2, LogOut, ExternalLink } from 'lucide-react'
+import { Cloud, CloudUpload, CloudDownload, Check, Loader2, LogOut, ExternalLink, History } from 'lucide-react'
 import { useGistStore } from '../../stores/gist'
-import type { GistBackupMeta } from '../../lib/export/gist-export'
+import type { GistBackupMeta, GistRevisionMeta } from '../../lib/export/gist-export'
 
 interface Props {
   projectId: number
@@ -15,10 +15,11 @@ interface Props {
 }
 
 export default function CloudBackupCard({ projectId, onImported }: Props) {
-  const { pat, username, autoBackup, busy, error, connect, disconnect, backupProject, restoreFromGist, listBackups, setAutoBackup, projBackup } = useGistStore()
+  const { pat, username, autoBackup, busy, error, connect, disconnect, backupProject, restoreFromGist, listBackups, listRevisions, setAutoBackup, projBackup } = useGistStore()
   const [patInput, setPatInput] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [backups, setBackups] = useState<GistBackupMeta[] | null>(null)
+  const [revisions, setRevisions] = useState<GistRevisionMeta[] | null>(null)
   const proj = projBackup(projectId)
 
   const handleConnect = async () => {
@@ -33,12 +34,27 @@ export default function CloudBackupCard({ projectId, onImported }: Props) {
   }
   const handleShowRestore = async () => {
     setMsg(null)
+    setRevisions(null)
     setBackups(await listBackups())
   }
   const handleRestore = async (gistId: string, title: string) => {
     if (!confirm(`从云端恢复「${title}」？将新建一个项目，不会覆盖当前项目。`)) return
     const newId = await restoreFromGist(gistId)
     if (newId) { setMsg('✓ 已从云端恢复为新项目'); setBackups(null); onImported?.(newId) }
+  }
+  const handleShowRevisions = async () => {
+    setMsg(null)
+    setBackups(null)
+    const list = await listRevisions(projectId)
+    setRevisions(list)
+    if (list.length === 0) setMsg('该项目暂无云端历史版本（先备份一次，之后每次备份都会自动留一版）。')
+  }
+  const handleRestoreRevision = async (rev: GistRevisionMeta) => {
+    if (!proj?.gistId) return
+    const when = new Date(rev.committedAt).toLocaleString('zh-CN')
+    if (!confirm(`恢复 ${when} 这一版？将新建一个项目，不会覆盖当前项目。`)) return
+    const newId = await restoreFromGist(proj.gistId, rev.version)
+    if (newId) { setMsg(`✓ 已恢复 ${when} 的版本为新项目`); setRevisions(null); onImported?.(newId) }
   }
 
   return (
@@ -94,6 +110,12 @@ export default function CloudBackupCard({ projectId, onImported }: Props) {
               className="px-3 py-1.5 rounded border border-border text-text-secondary text-sm hover:bg-bg-hover disabled:opacity-50 flex items-center gap-1.5">
               <CloudDownload className="w-4 h-4" /> 从云端恢复
             </button>
+            {proj?.gistId && (
+              <button onClick={handleShowRevisions} disabled={busy}
+                className="px-3 py-1.5 rounded border border-border text-text-secondary text-sm hover:bg-bg-hover disabled:opacity-50 flex items-center gap-1.5">
+                <History className="w-4 h-4" /> 本项目历史版本
+              </button>
+            )}
           </div>
 
           <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
@@ -116,6 +138,29 @@ export default function CloudBackupCard({ projectId, onImported }: Props) {
                   <div className="text-[10px] text-text-muted">更新于 {new Date(b.updatedAt).toLocaleString('zh-CN')}</div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {revisions && revisions.length > 0 && (
+            <div className="border border-border rounded bg-bg-base">
+              <div className="px-2 py-1.5 border-b border-border flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-sky-400" />
+                <span className="text-[11px] text-text-secondary">本项目历史版本（每次备份留一版，最新在上 · 选一版恢复为新项目）</span>
+              </div>
+              <div className="p-2 space-y-1 max-h-56 overflow-y-auto">
+                {revisions.map((rev, i) => (
+                  <button key={rev.version} onClick={() => handleRestoreRevision(rev)} disabled={busy}
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-bg-hover text-xs disabled:opacity-50 flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-text-primary">{new Date(rev.committedAt).toLocaleString('zh-CN')}</span>
+                      {i === 0 && <span className="text-[10px] px-1 rounded bg-sky-500/20 text-sky-400">最新</span>}
+                    </span>
+                    <span className="text-[10px] text-text-muted shrink-0">
+                      {rev.additions != null && rev.deletions != null ? `+${rev.additions} / -${rev.deletions}` : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

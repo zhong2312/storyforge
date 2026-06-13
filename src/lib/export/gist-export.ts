@@ -97,8 +97,9 @@ export async function listStoryforgeGists(pat: string): Promise<GistBackupMeta[]
 /**
  * 从指定 Gist 拉回备份并解析成 ProjectExportData（再交给 importProjectJSON 恢复）。
  */
-export async function importFromGist(gistId: string, pat: string): Promise<ProjectExportData> {
-  const response = await fetch(`${GIST_API}/${gistId}`, {
+export async function importFromGist(gistId: string, pat: string, sha?: string): Promise<ProjectExportData> {
+  const url = sha ? `${GIST_API}/${gistId}/${sha}` : `${GIST_API}/${gistId}`
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' },
   })
   if (!response.ok) {
@@ -115,6 +116,40 @@ export async function importFromGist(gistId: string, pat: string): Promise<Proje
     content = await raw.text()
   }
   return JSON.parse(content) as ProjectExportData
+}
+
+/** 一个 Gist 的历史版本（revision = 一次提交） */
+export interface GistRevisionMeta {
+  /** revision SHA，用于拉该版本快照 */
+  version: string
+  /** 该版本提交时间（ISO） */
+  committedAt: string
+  /** 相对上一版的增删行数（GitHub 提供，可空） */
+  additions?: number
+  deletions?: number
+}
+
+/**
+ * 列出某个 Gist 的全部历史版本（按时间倒序，最新在前）。
+ * Gist 底层是 git 仓库，每次「立即备份」都会自动生成一个 revision，GitHub 永久保留。
+ * 注意：GitHub history API 大约只返回最近 ~30 个 revision，更早的会被截断。
+ */
+export async function listGistRevisions(gistId: string, pat: string): Promise<GistRevisionMeta[]> {
+  const response = await fetch(`${GIST_API}/${gistId}`, {
+    headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' },
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.message ?? `GitHub API 错误 ${response.status}`)
+  }
+  const json = await response.json()
+  const history = Array.isArray(json.history) ? json.history : []
+  return history.map((h: any): GistRevisionMeta => ({
+    version: h.version,
+    committedAt: h.committed_at,
+    additions: h.change_status?.additions,
+    deletions: h.change_status?.deletions,
+  }))
 }
 
 /** 验证 PAT 是否有效（调用 /user 接口） */

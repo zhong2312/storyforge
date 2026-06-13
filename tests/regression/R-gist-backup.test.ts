@@ -71,3 +71,63 @@ describe('R-GIST · 云备份往返', () => {
     expect(chars.map(c => c.name)).toContain('主角甲')
   })
 })
+
+describe('R-GIST · 版本历史回溯', () => {
+  // 每个 sha 对应一份历史快照内容
+  let snapshots: Record<string, string> = {}
+
+  beforeEach(async () => {
+    await db.delete(); await db.open()
+    snapshots = {}
+    useGistStore.setState({ pat: PAT, username: 'tester' })
+    // 让 listRevisions 能读到「项目 → gistId」映射
+    localStorage.setItem('sf-gist-proj-1', JSON.stringify({ gistId: 'gistV', lastBackupAt: Date.now() }))
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      // 取某个历史版本快照：/gists/gistV/{sha}
+      const m = u.match(/\/gists\/gistV\/([a-z0-9]+)$/i)
+      if (m) {
+        const sha = m[1]
+        return { ok: true, json: async () => ({ id: 'gistV', files: { 'storyforge-x.json': { filename: 'storyforge-x.json', content: snapshots[sha], truncated: false } } }) }
+      }
+      // 读 gist 元信息 + 历史列表：/gists/gistV
+      if (/\/gists\/gistV$/.test(u)) {
+        return { ok: true, json: async () => ({
+          id: 'gistV',
+          files: { 'storyforge-x.json': { filename: 'storyforge-x.json', content: snapshots['shaNew'], truncated: false } },
+          history: [
+            { version: 'shaNew', committed_at: '2026-06-13T10:00:00Z', change_status: { additions: 3, deletions: 1, total: 4 } },
+            { version: 'shaOld', committed_at: '2026-06-12T09:00:00Z', change_status: { additions: 10, deletions: 0, total: 10 } },
+          ],
+        }) }
+      }
+      return { ok: false, status: 404, json: async () => ({ message: 'not found' }) }
+    }))
+  })
+  afterEach(async () => { db.close(); vi.unstubAllGlobals(); localStorage.clear() })
+
+  it('列出历史版本(最新在前) + 恢复指定旧版本', async () => {
+    // 造两份合法的导出快照(新/旧版本，项目名不同以便区分)
+    const pid = await db.projects.add({
+      name: '版本书', genre: '', description: '', targetWordCount: 0,
+      enableMultiWorld: false, createdAt: Date.now(), updatedAt: Date.now(),
+    } as any) as number
+    const { exportProjectJSON } = await import('../../src/lib/export/json-export')
+    const base = await exportProjectJSON(pid)
+    snapshots['shaNew'] = JSON.stringify({ ...base, project: { ...base.project, name: '新版本' } })
+    snapshots['shaOld'] = JSON.stringify({ ...base, project: { ...base.project, name: '旧版本' } })
+
+    // 列历史版本：两条，最新在前
+    const revs = await useGistStore.getState().listRevisions(1)
+    expect(revs.map(r => r.version)).toEqual(['shaNew', 'shaOld'])
+    expect(revs[0].additions).toBe(3)
+    expect(revs[0].deletions).toBe(1)
+
+    // 恢复「旧版本」那一版 → 新建项目,拿到的是旧快照
+    const newId = await useGistStore.getState().restoreFromGist('gistV', 'shaOld')
+    expect(newId).toBeGreaterThan(0)
+    const restored = await db.projects.get(newId!)
+    expect(restored?.name).toContain('旧版本')
+  })
+})
