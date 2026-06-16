@@ -65,6 +65,14 @@ export const MODEL_CONTEXT_PRESETS: Record<string, ModelContextPreset> = {
   // MiniMax
   'minimax': { label: 'MiniMax 默认', maxContext: 245_000, maxOutput: 16_384 },
 
+  // NVIDIA NIM
+  'nvidia': { label: 'NVIDIA NIM 默认', maxContext: 128_000, maxOutput: 4_096 },
+  'nvidia:meta/llama-3.1-8b-instruct':   { label: 'Llama 3.1 8B',   maxContext: 128_000, maxOutput: 4_096 },
+  'nvidia:meta/llama-3.1-70b-instruct':  { label: 'Llama 3.1 70B',  maxContext: 128_000, maxOutput: 4_096 },
+  'nvidia:meta/llama-3.3-70b-instruct':  { label: 'Llama 3.3 70B',  maxContext: 128_000, maxOutput: 4_096 },
+  'nvidia:mistralai/mistral-large-2-instruct': { label: 'Mistral Large 2', maxContext: 128_000, maxOutput: 4_096 },
+  'nvidia:nvidia/llama-3.1-nemotron-70b-instruct': { label: 'Nemotron 70B', maxContext: 128_000, maxOutput: 4_096 },
+
   // ModelScope
   'modelscope': { label: 'ModelScope 默认', maxContext: 32_000, maxOutput: 8_192 },
 
