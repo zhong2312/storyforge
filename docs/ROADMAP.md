@@ -216,12 +216,17 @@
 > **已完成批次（2026-06-13，commit `81f3b1e`，Codex 交付 + Claude 复核合并）**：P0-1 portal 字段名+安全解析+导出导入两阶段 remap｜P0-3 PAT/APIKey 默认 sessionStorage+记住开关+旧 token 迁移｜P0-4 全量 AI 调用补 category + check-architecture 加 category 守卫｜P0-5 全局 `/settings` 路由修引导断裂｜P0-6 historical 多世界过滤（当前世界∪null）｜P1-2 README/AGENTS/refactor 文档同步｜P1-4 真实旧库迁移测试 `R-db-upgrade-fixtures`（v30→31→32）｜P1-5 APIKey/PAT 风险说明 + `R-ai-config-storage`｜P1-6 `trimMessagesToFit` 接 `config.contextWindow`｜新增统一 `Dialog` 组件（替换工作未完成，见下）。
 > **下面是经核实仍未做 / 只部分完成的项，按严重度排列。每条含：位置 · 问题 · 改法 · 验收。**
 
-### 🟠 AUDIT-1（P0-2 续 · 部分完成）— 导出主体完全注册表派生
-- **位置**：`src/lib/export/json-export.ts`。
-- **现状**：**导入事务表已派生**（`transactionTablesFor('importProject')`）✅；但**导出主体仍是手写枚举**——`exportProjectJSON()` 逐表查询 + 逐表字段映射，未消费 `PROJECT_TABLES.exportable/exportRemap`。
-- **风险**：加新表只登记 PROJECT_TABLES **不会**自动进导出，必须手动补 json-export 四处（现状已知陷阱）。非当前数据丢失，属未来踩坑隐患。
-- **改法**：导出表选择、worldGroup remap、父子树 remap 尽量由注册表派生，特殊表保留 adapter 但由注册表驱动；移除残留手写枚举。
-- **验收**：新增可导出表只登记注册表即可进入导出/导入往返；既有备份格式兼容；往返测试通过。
+### ✅ AUDIT-1（P0-2 续 · 已完成 2026-06-16）— 导出主体完全注册表派生
+- **位置**：`src/lib/export/json-export.ts` → 拆出 `registry-export.ts` / `registry-import.ts`。
+- **做法**：① 注册表 `ExportRemapField` 补 `exportAs`（历史导出字段名）+ `onUnmapped`（drop/require/null），`TableSpec` 补 `exportIdField`/`exportOrderBy`/`exportRefRemap`，把全部导出语义收敛进 PROJECT_TABLES 单一事实源；② `deriveExportProjectJSON` 遍历 exportable 表按元数据导出；③ `deriveImportProjectJSON` 按表依赖拓扑排序 + 树内拓扑 + 两阶段 portals 导入；④ `json-export.ts` 两函数转发到派生引擎，**删除 ~580 行手写枚举**，仅保留 `ProjectExportData` 类型契约 + `downloadJSON` 门面；⑤ `check-architecture` ⑤号守卫从「检查手写枚举完整」升级为「类型契约完整 + 导出/导入确由注册表派生」。
+- **安全网（数据红线）**：`R-export-fullcoverage`（全 31 表 + 双世界组往返）锁当前行为 → `R-export-derive-equivalence`（派生导出 ≡ 真实旧格式 fixture，逐字段）→ `R-export-derive-roundtrip`（派生往返 + 旧 fixture 向后兼容）。等价仅两处无害差异：派生版去掉了旧版冗余的 outlineNodes/worldNodes 原始 parentId 死字段。
+- **验收达成**：新增 exportable 表只登记注册表即自动进出导出/导入；旧备份/Gist 云存档格式不变（fixture 锁死）；往返测试全绿。
+
+### 🟢 AUDIT-1b（AUDIT-1 派生时发现 · 待修）— 细纲数组/JSON 内的角色引用导入未重映射
+- **现状**：`detailedOutlines.appearingCharacterIds`（number[]）与 `scenes[].characterIds`（JSON 内）当前导入**未重映射**到新角色 id（注册表 `refs` 已声明为 character 引用，但导出/导入只处理 `exportRemap` 字段，不处理 refs 里的 array/json 引用）。同类：`creativeRules.citedReferenceIds` → references。
+- **影响**：导入后细纲「本章出场角色」可能指向错误/不存在的角色。属次要元数据，非正文/主外键，不致命。
+- **改法**：派生引擎已统一架构，后续可让 `refs` 中 `kind: 'array' | 'json'` 且指向 exportable 表的引用也纳入导出/导入重映射（开启后 `R-export-fullcoverage` 里被锁的 `appearingCharacterIds` 断言可恢复为「重映射到新 id」）。
+- **优先级**：🟢 低（次要元数据，且已有架构支撑，增量小）。
 
 ### 🟠 AUDIT-2（P1-3 续 · 部分完成）— 原生 alert/confirm/prompt 全面替换为 Dialog
 - **位置**：`src/components/shared/Dialog.tsx` 已建；但仍有 **约 23 个文件**用原生 `alert/confirm/prompt`（`OutlinePanel`、`ImportDocPanel`、`AIConfigPanel`、`CodexPanel`、`require-backup-before.ts` 等）。
@@ -325,7 +330,10 @@
 
 ---
 
-## 🟢 ENH-OUTLINE-1（提示词增强 · 低优先）— 把"番茄方法论卷纲"精华内化进纲要提示词
+## 🟢 ENH-OUTLINE-1（提示词增强 · 低优先 · 部分完成 2026-06-16）— 把"番茄方法论卷纲"精华内化进纲要提示词
+
+> **已内化(2026-06-16)**：`OUTLINE_SYSTEM` 已吸收番茄方法论的「情绪公式(蓄力→爆发→余韵)、爽点密度(每3-5章钩子)、必含结构要素(坠落时刻/选择困境/信息差/伏笔/悬念交替)、节奏段设计(开局蓄力/矛盾升级/高潮爆发/收尾过渡)」;`outline.volume` summary 要求升级为「4-6句覆盖核心冲突+情绪走向+主角变化+卷末钩子」。JSON 输出格式与 `parseVolumeOutlineSmart` 未变。
+> **待续**：「全局骨架先行」那层(一句话主线/升级体系坐标/核心角色总表/伏笔总表 作为生成卷纲前的前置结构)尚未并入——需复用既有 storyCore/foreshadows/角色数据源,避免另起并行结构。优先级仍 🟢 低。
 
 > 来源：社区 PR #12（minemine-m / Criska，已 superseded 关闭）随带的 `public/prompt/卷级大纲.md`。
 > 该文件是**死文件**(App 不加载,运行时提示词在 `src/lib/ai/prompt-seeds.ts` 的 seed 里),内容是一套较完整的番茄小说平台卷纲方法论,值得**取精华内化**,而非整体替换。

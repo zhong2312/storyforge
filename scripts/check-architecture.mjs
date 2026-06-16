@@ -140,8 +140,13 @@ for (const dir of ['src/components', 'src/hooks', 'src/lib']) {
 }
 
 // ── ⑤ exportable 表必须接入 JSON 导出/导入 ──
+// AUDIT-1 后:导出/导入主体由注册表派生(registry-export/registry-import 遍历 exportable),
+// 加新表自动进出,无需逐表手写。本守卫验证:① ProjectExportData 类型契约逐表声明完整;
+// ② 导出/导入确实委托给派生引擎,且派生引擎确实遍历 exportable 表(防回退到手写枚举)。
 const registrySrc = read('src/lib/registry/project-tables.ts')
 const jsonExportSrc = read('src/lib/export/json-export.ts')
+const deriveExportSrc = read('src/lib/export/registry-export.ts')
+const deriveImportSrc = read('src/lib/export/registry-import.ts')
 const specChunks = registrySrc
   .split(/\n\s*\n/)
   .filter(chunk => chunk.includes('table: db.') && chunk.includes('name:'))
@@ -151,19 +156,26 @@ for (const chunk of specChunks) {
   const name = chunk.match(/\bname:\s*'([^']+)'/)?.[1]
   if (!name || name === 'projects') continue
 
+  // ① 类型契约:ProjectExportData 必须逐表声明(给 TS 类型安全 + Gist 等消费方)
   const interfaceRe = new RegExp(`\\n\\s*${name}\\??\\s*:`)
-  const outputRe = new RegExp(`\\n\\s*${name}\\s*:`)
-  const importRe = new RegExp(`\\bdata\\.${name}\\b`)
-
   if (!interfaceRe.test(jsonExportSrc)) {
-    violations.push(`[⑤导出覆盖] src/lib/export/json-export.ts: ProjectExportData 缺少 exportable 表 \`${name}\``)
+    violations.push(`[⑤导出契约] src/lib/export/json-export.ts: ProjectExportData 缺少 exportable 表 \`${name}\``)
   }
-  if (!outputRe.test(jsonExportSrc)) {
-    violations.push(`[⑤导出覆盖] src/lib/export/json-export.ts: exportProjectJSON 返回对象缺少 \`${name}\``)
-  }
-  if (!importRe.test(jsonExportSrc)) {
-    violations.push(`[⑤导出覆盖] src/lib/export/json-export.ts: importProjectJSON 未读取 \`data.${name}\``)
-  }
+}
+
+// ② 导出/导入主体必须由注册表派生(遍历 exportable),不得回退到逐表手写枚举
+const derivesExportable = /PROJECT_TABLES\.filter\(\s*s\s*=>\s*s\.exportable/
+if (!derivesExportable.test(deriveExportSrc)) {
+  violations.push('[⑤导出派生] registry-export.ts: deriveExportProjectJSON 未遍历 PROJECT_TABLES exportable 表')
+}
+if (!derivesExportable.test(deriveImportSrc)) {
+  violations.push('[⑤导出派生] registry-import.ts: deriveImportProjectJSON 未遍历 PROJECT_TABLES exportable 表')
+}
+if (!/deriveExportProjectJSON/.test(jsonExportSrc)) {
+  violations.push('[⑤导出派生] json-export.ts: exportProjectJSON 未委托派生引擎 deriveExportProjectJSON')
+}
+if (!/deriveImportProjectJSON/.test(jsonExportSrc)) {
+  violations.push('[⑤导出派生] json-export.ts: importProjectJSON 未委托派生引擎 deriveImportProjectJSON')
 }
 
 // ── ⑥ UI 层禁止浏览器原生弹窗 ──

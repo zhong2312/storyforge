@@ -73,12 +73,35 @@ export type RefSpec = SimpleRef | JsonRef | ArrayRef | IndirectRef | BlobOwnerRe
 
 /** 导出时的 ID 重映射声明 */
 export interface ExportRemapField {
-  /** 字段名 */
+  /** 字段名(库内真实外键字段) */
   field: string
-  /** 重映射到哪张表的 _exportId(如 'worldGroups' / 'outlineNodes') */
+  /** 重映射到哪张表的导出序号(如 'worldGroups' / 'outlineNodes') */
   remapVia: string
   /** 是否树形自引用(parentId) */
   selfTree?: boolean
+  /**
+   * 导出后该字段在 JSON 里的名字(历史命名,毫无规律,必须逐字段声明以逐字节兼容旧备份)。
+   * 例:worldGroupId → '_worldGroupExportId'、outlineNodeId → '_outlineExportId'、
+   *     fromCharacterId → '_fromCharacterIndex'。
+   */
+  exportAs: string
+  /**
+   * 该外键找不到映射时:
+   * - 'drop'    丢弃整行(孤儿,如 characterRelations 端点角色已删)
+   * - 'require' 导入时抛错并整体回滚(必填外键完整性保护,如 chapters.outlineNodeId)
+   * - 'null' / 省略  置空(可空外键 / worldGroupId / 树 parentId)
+   */
+  onUnmapped?: 'drop' | 'require' | 'null'
+}
+
+/**
+ * JSON 字段内引用的导出重映射(区别于 refs:refs 管删除级联,这里管导出/导入重映射)。
+ * 目前仅 worldNodes.portalsJSON 一种结构(kind: 'portals')。
+ */
+export interface ExportRefRemap {
+  field: string
+  remapVia: string
+  kind: 'portals'
 }
 
 /**
@@ -107,6 +130,17 @@ export interface TableSpec<T = any> {
   exportable: boolean
   /** 导出时需要的 ID 重映射 */
   exportRemap?: ExportRemapField[]
+  /**
+   * 导出时是否写显式 `_exportId` 字段(= 该行在导出数组里的下标)。
+   * 被别的表用「_exportId 命名」引用的表要 true(worldGroups/outlineNodes/worldNodes/
+   * references/importantLocations/codexCategories);用「数组下标隐式索引」的表(characters/
+   * chapters)留空。
+   */
+  exportIdField?: boolean
+  /** 导出查询排序字段(仅 worldGroups: 'order',保证导出序稳定 = 世界组重映射依据) */
+  exportOrderBy?: string
+  /** JSON 字段内引用的导出/导入重映射(仅 worldNodes.portalsJSON) */
+  exportRefRemap?: ExportRefRemap[]
   /** 备注(说明为什么这样配) */
   note?: string
 }

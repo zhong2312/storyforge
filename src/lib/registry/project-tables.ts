@@ -20,50 +20,51 @@ export const PROJECT_TABLES: TableSpec[] = [
   // ───────────────────── 世界观/设定(world-scoped 多)─────────────────────
   { table: db.worldviews, name: 'worldviews', owner: 'project', worldScoped: true,
     exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.storyCores, name: 'storyCores', owner: 'project', exportable: true,
     note: '项目级,跨世界共享主线' },
 
   { table: db.powerSystems, name: 'powerSystems', owner: 'project', worldScoped: true,
     exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.geographies, name: 'geographies', owner: 'project', worldScoped: true,
     exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.histories, name: 'histories', owner: 'project', worldScoped: true,
     exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.worldNodes, name: 'worldNodes', owner: 'project', worldScoped: true,
-    exportable: true, tree: { parentField: 'parentId' },
+    exportable: true, tree: { parentField: 'parentId' }, exportIdField: true,
     refs: [
       { kind: 'json', field: 'portalsJSON', jsonPath: '$[].targetWorldId', target: 'worldNodes[id]', onDelete: 'remap' },
     ],
     exportRemap: [
-      { field: 'parentId', remapVia: 'worldNodes', selfTree: true },
-      { field: 'worldGroupId', remapVia: 'worldGroups' },
+      { field: 'parentId', remapVia: 'worldNodes', selfTree: true, exportAs: '_parentExportId' },
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
     ],
+    exportRefRemap: [{ field: 'portalsJSON', remapVia: 'worldNodes', kind: 'portals' }],
     note: 'portalsJSON 内含指向其它节点的引用' },
 
   { table: db.historicalTimelineEvents, name: 'historicalTimelineEvents', owner: 'project',
     worldScoped: true, exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.historicalKeywords, name: 'historicalKeywords', owner: 'project',
     worldScoped: true, exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.importantLocations, name: 'importantLocations', owner: 'project',
-    exportable: true, tree: { parentField: 'parentId' },
-    exportRemap: [{ field: 'parentId', remapVia: 'importantLocations', selfTree: true }],
+    exportable: true, tree: { parentField: 'parentId' }, exportIdField: true,
+    exportRemap: [{ field: 'parentId', remapVia: 'importantLocations', selfTree: true, exportAs: '_parentExportId' }],
     note: '⚠️ 无 worldGroupId,当前全局注入写作上下文' },
 
   { table: db.worldRulesProfiles, name: 'worldRulesProfiles', owner: 'project',
     worldScoped: true, exportable: true,
-    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups' }],
+    exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }],
     note: '真实与幻想规则每世界一套;null 为单世界/默认主世界' },
 
   // ───────────────────── 角色 ─────────────────────
@@ -75,27 +76,27 @@ export const PROJECT_TABLES: TableSpec[] = [
       { kind: 'simple', field: 'id', target: 'characterRelations[toCharacterId]', onDelete: 'cascade' },
       { kind: 'array', field: 'appearingCharacterIds', itemTarget: 'detailedOutlines', onDelete: 'removeItem' },
     ],
-    exportRemap: [{ field: 'homeWorldGroupId', remapVia: 'worldGroups' }] },
+    exportRemap: [{ field: 'homeWorldGroupId', remapVia: 'worldGroups', exportAs: '_homeWorldGroupExportId' }] },
 
   { table: db.characterRelations, name: 'characterRelations', owner: 'project',
     exportable: true,
     exportRemap: [
-      { field: 'fromCharacterId', remapVia: 'characters' },
-      { field: 'toCharacterId', remapVia: 'characters' },
+      { field: 'fromCharacterId', remapVia: 'characters', exportAs: '_fromCharacterIndex', onUnmapped: 'drop' },
+      { field: 'toCharacterId', remapVia: 'characters', exportAs: '_toCharacterIndex', onUnmapped: 'drop' },
     ] },
 
   // (factions 表已于 DB v29 并入 codex.faction 词条并删除)
 
   // ───────────────────── 大纲 / 章节 / 细纲 ─────────────────────
   { table: db.outlineNodes, name: 'outlineNodes', owner: 'project', worldScoped: true,
-    exportable: true, tree: { parentField: 'parentId' },
+    exportable: true, tree: { parentField: 'parentId' }, exportIdField: true,
     refs: [
       { kind: 'simple', field: 'id', target: 'chapters[outlineNodeId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'detailedOutlines[outlineNodeId]', onDelete: 'cascade' },
     ],
     exportRemap: [
-      { field: 'parentId', remapVia: 'outlineNodes', selfTree: true },
-      { field: 'worldGroupId', remapVia: 'worldGroups' },
+      { field: 'parentId', remapVia: 'outlineNodes', selfTree: true, exportAs: '_parentExportId' },
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
     ] },
 
   { table: db.chapters, name: 'chapters', owner: 'project', exportable: true,
@@ -103,7 +104,7 @@ export const PROJECT_TABLES: TableSpec[] = [
       { kind: 'simple', field: 'id', target: 'emotionBeatCards[chapterId]', onDelete: 'cascade' },
       // 软引用:itemLedger/storyTimelineEvents 的 chapterId 保留(独立产物,见 chapter store 注释)
     ],
-    exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes' }] },
+    exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes', exportAs: '_outlineExportId', onUnmapped: 'require' }] },
 
   { table: db.detailedOutlines, name: 'detailedOutlines', owner: 'project', exportable: true,
     refs: [
@@ -111,10 +112,10 @@ export const PROJECT_TABLES: TableSpec[] = [
       { kind: 'array', field: 'foreshadowIds', itemTarget: 'foreshadows', onDelete: 'removeItem' },
       { kind: 'json', field: 'scenes', jsonPath: '$[].characterIds[]', target: 'characters[id]', onDelete: 'remap' },
     ],
-    exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes' }] },
+    exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes', exportAs: '_outlineExportId', onUnmapped: 'require' }] },
 
   { table: db.emotionBeatCards, name: 'emotionBeatCards', owner: 'project', exportable: true,
-    exportRemap: [{ field: 'chapterId', remapVia: 'chapters' }] },
+    exportRemap: [{ field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId', onUnmapped: 'require' }] },
 
   // ───────────────────── 下游产物 / 工具 ─────────────────────
   { table: db.foreshadows, name: 'foreshadows', owner: 'project', exportable: true,
@@ -125,11 +126,11 @@ export const PROJECT_TABLES: TableSpec[] = [
   { table: db.stateCards, name: 'stateCards', owner: 'project', exportable: true },
 
   { table: db.itemLedger, name: 'itemLedger', owner: 'project', exportable: true,
-    exportRemap: [{ field: 'chapterId', remapVia: 'chapters' }],
+    exportRemap: [{ field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId' }],
     note: 'chapterId 软引用;诸天流主角跨世界携带物品' },
 
   { table: db.storyTimelineEvents, name: 'storyTimelineEvents', owner: 'project', exportable: true,
-    exportRemap: [{ field: 'chapterId', remapVia: 'chapters' }] },
+    exportRemap: [{ field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId' }] },
 
   { table: db.notes, name: 'notes', owner: 'project', exportable: true },
 
@@ -142,11 +143,11 @@ export const PROJECT_TABLES: TableSpec[] = [
 
   // ───────────────────── 词条系统 ─────────────────────
   { table: db.codexCategories, name: 'codexCategories', owner: 'project', worldScoped: true,
-    exportable: true, tree: { parentField: 'parentId' },
+    exportable: true, tree: { parentField: 'parentId' }, exportIdField: true,
     refs: [{ kind: 'simple', field: 'id', target: 'codexEntries[categoryId]', onDelete: 'cascade' }],
     exportRemap: [
-      { field: 'parentId', remapVia: 'codexCategories', selfTree: true },
-      { field: 'worldGroupId', remapVia: 'worldGroups' },
+      { field: 'parentId', remapVia: 'codexCategories', selfTree: true, exportAs: '_parentExportId' },
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
     ],
     note: '内置分类(builtInKey 非空)保持 worldGroupId=null 全局,不盖章不按世界删' },
 
@@ -154,8 +155,8 @@ export const PROJECT_TABLES: TableSpec[] = [
     exportable: true,
     refs: [{ kind: 'json', field: 'refs', jsonPath: '$.*', target: 'codexEntries[id]', onDelete: 'remap' }],
     exportRemap: [
-      { field: 'categoryId', remapVia: 'codexCategories' },
-      { field: 'worldGroupId', remapVia: 'worldGroups' },
+      { field: 'categoryId', remapVia: 'codexCategories', exportAs: '_categoryExportId', onUnmapped: 'require' },
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
     ] },
 
   // ───────────────────── 文风学习（FB-5） ─────────────────────
@@ -164,16 +165,18 @@ export const PROJECT_TABLES: TableSpec[] = [
 
   // ───────────────────── 多世界 ─────────────────────
   { table: db.worldGroups, name: 'worldGroups', owner: 'project', exportable: true,
-    note: '导出用 _exportId(index)重映射,见 json-export BUG-EXPORT-WG 修复' },
+    exportIdField: true, exportOrderBy: 'order',
+    note: '导出用 _exportId(导出序)重映射;按 order 排序保证序稳定' },
 
   { table: db.worldGroupLinks, name: 'worldGroupLinks', owner: 'project', exportable: true,
     exportRemap: [
-      { field: 'fromGroupId', remapVia: 'worldGroups' },
-      { field: 'toGroupId', remapVia: 'worldGroups' },
+      { field: 'fromGroupId', remapVia: 'worldGroups', exportAs: '_fromGroupExportId', onUnmapped: 'require' },
+      { field: 'toGroupId', remapVia: 'worldGroups', exportAs: '_toGroupExportId', onUnmapped: 'require' },
     ] },
 
   // ───────────────────── 参考书 / 作品分析 ─────────────────────
   { table: db.references, name: 'references', owner: 'project', exportable: true,
+    exportIdField: true,
     refs: [{ kind: 'simple', field: 'id', target: 'referenceChunkAnalysis[referenceId]', onDelete: 'cascade' }] },
 
   { table: db.referenceChunkAnalysis, name: 'referenceChunkAnalysis', owner: 'direct-child',
@@ -181,7 +184,7 @@ export const PROJECT_TABLES: TableSpec[] = [
     projectResolver: async (projectId) =>
       (await db.references.where('projectId').equals(projectId).primaryKeys()) as number[],
     refs: [{ kind: 'indirect', via: { table: 'references', field: 'referenceId', resolveProject: 'projectId' }, onDelete: 'cascade' }],
-    exportRemap: [{ field: 'referenceId', remapVia: 'references' }] },
+    exportRemap: [{ field: 'referenceId', remapVia: 'references', exportAs: '_referenceExportId', onUnmapped: 'require' }] },
 
   // ───────────────────── 临时态 / blob ─────────────────────
   { table: db.importSessions, name: 'importSessions', owner: 'transient', exportable: false },
