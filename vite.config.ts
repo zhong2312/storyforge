@@ -94,6 +94,18 @@ export default defineConfig({
         rewrite: (path: string) => path.replace(/^\/nvidia-proxy/, ''),
         secure: true,
       },
+      '/doubao-proxy': {
+        target: 'https://ark.cn-beijing.volces.com',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/doubao-proxy/, ''),
+        secure: true,
+      },
+      '/agnes-proxy': {
+        target: 'https://apihub.agnes-ai.com',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/agnes-proxy/, ''),
+        secure: true,
+      },
     },
   },
   build: {

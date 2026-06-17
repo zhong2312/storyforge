@@ -73,6 +73,10 @@ export const MODEL_CONTEXT_PRESETS: Record<string, ModelContextPreset> = {
   'nvidia:mistralai/mistral-large-2-instruct': { label: 'Mistral Large 2', maxContext: 128_000, maxOutput: 4_096 },
   'nvidia:nvidia/llama-3.1-nemotron-70b-instruct': { label: 'Nemotron 70B', maxContext: 128_000, maxOutput: 4_096 },
 
+  // Agnes AI(清华系免费 · 1M 上下文)
+  'agnes': { label: 'Agnes 默认', maxContext: 1_000_000, maxOutput: 8_192 },
+  'agnes:Agnes-2.0-Flash': { label: 'Agnes 2.0 Flash', maxContext: 1_000_000, maxOutput: 8_192 },
+
   // ModelScope
   'modelscope': { label: 'ModelScope 默认', maxContext: 32_000, maxOutput: 8_192 },
 

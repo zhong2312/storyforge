@@ -13,6 +13,7 @@ export type AIProvider =
   | 'claude'
   | 'modelscope'
   | 'nvidia'
+  | 'agnes'
   | 'ollama'
   | 'custom'
 
@@ -99,6 +100,9 @@ export const PROVIDER_MODELS: Record<string, { value: string; label: string; des
     { value: 'Qwen/Qwen3-8B', label: 'Qwen3 8B', desc: '轻量密集模型' },
     { value: 'Qwen/Qwen3-4B', label: 'Qwen3 4B', desc: '超轻量' },
   ],
+  agnes: [
+    { value: 'Agnes-2.0-Flash', label: 'Agnes 2.0 Flash', desc: '清华系免费·1M 上下文' },
+  ],
 }
 
 /** 提供商预设 */
@@ -154,6 +158,10 @@ export const PROVIDER_PRESETS: Record<string, Partial<AIConfig>> = {
   modelscope: {
     baseUrl: 'https://api-inference.modelscope.cn/v1',
     model: 'Qwen/Qwen3-235B-A22B',
+  },
+  agnes: {
+    baseUrl: 'https://apihub.agnes-ai.com/v1',
+    model: 'Agnes-2.0-Flash',
   },
   ollama: {
     baseUrl: 'http://localhost:11434/v1',
