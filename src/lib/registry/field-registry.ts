@@ -236,6 +236,7 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   longtext('chapters', 'content', ['正文']),
   longtext('chapters', 'summary', ['章节摘要']),
   object('chapters', 'continuityHandoff', ['章节交接记忆', '连续性交接']),
+  object('chapters', 'planReconciliation', ['计划正文对账', '实际进展约束']),
   text('chapters', 'summarySourceTextHash'),
   text('chapters', 'summaryTextNormalizationVersion'),
   num('chapters', 'outlineNodeId'),

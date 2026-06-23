@@ -6,12 +6,14 @@ import {
   type CanonicalChapterEntry,
   type ChapterSequenceAnomaly,
 } from './canonical-chapter-sequence'
+import { isPlanReconciliationCurrent } from './plan-reconciliation'
 
 export interface PreparedContinuityContext {
   current: CanonicalChapterEntry | null
   predecessor: CanonicalChapterEntry | null
   previousTailText: string
   handoffText: string
+  planReconciliationText?: string
   recentSummariesText: string
   memoryRebuildCandidateIds: number[]
   anomalies: ChapterSequenceAnomaly[]
@@ -59,6 +61,7 @@ export async function prepareContinuityContext(args: {
 
   let previousTailText = ''
   let handoffText = ''
+  let planReconciliationText = ''
   if (predecessor) {
     const predecessorWorld = worldLabel(predecessor.worldGroupId, names)
     const currentWorld = worldLabel(current?.worldGroupId ?? null, names)
@@ -78,6 +81,28 @@ export async function prepareContinuityContext(args: {
       ].join('\n')
     } else if (predecessor.chapter.id != null) {
       rebuildIds.add(predecessor.chapter.id)
+    }
+    const reconciliation = predecessor.chapter.planReconciliation
+    if (
+      reconciliation?.sourceTextHash === status.currentSourceTextHash
+      && await isPlanReconciliationCurrent(args.projectId, predecessor.chapter)
+    ) {
+      const lines = [
+        ...reconciliation.completedGoals.map(item => `已完成：${item.text}`),
+        ...reconciliation.unfinishedGoals.map(item => `未完成：${item.text}`),
+        ...reconciliation.deviations.map(item => `实际偏移：${item.text}`),
+        ...reconciliation.newConstraints.map(item => `新增约束：${item.text}`),
+        ...reconciliation.nextChapterImpacts.map(item => `下一章影响：${item.text}`),
+      ]
+      if (reconciliation.confirmedActualProgress) {
+        lines.unshift(`作者已确认实际进展：${reconciliation.confirmedActualProgress}`)
+      }
+      if (lines.length) {
+        planReconciliationText = [
+          `【前章计划—正文对账 · ${reconciliation.reviewStatus === 'pending' ? '待作者确认候选' : '作者已处理'}】`,
+          ...lines,
+        ].join('\n')
+      }
     }
   }
 
@@ -102,6 +127,7 @@ export async function prepareContinuityContext(args: {
     predecessor,
     previousTailText,
     handoffText,
+    planReconciliationText,
     recentSummariesText: recent.length
       ? `【当前世界最近已验证章节摘要 · 旧→新】\n${recent.join('\n')}`
       : '',

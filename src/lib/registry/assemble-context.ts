@@ -31,6 +31,7 @@ export async function assembleContext(input: AssembleContextInput): Promise<Asse
   const needsContinuity = selected.some(source => (
     source.key === 'previousChapterEnding'
     || source.key === 'chapterContinuityHandoff'
+    || source.key === 'previousPlanReconciliation'
     || source.key === 'recentChapterSummaries'
   ))
   const resolvedInput: AssembleContextInput = needsContinuity && input.chapterId != null

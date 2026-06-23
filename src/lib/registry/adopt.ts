@@ -151,6 +151,17 @@ function validateChapterMemoryProvenance(
       return false
     }
   }
+  if (patch.planReconciliation != null) {
+    const reconciliation = patch.planReconciliation as Record<string, unknown>
+    if (
+      reconciliation.chapterId !== chapterId
+      || reconciliation.sourceTextHash !== expectedHash
+      || reconciliation.textNormalizationVersion !== normalizationVersion
+    ) {
+      result.skipped.push({ reason: 'plan reconciliation 来源 chapter/hash/version 与 CAS 条件不一致', data: raw })
+      return false
+    }
+  }
   return true
 }
 

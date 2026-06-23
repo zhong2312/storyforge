@@ -10,7 +10,7 @@ async function seed() {
     enableMultiWorld: false, createdAt: now, updatedAt: now,
   } as any) as number
   const outlineNodeId = await db.outlineNodes.add({
-    projectId, parentId: null, type: 'chapter', title: '第一章', summary: '',
+    projectId, parentId: null, type: 'chapter', title: '第一章', summary: '林砚收好青铜铃后前往雾港。',
     order: 0, createdAt: now, updatedAt: now,
   } as any) as number
   const content = '<p>林砚把青铜铃藏入左袖。</p><p>他答应天亮前抵达雾港。</p>'
@@ -37,6 +37,26 @@ const validOutput = JSON.stringify({
     immediateNextIntent: '前往雾港',
     evidenceQuotes: [{ quote: '他答应天亮前抵达雾港。' }],
   },
+  planReconciliation: {
+    completedGoals: [{
+      text: '林砚已收好青铜铃',
+      evidenceQuotes: [{ quote: '林砚把青铜铃藏入左袖。' }],
+    }],
+    unfinishedGoals: [{
+      text: '尚未实际抵达雾港',
+      evidenceQuotes: [{ quote: '他答应天亮前抵达雾港。' }],
+    }],
+    deviations: [],
+    newConstraints: [{
+      text: '必须在天亮前抵达',
+      evidenceQuotes: [{ quote: '他答应天亮前抵达雾港。' }],
+    }],
+    nextChapterImpacts: [{
+      text: '下一章应从前往雾港继续',
+      evidenceQuotes: [{ quote: '他答应天亮前抵达雾港。' }],
+    }],
+    proposedOutlineSummary: '林砚收好青铜铃，承诺天亮前抵达雾港。',
+  },
 })
 
 describe('NS-1 T3 · single-call chapter memory task', () => {
@@ -62,10 +82,35 @@ describe('NS-1 T3 · single-call chapter memory task', () => {
     const chapter = await db.chapters.get(chapterId)
     expect(chapter?.summary).toContain('青铜铃')
     expect(chapter?.continuityHandoff?.commitments).toEqual(['天亮前抵达雾港'])
+    expect(chapter?.planReconciliation?.completedGoals[0]?.evidenceQuotes[0]?.quote)
+      .toBe('林砚把青铜铃藏入左袖。')
+    expect(chapter?.planReconciliation?.unfinishedGoals[0]?.text).toContain('尚未实际抵达')
     expect(await getChapterDerivedMemoryStatus(chapter!)).toMatchObject({
       summary: 'verified',
       handoff: 'verified',
     })
+  })
+
+  it('keeps valid summary/handoff but drops reconciliation if the outline changed during the call', async () => {
+    const { projectId, chapterId, content } = await seed()
+    const chapter = await db.chapters.get(chapterId)
+    const call = vi.fn(async () => {
+      await db.outlineNodes.update(chapter!.outlineNodeId, { summary: '作者在等待期间改了章纲。' })
+      return validOutput
+    })
+    const result = await runChapterMemoryTask({
+      projectId,
+      chapterId,
+      chapterTitle: '第一章',
+      chapterContent: content,
+      call,
+    })
+
+    expect(result.status).toBe('written')
+    const stored = await db.chapters.get(chapterId)
+    expect(stored?.summary).toContain('青铜铃')
+    expect(stored?.continuityHandoff).toBeTruthy()
+    expect(stored?.planReconciliation).toBeUndefined()
   })
 
   it('does not let an old async result overwrite edited prose', async () => {

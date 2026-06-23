@@ -6,6 +6,7 @@ import {
   type ParsedChapterMemory,
 } from '../adapters/chapter-memory-adapter'
 import { CHAPTER_TEXT_NORMALIZATION_VERSION } from './text-normalization'
+import { loadChapterPlanSnapshot } from './plan-reconciliation'
 
 export interface ChapterMemoryTaskResult {
   status: 'written' | 'stale' | 'parse-error'
@@ -23,15 +24,24 @@ export async function runChapterMemoryTask(args: {
   chapterContent: string
   call: (messages: ChatMessage[]) => Promise<string>
 }): Promise<ChapterMemoryTaskResult> {
-  const prepared = await prepareChapterMemoryRequest(args.chapterTitle, args.chapterContent)
+  const planSnapshot = await loadChapterPlanSnapshot(args.projectId, args.chapterId)
+  const prepared = await prepareChapterMemoryRequest(
+    args.chapterTitle,
+    args.chapterContent,
+    planSnapshot.currentPlan,
+    planSnapshot.nextChapterPlan,
+  )
   const raw = await args.call(prepared.messages)
   const memory = parseChapterMemoryOutput({
     raw,
     chapterId: args.chapterId,
     normalizedText: prepared.normalizedText,
     sourceTextHash: prepared.sourceTextHash,
+    planSourceHash: planSnapshot.currentPlan ? planSnapshot.planSourceHash : undefined,
   })
   if (!memory) return { status: 'parse-error' }
+  const latestPlan = await loadChapterPlanSnapshot(args.projectId, args.chapterId)
+  const planStillCurrent = latestPlan.planSourceHash === planSnapshot.planSourceHash
 
   const result = await adopt({
     projectId: args.projectId,
@@ -48,6 +58,9 @@ export async function runChapterMemoryTask(args: {
       summarySourceTextHash: prepared.sourceTextHash,
       summaryTextNormalizationVersion: CHAPTER_TEXT_NORMALIZATION_VERSION,
       continuityHandoff: memory.handoff,
+      ...(planStillCurrent && memory.planReconciliation
+        ? { planReconciliation: memory.planReconciliation }
+        : {}),
     },
   })
 

@@ -155,6 +155,28 @@ describe('NS-1 T4/T5 · canonical sequence and continuity sources', () => {
         evidenceQuotes: [],
         generatedAt: now,
       },
+      planReconciliation: {
+        chapterId: chapterB,
+        sourceTextHash: hashB,
+        planSourceHash: 'plan-hash',
+        schemaVersion: 1,
+        extractorVersion: 'test',
+        textNormalizationVersion: CHAPTER_TEXT_NORMALIZATION_VERSION,
+        completedGoals: [],
+        unfinishedGoals: [],
+        deviations: [{
+          text: '苏禾实际已经推开返回火界的门',
+          evidenceQuotes: [{ quote: '苏禾推开返回火界的门。', startOffset: 5, endOffset: 18 }],
+        }],
+        newConstraints: [],
+        nextChapterImpacts: [{
+          text: '下一章必须从跨界后的现场继续',
+          evidenceQuotes: [{ quote: '苏禾推开返回火界的门。', startOffset: 5, endOffset: 18 }],
+        }],
+        reviewStatus: 'confirmed-constraint',
+        confirmedActualProgress: '苏禾已经穿过返回火界的门',
+        generatedAt: now,
+      },
     })
     const currentId = await db.chapters.add({
       projectId, outlineNodeId: nodeCurrent, title: '回到火界', content: '', wordCount: 0,
@@ -171,6 +193,7 @@ describe('NS-1 T4/T5 · canonical sequence and continuity sources', () => {
     expect(snapshot.previousTailText).toContain('冰界结尾')
     expect(snapshot.previousTailText).toContain('跨世界转场')
     expect(snapshot.handoffText).toContain('返回火界')
+    expect(snapshot.planReconciliationText).toContain('实际已经推开')
     expect(snapshot.recentSummariesText).toContain('林砚保留赤钥')
     expect(snapshot.recentSummariesText).not.toContain('苏禾准备离开冰界')
     expect(snapshot.recentSummariesText).not.toContain('未来泄漏摘要')
@@ -179,14 +202,21 @@ describe('NS-1 T4/T5 · canonical sequence and continuity sources', () => {
     const assembled = await assembleContext({
       projectId,
       chapterId: currentId,
-      sourceKeys: ['chapterContinuityHandoff', 'previousChapterEnding', 'recentChapterSummaries'],
+      sourceKeys: [
+        'chapterContinuityHandoff',
+        'previousPlanReconciliation',
+        'previousChapterEnding',
+        'recentChapterSummaries',
+      ],
     })
     expect(assembled.included).toEqual([
       'chapterContinuityHandoff',
+      'previousPlanReconciliation',
       'previousChapterEnding',
       'recentChapterSummaries',
     ])
     expect(assembled.text).toContain('冰界门前')
+    expect(assembled.text).toContain('下一章必须从跨界后的现场继续')
     expect(assembled.text).toContain('林砚保留赤钥')
     expect(assembled.text).not.toContain('未来泄漏事实')
   })

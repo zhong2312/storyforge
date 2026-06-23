@@ -14,6 +14,7 @@ import { buildReviewRevisePrompt, type ReviewResult } from '../../lib/ai/adapter
 import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
 import { runChapterMemoryTask } from '../../lib/ai/chapter-memory/run-chapter-memory'
 import { prepareContinuityContext } from '../../lib/ai/chapter-memory/continuity-context'
+import { isPlanReconciliationCurrent } from '../../lib/ai/chapter-memory/plan-reconciliation'
 import { chat } from '../../lib/ai/client'
 import { db } from '../../lib/db/schema'
 import { buildGenreConstraintContext } from '../../lib/ai/genre-metadata'
@@ -72,7 +73,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     refreshChapter,
     loadAll: loadChapters,
   } = useChapterStore()
-  const { nodes } = useOutlineStore()
+  const { nodes, updateNode } = useOutlineStore()
   const { cards: stateCards, loadAll: loadStateCards, buildStateContext, buildSelectiveStateContext, applyDiffs } = useStateCardStore()
   const { characters, loadAll: loadCharacters } = useCharacterStore()
   const { creativeRules } = useCreativeRulesStore()
@@ -106,6 +107,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [showReviewPanel, setShowReviewPanel] = useState(false)
   const [showNotePanel, setShowNotePanel] = useState(false)
   const [contextBudget, setContextBudget] = useState<ContextBudget | null>(null)
+  const [planReconciliationCurrent, setPlanReconciliationCurrent] = useState(false)
   const aiConfig = useAIConfigStore(s => s.config)
   const dialog = useDialog()
 
@@ -150,6 +152,18 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   useEffect(() => {
     setSavedContent(currentChapter?.content || '')
   }, [currentChapter?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!currentChapter?.planReconciliation) {
+      setPlanReconciliationCurrent(false)
+      return
+    }
+    isPlanReconciliationCurrent(project.id!, currentChapter).then(current => {
+      if (!cancelled) setPlanReconciliationCurrent(current)
+    })
+    return () => { cancelled = true }
+  }, [project.id, currentChapter])
 
   // 自动保存
   useAutoSave(content, useCallback(async (html: string) => {
@@ -303,6 +317,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         'chapterOutline',
         'detailedOutline', // FB-9:正文生成读入本章场景细纲
         'chapterContinuityHandoff',
+        'previousPlanReconciliation',
         'previousChapterEnding',
         'recentChapterSummaries',
         'worldview',
@@ -334,6 +349,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     }
     const continuityKeys = new Set([
       'chapterContinuityHandoff',
+      'previousPlanReconciliation',
       'previousChapterEnding',
       'recentChapterSummaries',
     ])
@@ -356,6 +372,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       worldRulesContext: worldRulesIdx >= 0 ? assembled.segments[worldRulesIdx]?.content ?? '' : '',
       continuity: {
         handoff: segmentFor('chapterContinuityHandoff'),
+        planReconciliation: segmentFor('previousPlanReconciliation'),
         previousTail: segmentFor('previousChapterEnding'),
         recentSummaries: segmentFor('recentChapterSummaries'),
       },
@@ -543,6 +560,38 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     await updateChapter(chapterId, { content: sourceHtml, wordCount: countWords(sourceText) })
     setSavedContent(sourceHtml)
     await handleChapterMemory({ chapterId, chapterTitle, chapterContent: sourceHtml })
+  }
+
+  const handleConfirmActualProgress = async () => {
+    if (!currentChapter?.id || !currentChapter.planReconciliation) return
+    const reconciliation = currentChapter.planReconciliation
+    const confirmedActualProgress = [
+      ...reconciliation.completedGoals.map(item => `已完成：${item.text}`),
+      ...reconciliation.deviations.map(item => `实际偏移：${item.text}`),
+      ...reconciliation.newConstraints.map(item => `新增约束：${item.text}`),
+      ...reconciliation.unfinishedGoals.map(item => `仍未完成：${item.text}`),
+    ].join('；')
+    await updateChapter(currentChapter.id, {
+      planReconciliation: {
+        ...reconciliation,
+        reviewStatus: 'confirmed-constraint',
+        confirmedActualProgress,
+        reviewedAt: Date.now(),
+      },
+    })
+  }
+
+  const handleApplyOutlineCandidate = async () => {
+    const reconciliation = currentChapter?.planReconciliation
+    if (!currentChapter?.id || !outlineNode?.id || !reconciliation?.proposedOutlineSummary) return
+    await updateNode(outlineNode.id, { summary: reconciliation.proposedOutlineSummary })
+    await updateChapter(currentChapter.id, {
+      planReconciliation: {
+        ...reconciliation,
+        reviewStatus: 'applied-outline',
+        reviewedAt: Date.now(),
+      },
+    })
   }
 
   // ── Phase A1: 生成正文完成后的自动流程 ──
@@ -926,7 +975,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           <div className="flex items-center gap-2 text-sm text-emerald-400">
             <ClipboardList className="w-3.5 h-3.5 animate-pulse" />
             {autoProcessing === 'extracting' && '正在自动提取状态变更...'}
-            {autoProcessing === 'memory' && '正在生成章节摘要与连续性交接记忆...'}
+            {autoProcessing === 'memory' && '正在生成章节记忆与计划对账...'}
           </div>
         </div>
       )}
@@ -951,6 +1000,60 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           {currentChapter?.summary
             ? <p className="text-sm text-text-secondary">{currentChapter.summary}</p>
             : <p className="text-xs text-text-muted/60">改完正文后生成章节记忆，让后续章节获得可校验的前情与交接约束。</p>}
+        </div>
+      )}
+
+      {currentChapter.planReconciliation
+        && !planReconciliationCurrent
+        && (currentChapter.planReconciliation.reviewStatus === 'pending'
+          || currentChapter.planReconciliation.reviewStatus === 'confirmed-constraint') && (
+        <div className="mb-3 px-3 py-2 text-xs text-text-muted bg-bg-elevated border border-border rounded-lg">
+          计划对账已因正文或章纲变化而失效；刷新章节记忆后再处理。
+        </div>
+      )}
+
+      {currentChapter.planReconciliation && planReconciliationCurrent && (
+        <div className="mb-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium text-amber-300">计划—正文对账</p>
+            <span className="text-[10px] text-text-muted">
+              {currentChapter.planReconciliation.reviewStatus === 'pending' ? '待确认' : '已处理'}
+            </span>
+          </div>
+          <div className="mt-2 space-y-1 text-xs text-text-secondary">
+            {([
+              ['已完成', currentChapter.planReconciliation.completedGoals],
+              ['未完成', currentChapter.planReconciliation.unfinishedGoals],
+              ['实际偏移', currentChapter.planReconciliation.deviations],
+              ['新增约束', currentChapter.planReconciliation.newConstraints],
+              ['下一章影响', currentChapter.planReconciliation.nextChapterImpacts],
+            ] as const).flatMap(([label, items]) => items.map((item, index) => (
+              <div key={`${label}:${index}`}>
+                <p><span className="text-amber-300/80">{label}：</span>{item.text}</p>
+                {item.evidenceQuotes[0] && (
+                  <p className="pl-3 text-[11px] text-text-muted">证据：“{item.evidenceQuotes[0].quote}”</p>
+                )}
+              </div>
+            )))}
+          </div>
+          {currentChapter.planReconciliation.reviewStatus === 'pending' && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => { void handleConfirmActualProgress() }}
+                className="px-2 py-1 text-xs rounded bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+              >
+                确认并附加实际进展约束
+              </button>
+              {currentChapter.planReconciliation.proposedOutlineSummary && (
+                <button
+                  onClick={() => { void handleApplyOutlineCandidate() }}
+                  className="px-2 py-1 text-xs rounded bg-accent/10 text-accent hover:bg-accent/20"
+                >
+                  用候选更新本章章纲
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -254,6 +254,16 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: async input => input.continuitySnapshot?.handoffText || '',
   },
   {
+    key: 'previousPlanReconciliation',
+    label: '前章计划正文对账',
+    scope: 'chapter',
+    layer: 'L1',
+    budgetTokens: 1400,
+    protectedFromTrim: true,
+    requiresChapterId: true,
+    read: async input => input.continuitySnapshot?.planReconciliationText || '',
+  },
+  {
     key: 'recentChapterSummaries',
     label: '当前世界最近已验证摘要',
     scope: 'chapter',

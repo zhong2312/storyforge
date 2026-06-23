@@ -64,6 +64,30 @@ export interface ChapterContinuityHandoff {
   generatedAt: number
 }
 
+export interface ChapterPlanReconciliationItem {
+  text: string
+  evidenceQuotes: ChapterContinuityHandoff['evidenceQuotes']
+}
+
+export interface ChapterPlanReconciliation {
+  chapterId: number
+  sourceTextHash: string
+  planSourceHash: string
+  schemaVersion: number
+  extractorVersion: string
+  textNormalizationVersion: string
+  completedGoals: ChapterPlanReconciliationItem[]
+  unfinishedGoals: ChapterPlanReconciliationItem[]
+  deviations: ChapterPlanReconciliationItem[]
+  newConstraints: ChapterPlanReconciliationItem[]
+  nextChapterImpacts: ChapterPlanReconciliationItem[]
+  proposedOutlineSummary?: string
+  reviewStatus: 'pending' | 'confirmed-constraint' | 'applied-outline' | 'dismissed'
+  confirmedActualProgress?: string
+  reviewedAt?: number
+  generatedAt: number
+}
+
 /** 章节 */
 export interface Chapter {
   id?: number
@@ -83,6 +107,8 @@ export interface Chapter {
   summarySourceTextHash?: string
   /** NS-1: summary hash 所用的正文标准化算法版本。 */
   summaryTextNormalizationVersion?: string
+  /** NS-2: 原计划 vs 实际正文的证据化派生对账；非 Canon。 */
+  planReconciliation?: ChapterPlanReconciliation
   createdAt: number
   updatedAt: number
 }

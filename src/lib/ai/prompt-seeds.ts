@@ -477,7 +477,7 @@ export const SYSTEM_PROMPT_SEEDS: PromptSeed[] = [
     moduleKey: 'chapter.memory',
     promptType: 'extract',
     name: '内置-章节连续性记忆',
-    description: '一次调用同时提取章节摘要与下一章承接 handoff；引文 offset 由系统回查，不信任模型位置。',
+    description: '一次调用同时提取章节摘要、下一章承接 handoff 与计划正文对账；引文 offset 由系统回查，不信任模型位置。',
     isDefault: true,
     systemPrompt: `你是长篇小说的章节连续性记忆抽取器。只根据给定正文提取，不补写、不推测未来、不混入其他章节信息。
 
@@ -503,6 +503,14 @@ export const SYSTEM_PROMPT_SEEDS: PromptSeed[] = [
         "suffix": "用于同文重复时消歧的引文后短锚点；可空"
       }
     ]
+  },
+  "planReconciliation": {
+    "completedGoals": [{"text": "已完成目标", "evidenceQuotes": [{"quote": "正文逐字引文", "prefix": "", "suffix": ""}]}],
+    "unfinishedGoals": [{"text": "原计划尚未完成的目标", "evidenceQuotes": [{"quote": "正文逐字引文", "prefix": "", "suffix": ""}]}],
+    "deviations": [{"text": "实际走向相对原计划的偏移", "evidenceQuotes": [{"quote": "正文逐字引文", "prefix": "", "suffix": ""}]}],
+    "newConstraints": [{"text": "正文新增、后续必须遵守的约束", "evidenceQuotes": [{"quote": "正文逐字引文", "prefix": "", "suffix": ""}]}],
+    "nextChapterImpacts": [{"text": "对下一章计划的冲突或影响", "evidenceQuotes": [{"quote": "正文逐字引文", "prefix": "", "suffix": ""}]}],
+    "proposedOutlineSummary": "基于实际正文的本章章纲候选；没有必要更新则空字符串"
   }
 }
 
@@ -511,14 +519,22 @@ export const SYSTEM_PROMPT_SEEDS: PromptSeed[] = [
 2. finalScene、lastAction、openLoops、immediateNextIntent 以正文结尾为准；
 3. stateChanges、knowledgeChanges、commitments 要覆盖整章；
 4. evidenceQuotes 必须逐字复制正文，禁止编造；不要输出 offset；
-5. 没有依据的字段用空字符串或空数组，不要猜测。`,
+5. planReconciliation 必须比较原计划与实际正文；每个条目至少带一条正文逐字证据，没有证据就不要输出；
+6. 实际已发生内容优先于过时计划；不要自动替作者决定更新，只给候选；
+7. 没有依据的字段用空字符串或空数组，不要猜测。`,
     userPromptTemplate: `【章节标题】{{chapterTitle}}
+
+【原章纲与细纲】
+{{chapterPlan}}
+
+【下一章当前计划】
+{{nextChapterPlan}}
 
 【标准化后的完整章节正文】
 {{chapterText}}
 
 请输出 JSON：`,
-    variables: ['chapterTitle', 'chapterText'],
+    variables: ['chapterTitle', 'chapterPlan', 'nextChapterPlan', 'chapterText'],
     isActive: true,
   },
 

@@ -11,6 +11,7 @@ export interface RunOptions {
   overrides?: { systemPrompt?: string; userPromptTemplate?: string }
   continuity?: {
     handoff?: string
+    planReconciliation?: string
     previousTail?: string
     recentSummaries?: string
   }
@@ -50,19 +51,24 @@ function buildContinuityEnvelope(args: {
   const budget = Math.max(1200, args.budgetTokens ?? 3200)
   const approxChars = Math.floor(budget * 0.62)
   const taskChars = Math.max(180, Math.floor(approxChars * 0.15))
-  const handoffChars = Math.max(240, Math.floor(approxChars * 0.2))
-  const tailPoolChars = Math.max(400, Math.floor(approxChars * 0.45))
+  const memoryCount = Number(!!args.continuity?.handoff) + Number(!!args.continuity?.planReconciliation)
+  const memoryPoolChars = Math.max(240, Math.floor(approxChars * 0.25))
+  const memoryPartChars = memoryCount > 0 ? Math.floor(memoryPoolChars / memoryCount) : 0
+  const tailPoolChars = Math.max(400, Math.floor(approxChars * 0.4))
   const hasPreviousTail = !!args.continuity?.previousTail
   const hasCurrentDraftTail = !!args.currentDraftTail
   const tailCount = Number(hasPreviousTail) + Number(hasCurrentDraftTail)
   const tailChars = tailCount > 0 ? Math.floor(tailPoolChars / tailCount) : 0
-  const summaryChars = Math.max(180, approxChars - taskChars - handoffChars - tailPoolChars)
+  const summaryChars = Math.max(180, approxChars - taskChars - memoryPoolChars - tailPoolChars)
   const parts = [
     CONTINUITY_CORE_START,
     `【本章任务与章纲】\n${trimPart(args.task, taskChars)}`,
   ]
   if (args.continuity?.handoff) {
-    parts.push(`【直接前驱 handoff】\n${trimPart(args.continuity.handoff, handoffChars)}`)
+    parts.push(`【直接前驱 handoff】\n${trimPart(args.continuity.handoff, memoryPartChars)}`)
+  }
+  if (args.continuity?.planReconciliation) {
+    parts.push(`【前章实际进展与计划冲突】\n${trimPart(args.continuity.planReconciliation, memoryPartChars)}`)
   }
   if (args.continuity?.previousTail) {
     parts.push(`【直接前驱真实 tail】\n${trimPart(args.continuity.previousTail, tailChars, true)}`)

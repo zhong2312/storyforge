@@ -1,4 +1,8 @@
-import type { ChapterContinuityHandoff, ChatMessage } from '../../types'
+import type {
+  ChapterContinuityHandoff,
+  ChapterPlanReconciliation,
+  ChatMessage,
+} from '../../types'
 import { usePromptStore } from '../../../stores/prompt'
 import { renderPrompt } from '../prompt-engine'
 import {
@@ -37,19 +41,53 @@ interface RawHandoff {
   evidenceQuotes?: unknown
 }
 
+interface RawReconciliationItem {
+  text?: unknown
+  evidenceQuotes?: unknown
+}
+
+interface RawPlanReconciliation {
+  completedGoals?: unknown
+  unfinishedGoals?: unknown
+  deviations?: unknown
+  newConstraints?: unknown
+  nextChapterImpacts?: unknown
+  proposedOutlineSummary?: unknown
+}
+
 export interface ParsedChapterMemory {
   summary: string
   handoff: ChapterContinuityHandoff
+  planReconciliation?: ChapterPlanReconciliation
 }
 
 export async function prepareChapterMemoryRequest(
   chapterTitle: string,
   chapterContent: string,
+  chapterPlan = '',
+  nextChapterPlan = '',
 ): Promise<PreparedChapterMemoryRequest> {
   const normalizedText = normalizeChapterText(chapterContent)
   const sourceTextHash = await hashChapterText(chapterContent)
   const tpl = usePromptStore.getState().getActive('chapter.memory')
-  const { messages } = renderPrompt(tpl, { chapterTitle, chapterText: normalizedText })
+  const { messages } = renderPrompt(tpl, {
+    chapterTitle,
+    chapterText: normalizedText,
+    chapterPlan,
+    nextChapterPlan,
+  })
+  if (chapterPlan && !tpl.variables.includes('chapterPlan')) {
+    const last = messages[messages.length - 1]
+    if (last?.role === 'user') {
+      last.content += [
+        '',
+        '【兼容追加：计划—正文对账】',
+        `原章纲与细纲：\n${chapterPlan}`,
+        `下一章当前计划：\n${nextChapterPlan || '（无）'}`,
+        '请在原 JSON 顶层同时输出 planReconciliation；每个条目必须带正文逐字 evidenceQuotes。',
+      ].join('\n')
+    }
+  }
   return { normalizedText, sourceTextHash, messages }
 }
 
@@ -128,11 +166,37 @@ function locateEvidenceQuote(
   return { quote, startOffset, endOffset }
 }
 
+function reconciliationItems(
+  value: unknown,
+  normalizedText: string,
+): ChapterPlanReconciliation['completedGoals'] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map(raw => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+      const item = raw as RawReconciliationItem
+      const text = String(item.text ?? '').trim()
+      if (!text) return null
+      const rawQuotes = Array.isArray(item.evidenceQuotes)
+        ? item.evidenceQuotes as RawEvidenceQuote[]
+        : []
+      const evidenceQuotes = rawQuotes
+        .map(quote => locateEvidenceQuote(normalizedText, quote))
+        .filter((quote): quote is NonNullable<typeof quote> => quote !== null)
+        .slice(0, 6)
+      if (!evidenceQuotes.length) return null
+      return { text, evidenceQuotes }
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .slice(0, 16)
+}
+
 export function parseChapterMemoryOutput(args: {
   raw: string
   chapterId: number
   normalizedText: string
   sourceTextHash: string
+  planSourceHash?: string
   generatedAt?: number
 }): ParsedChapterMemory | null {
   const parsed = extractJsonObject(args.raw)
@@ -151,6 +215,33 @@ export function parseChapterMemoryOutput(args: {
     .map(quote => locateEvidenceQuote(args.normalizedText, quote))
     .filter((quote): quote is NonNullable<typeof quote> => quote !== null)
     .slice(0, 24)
+
+  let planReconciliation: ChapterPlanReconciliation | undefined
+  const rawReconciliation = parsed.planReconciliation
+  if (
+    args.planSourceHash
+    && rawReconciliation
+    && typeof rawReconciliation === 'object'
+    && !Array.isArray(rawReconciliation)
+  ) {
+    const reconciliation = rawReconciliation as RawPlanReconciliation
+    planReconciliation = {
+      chapterId: args.chapterId,
+      sourceTextHash: args.sourceTextHash,
+      planSourceHash: args.planSourceHash,
+      schemaVersion: 1,
+      extractorVersion: 'chapter-plan-reconciliation-v1',
+      textNormalizationVersion: CHAPTER_TEXT_NORMALIZATION_VERSION,
+      completedGoals: reconciliationItems(reconciliation.completedGoals, args.normalizedText),
+      unfinishedGoals: reconciliationItems(reconciliation.unfinishedGoals, args.normalizedText),
+      deviations: reconciliationItems(reconciliation.deviations, args.normalizedText),
+      newConstraints: reconciliationItems(reconciliation.newConstraints, args.normalizedText),
+      nextChapterImpacts: reconciliationItems(reconciliation.nextChapterImpacts, args.normalizedText),
+      proposedOutlineSummary: optionalString(reconciliation.proposedOutlineSummary),
+      reviewStatus: 'pending',
+      generatedAt: args.generatedAt ?? Date.now(),
+    }
+  }
 
   return {
     summary,
@@ -174,5 +265,6 @@ export function parseChapterMemoryOutput(args: {
       evidenceQuotes,
       generatedAt: args.generatedAt ?? Date.now(),
     },
+    planReconciliation,
   }
 }

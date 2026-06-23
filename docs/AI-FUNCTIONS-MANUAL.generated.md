@@ -19,7 +19,7 @@
 | `outline.chapter` | 内置-章节大纲展开 | 将单卷展开为 15-25 章的章节大纲。 | `volumeTitle` `volumeSummary` `worldContext` `prevVolumeSummary` `characterContext` `worldRulesContext` `userHint` |
 | `chapter.content` | 内置-长篇连载（默认） | 通用男频网文风格的章节正文生成，支持基调/节奏/字数三个可调参数。 | `chapterTitle` `chapterSummary` `worldContext` `characters` `previousChapterEnding` `worldRulesContext` `userHint` |
 | `chapter.continue` | 内置-章节续写 | 从已有正文末尾继续往下写约 1000-2000 字。 | `chapterSummary` `worldContext` `existingContent` `userHint` |
-| `chapter.memory` | 内置-章节连续性记忆 | 一次调用同时提取章节摘要与下一章承接 handoff；引文 offset 由系统回查，不信任模型位置。 | `chapterTitle` `chapterText` |
+| `chapter.memory` | 内置-章节连续性记忆 | 一次调用同时提取章节摘要、下一章承接 handoff 与计划正文对账；引文 offset 由系统回查，不信任模型位置。 | `chapterTitle` `chapterPlan` `nextChapterPlan` `chapterText` |
 | `chapter.polish` | 内置-文本润色 | 按用户指令润色文本，保持原意不变。 | `instruction` `text` |
 | `chapter.expand` | 内置-文本扩写 | 将文本扩展丰富，增加细节、心理与环境，情节走向不变。 | `userHint` `text` |
 | `chapter.de-ai` | 内置-去 AI 味改写 | 把 AI 味重的文本改写得更像真人写的。 | `text` |
@@ -55,7 +55,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 24 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 25 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -67,6 +67,7 @@
 | `detailedOutline` | 本章细纲(场景拆解) | node | L1 | 1500 |
 | `previousChapterEnding` | 全局直接前驱原文尾部 | manual | L1 | 1800 |
 | `chapterContinuityHandoff` | 全局直接前驱连续性交接 | chapter | L1 | 1600 |
+| `previousPlanReconciliation` | 前章计划正文对账 | chapter | L1 | 1400 |
 | `recentChapterSummaries` | 当前世界最近已验证摘要 | chapter | L1 | 2200 |
 | `worldview` | 世界观 | world | L2 | 8000 |
 | `storyCore` | 故事核心 | project | L1 | 4000 |
@@ -92,7 +93,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 | 目标表 | 可写字段 |
 |---|---|
-| `chapters` | `content` `continuityHandoff` `notes` `order` `outlineNodeId` `status` `summary` `summarySourceTextHash` `summaryTextNormalizationVersion` `title` `wordCount` |
+| `chapters` | `content` `continuityHandoff` `notes` `order` `outlineNodeId` `planReconciliation` `status` `summary` `summarySourceTextHash` `summaryTextNormalizationVersion` `title` `wordCount` |
 | `characters` | `abilities` `activeChapterRange` `alignment` `appearance` `arc` `background` `ending` `exitChapterId` `firstAppearChapterId` `firstAppearance` `homeWorldGroupId` `isCrossWorld` `location` `moralAxis` `motivation` `name` `orderAxis` `personality` `relationships` `role` `roleWeight` `shortDescription` `storyRole` |
 | `codexCategories` | `builtInKey` `domain` `fieldSchema` `hidden` `icon` `name` `order` `parentId` `worldGroupId` |
 | `codexEntries` | `categoryId` `description` `fields` `icon` `importance` `name` `order` `refs` `summary` `tags` `worldGroupId` |
@@ -116,13 +117,13 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:52` |
-| `chapter.content` | `src/components/editor/ChapterEditor.tsx:397` |
+| `chapter.content` | `src/components/editor/ChapterEditor.tsx:414` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
-| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:415` |
-| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:452` |
-| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:432` |
-| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:235` |
-| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:424` |
+| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:432` |
+| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:469` |
+| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:449` |
+| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:249` |
+| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:441` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.generate` | `src/components/character/CharacterPanel.tsx:146` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:83` |
@@ -146,7 +147,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `review.anti-ai` | `src/components/editor/ReviewPanel.tsx:66` |
 | `review.quality` | `src/components/editor/ReviewPanel.tsx:58` |
 | `review.readability` | `src/components/editor/ReviewPanel.tsx:75` |
-| `review.revise` | `src/components/editor/ChapterEditor.tsx:467` |
+| `review.revise` | `src/components/editor/ChapterEditor.tsx:484` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
@@ -166,4 +167,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `8333151`
+生成时间基准:commit `a2a6f92`
