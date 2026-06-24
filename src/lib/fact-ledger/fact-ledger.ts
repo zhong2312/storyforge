@@ -118,3 +118,16 @@ export async function confirmFactCandidate(factId: number): Promise<void> {
   }
   await db.temporalFacts.update(fact.id, { status: 'confirmed', supersedesFactId: fact.supersedesFactId ?? null, updatedAt: now() })
 }
+
+/** 作者否决候选（不入 Canon、不再注入生成）。仅对候选生效，不动已确认/已锁定事实。 */
+export async function rejectFactCandidate(factId: number): Promise<void> {
+  const fact = await db.temporalFacts.get(factId)
+  if (!fact || fact.id == null || fact.status !== 'candidate') return
+  await db.temporalFacts.update(fact.id, { status: 'rejected', updatedAt: now() })
+}
+
+/** 读某项目的事实（按状态可选过滤），供事实库 UI 与投影使用。 */
+export async function listFacts(projectId: number, status?: TemporalFact['status']): Promise<TemporalFact[]> {
+  const rows = await db.temporalFacts.where('projectId').equals(projectId).toArray()
+  return status ? rows.filter(f => f.status === status) : rows
+}
