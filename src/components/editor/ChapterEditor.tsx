@@ -15,6 +15,7 @@ import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/
 import { buildFactExtractPrompt, parseFactExtractResult } from '../../lib/ai/adapters/fact-extract-adapter'
 import { useFactLedgerStore } from '../../stores/fact-ledger'
 import { rebuildChapterChunks } from '../../lib/retrieval/retrieval'
+import { propagateChapterEditStale, analyzeEditImpact } from '../../lib/consistency/impact-analysis'
 import { runChapterMemoryTask } from '../../lib/ai/chapter-memory/run-chapter-memory'
 import { prepareContinuityContext } from '../../lib/ai/chapter-memory/continuity-context'
 import { isPlanReconciliationCurrent } from '../../lib/ai/chapter-memory/plan-reconciliation'
@@ -91,6 +92,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [customInstruction, setCustomInstruction] = useState('')
   const [extracting, setExtracting] = useState(false)
   const [extractingFacts, setExtractingFacts] = useState(false)
+  const [impactInfo, setImpactInfo] = useState<string | null>(null)
+  const [analyzingImpact, setAnalyzingImpact] = useState(false)
   const [pendingDiffs, setPendingDiffs] = useState<StateDiffItem[] | null>(null)
   // A2: 按需召回 — 手动额外勾选/取消的状态卡 ID
   const [extraStateIds, setExtraStateIds] = useState<number[]>([])
@@ -538,6 +541,31 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     }
   }
 
+  // NS-6：改了历史章后，传播 stale（证据失效的确认事实降级候选）+ 列出受影响后续章，交作者复核。
+  // 只读·只提示·不自动改任何正文；不删事实、不动 locked。
+  const handleEditImpact = async () => {
+    if (!currentChapter?.id || !project.id) return
+    setAnalyzingImpact(true)
+    try {
+      // 先把当前正文真正落盘，再据落盘正文判断证据是否失效
+      const wc = countWords(htmlToPlainText(content))
+      await updateChapter(currentChapter.id, { content, wordCount: wc })
+      const { demotedFacts } = await propagateChapterEditStale(project.id, currentChapter.id)
+      const { factsFromChapter, downstreamChapterIds } = await analyzeEditImpact(project.id, currentChapter.id)
+      const parts = [
+        `源自本章事实 ${factsFromChapter.length} 条`,
+        demotedFacts > 0 ? `其中 ${demotedFacts} 条证据已失效→降级待复核` : '证据均仍成立',
+        `建议复核后续 ${downstreamChapterIds.length} 章`,
+      ]
+      setImpactInfo(parts.join('；'))
+    } catch (err) {
+      console.error('[EditImpact] 失败:', err)
+      setImpactInfo('影响分析失败，请重试')
+    } finally {
+      setAnalyzingImpact(false)
+    }
+  }
+
   const handleAcceptDiffs = async (accepted: StateDiffItem[]) => {
     try {
       await applyDiffs(project.id!, accepted, currentChapter?.id)
@@ -894,6 +922,18 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           <ClipboardList className="w-3 h-3" />
           {extractingFacts ? '抽取中...' : '提取事实'}
         </button>
+        <button onClick={handleEditImpact} disabled={analyzingImpact || !plainText}
+          title="NS-6：改了历史章后，检查源自本章的事实证据是否失效（失效则降级待复核），并列出需复核的后续章节。不会自动改正文。"
+          className="flex items-center gap-1 px-3 py-1.5 bg-amber-500/10 text-amber-400 text-xs rounded-md hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
+          <ClipboardList className="w-3 h-3" />
+          {analyzingImpact ? '分析中...' : '影响分析'}
+        </button>
+        {impactInfo && (
+          <span className="flex items-center gap-2 px-2 py-1 text-xs text-amber-300/90 bg-amber-500/5 rounded-md">
+            {impactInfo}
+            <button onClick={() => setImpactInfo(null)} className="text-text-muted hover:text-text-primary">×</button>
+          </span>
+        )}
         {outlineNodeId && (
           <button onClick={() => setShowOutlinePreview(!showOutlinePreview)}
             title="大纲预览"
