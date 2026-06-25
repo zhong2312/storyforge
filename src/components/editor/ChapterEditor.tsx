@@ -985,6 +985,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           <ReviewPanel
             projectId={project.id!}
             chapterId={currentChapter.id!}
+            outlineNodeId={currentChapter.outlineNodeId}
+            worldGroupId={chapterWorldGroupId}
             chapterContent={plainText}
             chapterTitle={outlineNode?.title || currentChapter?.title || ''}
             worldContext={worldCtx}

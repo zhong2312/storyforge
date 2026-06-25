@@ -23,6 +23,9 @@ interface Props {
   projectId: number
   /** 当前章节 id — 审校结果按章缓存到 store，收起/切标签不丢（bug G7 / B1） */
   chapterId: number
+  /** NS-6：审计证据需用它做世界隔离 + 召回定位（多世界正确性） */
+  outlineNodeId?: number | null
+  worldGroupId?: number | null
   chapterContent: string
   chapterTitle: string
   worldContext: string
@@ -46,7 +49,7 @@ const TABS: { key: TabType; label: string; icon: typeof ShieldCheck }[] = [
 ]
 
 export default function ReviewPanel(props: Props) {
-  const { projectId, chapterId, chapterContent, chapterTitle, worldContext, characterContext,
+  const { projectId, chapterId, outlineNodeId, worldGroupId, chapterContent, chapterTitle, worldContext, characterContext,
     prevChapterSummary, nextChapterSummary, foreshadowContext, stateContext, onClose, onReviseByReport } = props
 
   const ai = useAIStream(createAISessionKey(projectId, 'review.run', chapterId))
@@ -98,10 +101,14 @@ export default function ReviewPanel(props: Props) {
     const evidence = await assembleContext({
       projectId,
       chapterId,
+      outlineNodeId: outlineNodeId ?? undefined,
+      worldGroupId,
       sourceKeys: [
         'chapterContinuityHandoff',
         'previousPlanReconciliation',
         'recentChapterSummaries',
+        'currentFacts',        // NS-6 闭环：用生成时遵循的同一套已确认事实核对（canon/observation 证据）
+        'retrievedPassages',   // NS-6 闭环：召回远距前文，抓几百章前的细节/伏笔矛盾
         'worldRules',
         'characters',
         'stateCards',
