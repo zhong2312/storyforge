@@ -14,7 +14,8 @@ import { buildReviewRevisePrompt, type ReviewResult } from '../../lib/ai/adapter
 import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
 import { buildFactExtractPrompt, parseFactExtractResult } from '../../lib/ai/adapters/fact-extract-adapter'
 import { useFactLedgerStore } from '../../stores/fact-ledger'
-import { rebuildChapterChunks } from '../../lib/retrieval/retrieval'
+import { rebuildChapterChunks, ensureChunkEmbeddings } from '../../lib/retrieval/retrieval'
+import { isEmbeddingReady } from '../../lib/ai/adapters/embedding-adapter'
 import { propagateChapterEditStale, analyzeEditImpact } from '../../lib/consistency/impact-analysis'
 import { runChapterMemoryTask } from '../../lib/ai/chapter-memory/run-chapter-memory'
 import { prepareContinuityContext } from '../../lib/ai/chapter-memory/continuity-context'
@@ -670,6 +671,12 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           worldGroupId: chapterWorldGroupId ?? null,
           knownEntities: characters.map(c => c.name),
         })
+        // NS-5：若启用 embedding，后台为新块补语义向量（best-effort，不阻塞、失败退回关键词）
+        const embCfg = useAIConfigStore.getState().embedding
+        if (isEmbeddingReady(embCfg)) {
+          void ensureChunkEmbeddings({ projectId: project.id!, cfg: embCfg })
+            .catch(e => console.warn('[AutoPost] 语义索引补建失败（不影响）:', e))
+        }
       }
     } catch (e) { console.error('[AutoPost] 检索块重建失败:', e) }
 

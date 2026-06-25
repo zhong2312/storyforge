@@ -1,6 +1,7 @@
 import { useState, useEffect, useSyncExternalStore } from 'react'
 import { Wifi, WifiOff, Eye, EyeOff, CheckCircle, Trash2, ScrollText } from 'lucide-react'
 import { useAIConfigStore, type TestResult } from '../../stores/ai-config'
+import EmbeddingConfigCard from './EmbeddingConfigCard'
 import type { AIProvider } from '../../lib/types'
 import { PROVIDER_MODELS } from '../../lib/types'
 import { getLogs, subscribeLogs, clearLogs, formatLog } from '../../lib/ai/logger'
@@ -430,6 +431,9 @@ export default function AIConfigPanel() {
           </div>
         </div>
       </div>
+
+      {/* NS-5 · 语义检索(embedding) 配置卡 */}
+      <EmbeddingConfigCard />
 
       {/* 日志面板 */}
       {showLogs && (
