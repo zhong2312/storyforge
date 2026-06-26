@@ -1,4 +1,5 @@
 import { forwardRef, useImperativeHandle, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Extension } from '@tiptap/core'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
@@ -61,9 +62,57 @@ const FONT_FAMILY_OPTIONS = [
 ] as const
 
 const FONT_SIZE_OPTIONS = ['12px', '14px', '16px', '18px', '20px', '22px', '24px', '28px', '32px'] as const
+const LINE_HEIGHT_OPTIONS = [
+  { label: '默认行距', value: '' },
+  { label: '1.0', value: '1' },
+  { label: '1.15', value: '1.15' },
+  { label: '1.5', value: '1.5' },
+  { label: '2.0', value: '2' },
+  { label: '2.5', value: '2.5' },
+  { label: '3.0', value: '3' },
+] as const
+const PARAGRAPH_SPACING_OPTIONS = [
+  { label: '默认段距', value: '' },
+  { label: '无段距', value: '0' },
+  { label: '0.5行', value: '0.5em' },
+  { label: '1行', value: '1em' },
+  { label: '1.5行', value: '1.5em' },
+  { label: '2行', value: '2em' },
+] as const
 
 const TEXT_COLOR_PRESETS = ['#f5e6d3', '#ffffff', '#d6b98c', '#d97757', '#60a5fa', '#4ade80', '#ef4444'] as const
 const BACKGROUND_COLOR_PRESETS = ['#00000000', '#3a2418', '#4a3326', '#5c3b2d', '#1f2937', '#3f2f08', '#14532d'] as const
+const BLOCK_SPACING_NODE_TYPES = new Set(['paragraph', 'heading'])
+
+const BlockSpacing = Extension.create({
+  name: 'blockSpacing',
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: Array.from(BLOCK_SPACING_NODE_TYPES),
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: element => element.style.lineHeight || null,
+            renderHTML: attributes => {
+              if (!attributes.lineHeight) return {}
+              return { style: `line-height: ${attributes.lineHeight}` }
+            },
+          },
+          paragraphSpacing: {
+            default: null,
+            parseHTML: element => element.style.marginBottom || null,
+            renderHTML: attributes => {
+              if (!attributes.paragraphSpacing) return {}
+              return { style: `margin-bottom: ${attributes.paragraphSpacing}` }
+            },
+          },
+        },
+      },
+    ]
+  },
+})
 
 type PendingTextStyle = {
   backgroundColor?: string
@@ -170,6 +219,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
       BackgroundColor,
       FontFamily,
       FontSize,
+      BlockSpacing,
       Placeholder.configure({ placeholder }),
     ],
     content: toHtml(value),
@@ -296,6 +346,78 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
     return chain.setTextSelection({ from, to })
   }
 
+  const normalizeSelection = () => {
+    const selection = savedSelectionRef.current ?? editor.state.selection
+    const docSize = editor.state.doc.content.size
+    const from = Math.max(0, Math.min(selection.from, docSize))
+    const to = Math.max(from, Math.min(selection.to, docSize))
+    return { from, to }
+  }
+
+  const getActiveBlockAttributes = () => {
+    const { from, to } = normalizeSelection()
+    const resolved = editor.state.doc.resolve(from)
+
+    for (let depth = resolved.depth; depth > 0; depth -= 1) {
+      const node = resolved.node(depth)
+      if (BLOCK_SPACING_NODE_TYPES.has(node.type.name)) {
+        return node.attrs as { lineHeight?: string | null; paragraphSpacing?: string | null }
+      }
+    }
+
+    let foundAttrs: { lineHeight?: string | null; paragraphSpacing?: string | null } | null = null
+    const scanTo = to > from ? to : Math.min(from + 1, editor.state.doc.content.size)
+    editor.state.doc.nodesBetween(from, scanTo, (node) => {
+      if (!BLOCK_SPACING_NODE_TYPES.has(node.type.name)) return true
+      foundAttrs = node.attrs as { lineHeight?: string | null; paragraphSpacing?: string | null }
+      return false
+    })
+
+    if (foundAttrs) return foundAttrs
+
+    return {} as { lineHeight?: string | null; paragraphSpacing?: string | null }
+  }
+
+  const applyBlockSpacing = (attrs: { lineHeight?: string | null; paragraphSpacing?: string | null }) => {
+    const { from, to } = normalizeSelection()
+    const { state, view } = editor
+    const tr = state.tr
+    const touched = new Set<number>()
+
+    const applyToNode = (pos: number) => {
+      if (touched.has(pos)) return
+      const node = state.doc.nodeAt(pos)
+      if (!node || !BLOCK_SPACING_NODE_TYPES.has(node.type.name)) return
+
+      touched.add(pos)
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        ...attrs,
+      }, node.marks)
+    }
+
+    const includeParentBlock = (pos: number) => {
+      const resolved = state.doc.resolve(pos)
+      for (let depth = resolved.depth; depth > 0; depth -= 1) {
+        const node = resolved.node(depth)
+        if (!BLOCK_SPACING_NODE_TYPES.has(node.type.name)) continue
+        applyToNode(resolved.before(depth))
+        break
+      }
+    }
+
+    includeParentBlock(from)
+    includeParentBlock(to)
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (BLOCK_SPACING_NODE_TYPES.has(node.type.name)) applyToNode(pos)
+    })
+
+    if (!touched.size) return
+
+    view.dispatch(tr.scrollIntoView())
+    editor.commands.focus()
+  }
+
   const textStyleAttrs = editor.getAttributes('textStyle') as {
     backgroundColor?: string | null
     color?: string | null
@@ -307,6 +429,9 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   const currentFontSize = textStyleAttrs.fontSize ?? ''
   const currentColor = textStyleAttrs.color ?? ''
   const currentBackgroundColor = textStyleAttrs.backgroundColor ?? ''
+  const blockAttrs = getActiveBlockAttributes()
+  const currentLineHeight = blockAttrs.lineHeight ?? ''
+  const currentParagraphSpacing = blockAttrs.paragraphSpacing ?? ''
   const selection = savedSelectionRef.current ?? editor.state.selection
   const hasSavedRange = selection.from !== selection.to
   const displayFontFamily = currentFontFamily || (!hasSavedRange ? pendingTextStyle.fontFamily ?? '' : '')
@@ -340,6 +465,14 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
 
     if (fontSize) startInlineCommand().setFontSize(fontSize).run()
     else startInlineCommand().unsetFontSize().run()
+  }
+
+  const applyLineHeight = (lineHeight: string) => {
+    applyBlockSpacing({ lineHeight: lineHeight || null })
+  }
+
+  const applyParagraphSpacing = (paragraphSpacing: string) => {
+    applyBlockSpacing({ paragraphSpacing: paragraphSpacing || null })
   }
 
   const applyTextColor = (color: string) => {
@@ -386,6 +519,9 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="字体"
           value={displayFontFamily}
+          onClick={(event) => {
+            applyFontFamily(event.currentTarget.value)
+          }}
           onChange={(event) => {
             applyFontFamily(event.target.value)
           }}
@@ -401,6 +537,9 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="字号"
           value={displayFontSize}
+          onClick={(event) => {
+            applyFontSize(event.currentTarget.value)
+          }}
           onChange={(event) => {
             applyFontSize(event.target.value)
           }}
@@ -410,6 +549,38 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           <option value="">默认</option>
           {FONT_SIZE_OPTIONS.map(size => (
             <option key={size} value={size}>{Number.parseInt(size, 10)}</option>
+          ))}
+        </select>
+        <select
+          aria-label="行距"
+          value={currentLineHeight}
+          onClick={(event) => {
+            applyLineHeight(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyLineHeight(event.target.value)
+          }}
+          className={`${selectCls} w-24`}
+          title="行距"
+        >
+          {LINE_HEIGHT_OPTIONS.map(option => (
+            <option key={option.label} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <select
+          aria-label="段距"
+          value={currentParagraphSpacing}
+          onClick={(event) => {
+            applyParagraphSpacing(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyParagraphSpacing(event.target.value)
+          }}
+          className={`${selectCls} w-24`}
+          title="段距"
+        >
+          {PARAGRAPH_SPACING_OPTIONS.map(option => (
+            <option key={option.label} value={option.value}>{option.label}</option>
           ))}
         </select>
         <div className="flex items-center gap-1 rounded-md border border-border bg-bg-surface px-1.5 py-1" title="字色">
