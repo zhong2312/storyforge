@@ -1,7 +1,15 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef } from 'react'
+import { forwardRef, useImperativeHandle, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import {
+  BackgroundColor,
+  Color,
+  FontFamily,
+  FontSize,
+  TextStyle,
+} from '@tiptap/extension-text-style'
 import {
   Bold as BoldIcon,
   Italic as ItalicIcon,
@@ -13,8 +21,55 @@ import {
   Undo2,
   Redo2,
   Minus,
+  Palette,
+  PaintBucket,
 } from 'lucide-react'
 import { toHtml, countWords } from '../../lib/utils/html'
+
+const FONT_FAMILY_OPTIONS = [
+  {
+    label: '默认正文',
+    value: '',
+    preview: 'var(--font-serif)',
+  },
+  {
+    label: '宋体',
+    value: '"SimSun", "Songti SC", "Noto Serif CJK SC", serif',
+    preview: '"SimSun", "Songti SC", serif',
+  },
+  {
+    label: '黑体',
+    value: '"SimHei", "Microsoft YaHei", "PingFang SC", "Heiti SC", sans-serif',
+    preview: '"SimHei", "Microsoft YaHei", sans-serif',
+  },
+  {
+    label: '仿宋',
+    value: '"FangSong", "FangSong_GB2312", "STFangsong", serif',
+    preview: '"FangSong", "STFangsong", serif',
+  },
+  {
+    label: '楷体',
+    value: '"KaiTi", "Kaiti SC", "STKaiti", serif',
+    preview: '"KaiTi", "Kaiti SC", serif',
+  },
+  {
+    label: '微软雅黑',
+    value: '"Microsoft YaHei", "PingFang SC", sans-serif',
+    preview: '"Microsoft YaHei", "PingFang SC", sans-serif',
+  },
+] as const
+
+const FONT_SIZE_OPTIONS = ['12px', '14px', '16px', '18px', '20px', '22px', '24px', '28px', '32px'] as const
+
+const TEXT_COLOR_PRESETS = ['#f5e6d3', '#ffffff', '#d6b98c', '#d97757', '#60a5fa', '#4ade80', '#ef4444'] as const
+const BACKGROUND_COLOR_PRESETS = ['#00000000', '#3a2418', '#4a3326', '#5c3b2d', '#1f2937', '#3f2f08', '#14532d'] as const
+
+type PendingTextStyle = {
+  backgroundColor?: string
+  color?: string
+  fontFamily?: string
+  fontSize?: string
+}
 
 export interface RichEditorHandle {
   /** 在光标位置插入 HTML 内容（若有选区则替换选区） */
@@ -64,12 +119,55 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   // 避免 onChange 引起 editor 重建
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const savedSelectionRef = useRef<{ from: number; to: number } | null>(null)
+  const pendingTextStyleRef = useRef<PendingTextStyle>({})
+  const applyingPendingStyleRef = useRef(false)
+  const [pendingTextStyle, setPendingTextStyle] = useState<PendingTextStyle>({})
+
+  const updatePendingTextStyle = (patch: PendingTextStyle) => {
+    const next: PendingTextStyle = {
+      ...pendingTextStyleRef.current,
+      ...patch,
+    }
+
+    for (const key of Object.keys(next) as Array<keyof PendingTextStyle>) {
+      if (!next[key]) delete next[key]
+    }
+
+    pendingTextStyleRef.current = next
+    setPendingTextStyle(next)
+  }
+
+  const insertPendingStyledText = (
+    view: EditorView,
+    from: number,
+    to: number,
+    text: string,
+  ) => {
+    const attrs = pendingTextStyleRef.current
+    if (!attrs.color && !attrs.backgroundColor && !attrs.fontFamily && !attrs.fontSize) {
+      return false
+    }
+
+    const textStyleMark = view.state.schema.marks.textStyle
+    if (!textStyleMark) return false
+
+    const tr = view.state.tr.insertText(text, from, to)
+    tr.addMark(from, from + text.length, textStyleMark.create(attrs))
+    view.dispatch(tr)
+    return true
+  }
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
       }),
+      TextStyle,
+      Color,
+      BackgroundColor,
+      FontFamily,
+      FontSize,
       Placeholder.configure({ placeholder }),
     ],
     content: toHtml(value),
@@ -80,11 +178,67 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           'tiptap-editor prose prose-invert max-w-none focus:outline-none px-4 py-3 text-text-primary text-sm leading-relaxed',
         spellcheck: 'false',
       },
+      handleTextInput: (view, from, to, text) => insertPendingStyledText(view, from, to, text),
+      handleDOMEvents: {
+        beforeinput: (view, event) => {
+          const inputEvent = event as InputEvent
+          if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return false
+
+          const { from, to } = view.state.selection
+          const handled = insertPendingStyledText(view, from, to, inputEvent.data)
+          if (handled) event.preventDefault()
+          return handled
+        },
+      },
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
+      if (!applyingPendingStyleRef.current) {
+        const attrs = pendingTextStyleRef.current
+        if (
+          transaction.docChanged
+          && (attrs.color || attrs.backgroundColor || attrs.fontFamily || attrs.fontSize)
+        ) {
+          const textStyleMark = editor.schema.marks.textStyle
+          const ranges: Array<{ from: number; to: number }> = []
+
+          for (const step of transaction.steps as Array<{
+            from?: number
+            slice?: { size?: number }
+            toJSON: () => { from?: number; slice?: { content?: unknown } }
+          }>) {
+            const json = step.toJSON()
+            const insertedSize = step.slice?.size ?? 0
+            if (
+              typeof step.from === 'number'
+              && insertedSize > 0
+              && json.slice?.content
+            ) {
+              ranges.push({ from: step.from, to: step.from + insertedSize })
+            }
+          }
+
+          if (textStyleMark && ranges.length > 0) {
+            const tr = editor.state.tr
+            for (const range of ranges) {
+              tr.addMark(range.from, range.to, textStyleMark.create(attrs))
+            }
+            if (tr.steps.length > 0) {
+              applyingPendingStyleRef.current = true
+              editor.view.dispatch(tr)
+              applyingPendingStyleRef.current = false
+              return
+            }
+          }
+        }
+      }
+
       const html = editor.getHTML()
       const plain = editor.getText()
       onChangeRef.current(html, plain)
+    },
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection
+      savedSelectionRef.current = { from, to }
     },
   })
 
@@ -164,15 +318,198 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
     }`
 
+  const rememberSelection = () => {
+    const { from, to } = editor.state.selection
+    savedSelectionRef.current = { from, to }
+  }
+
+  const startInlineCommand = () => {
+    const chain = editor.chain().focus()
+    const selection = savedSelectionRef.current
+    if (!selection) return chain
+
+    const docSize = editor.state.doc.content.size
+    const from = Math.max(0, Math.min(selection.from, docSize))
+    const to = Math.max(from, Math.min(selection.to, docSize))
+    return chain.setTextSelection({ from, to })
+  }
+
+  const textStyleAttrs = editor.getAttributes('textStyle') as {
+    backgroundColor?: string | null
+    color?: string | null
+    fontFamily?: string | null
+    fontSize?: string | null
+  }
+
+  const currentFontFamily = textStyleAttrs.fontFamily ?? ''
+  const currentFontSize = textStyleAttrs.fontSize ?? ''
+  const currentColor = textStyleAttrs.color ?? ''
+  const currentBackgroundColor = textStyleAttrs.backgroundColor ?? ''
+  const selection = savedSelectionRef.current ?? editor.state.selection
+  const hasSavedRange = selection.from !== selection.to
+  const displayFontFamily = currentFontFamily || (!hasSavedRange ? pendingTextStyle.fontFamily ?? '' : '')
+  const displayFontSize = currentFontSize || (!hasSavedRange ? pendingTextStyle.fontSize ?? '' : '')
+  const displayColor = currentColor || pendingTextStyle.color || '#f5e6d3'
+  const displayBackgroundColor = currentBackgroundColor || pendingTextStyle.backgroundColor || '#00000000'
+
+  const selectCls = 'h-8 rounded-md border border-border bg-bg-surface px-2 text-xs text-text-secondary outline-none transition-colors hover:text-text-primary focus:border-accent'
+
+  const applyFontFamily = (fontFamily: string) => {
+    updatePendingTextStyle({ fontFamily: fontFamily || undefined })
+
+    if (hasSavedRange) {
+      if (fontFamily) startInlineCommand().setFontFamily(fontFamily).run()
+      else startInlineCommand().unsetFontFamily().run()
+      return
+    }
+
+    if (fontFamily) startInlineCommand().setFontFamily(fontFamily).run()
+    else startInlineCommand().unsetFontFamily().run()
+  }
+
+  const applyFontSize = (fontSize: string) => {
+    updatePendingTextStyle({ fontSize: fontSize || undefined })
+
+    if (hasSavedRange) {
+      if (fontSize) startInlineCommand().setFontSize(fontSize).run()
+      else startInlineCommand().unsetFontSize().run()
+      return
+    }
+
+    if (fontSize) startInlineCommand().setFontSize(fontSize).run()
+    else startInlineCommand().unsetFontSize().run()
+  }
+
+  const applyTextColor = (color: string) => {
+    updatePendingTextStyle({ color })
+
+    if (hasSavedRange) {
+      startInlineCommand().setColor(color).run()
+      return
+    }
+
+    startInlineCommand().setColor(color).run()
+  }
+
+  const clearTextColor = () => {
+    if (hasSavedRange) {
+      startInlineCommand().unsetColor().run()
+      return
+    }
+
+    updatePendingTextStyle({ color: undefined })
+    startInlineCommand().unsetColor().run()
+  }
+
+  const setTextBackgroundColor = (color: string) => {
+    if (color === '#00000000') {
+      updatePendingTextStyle({ backgroundColor: undefined })
+      startInlineCommand().unsetBackgroundColor().run()
+      return
+    }
+
+    updatePendingTextStyle({ backgroundColor: color })
+    startInlineCommand().setBackgroundColor(color).run()
+  }
+
   return (
     <div
       className={`w-full bg-bg-surface border border-border rounded-lg overflow-hidden focus-within:border-accent transition-colors ${className}`}
     >
       {/* 工具栏 */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border bg-bg-elevated flex-wrap">
+      <div
+        className="flex items-center gap-1.5 px-2 py-2 border-b border-border bg-bg-elevated flex-wrap"
+        onMouseDownCapture={rememberSelection}
+      >
+        <select
+          aria-label="字体"
+          value={displayFontFamily}
+          onChange={(event) => {
+            applyFontFamily(event.target.value)
+          }}
+          className={`${selectCls} w-32`}
+          title="字体"
+        >
+          {FONT_FAMILY_OPTIONS.map(option => (
+            <option key={option.label} value={option.value} style={{ fontFamily: option.preview }}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="字号"
+          value={displayFontSize}
+          onChange={(event) => {
+            applyFontSize(event.target.value)
+          }}
+          className={`${selectCls} w-20`}
+          title="字号"
+        >
+          <option value="">默认</option>
+          {FONT_SIZE_OPTIONS.map(size => (
+            <option key={size} value={size}>{Number.parseInt(size, 10)}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1 rounded-md border border-border bg-bg-surface px-1.5 py-1" title="字色">
+          <Palette className="h-3.5 w-3.5 text-text-muted" />
+          <input
+            aria-label="字色"
+            type="color"
+            value={displayColor}
+            onChange={(event) => applyTextColor(event.target.value)}
+            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+          />
+          <div className="hidden items-center gap-0.5 md:flex">
+            {TEXT_COLOR_PRESETS.map(color => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`字色 ${color}`}
+                onClick={() => applyTextColor(color)}
+                className="h-4 w-4 rounded border border-border hover:border-accent"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={clearTextColor}
+            className="px-1 text-[10px] text-text-muted hover:text-text-primary"
+          >
+            清
+          </button>
+        </div>
+        <div className="flex items-center gap-1 rounded-md border border-border bg-bg-surface px-1.5 py-1" title="文字背景色">
+          <PaintBucket className="h-3.5 w-3.5 text-text-muted" />
+          <input
+            aria-label="文字背景色"
+            type="color"
+            value={displayBackgroundColor === '#00000000' ? '#3a2418' : displayBackgroundColor}
+            onChange={(event) => setTextBackgroundColor(event.target.value)}
+            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+          />
+          <div className="hidden items-center gap-0.5 md:flex">
+            {BACKGROUND_COLOR_PRESETS.map(color => (
+              <button
+                key={color}
+                type="button"
+                aria-label={color === '#00000000' ? '清除文字背景色' : `文字背景色 ${color}`}
+                onClick={() => setTextBackgroundColor(color)}
+                className="h-4 w-4 rounded border border-border hover:border-accent"
+                style={{
+                  backgroundColor: color === '#00000000' ? 'transparent' : color,
+                  backgroundImage: color === '#00000000'
+                    ? 'linear-gradient(135deg, transparent 45%, var(--error) 46%, var(--error) 54%, transparent 55%)'
+                    : undefined,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="w-px h-5 bg-border mx-0.5" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => startInlineCommand().toggleBold().run()}
           className={btnCls(editor.isActive('bold'))}
           title="加粗 (Cmd/Ctrl+B)"
         >
@@ -180,7 +517,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
+          onClick={() => startInlineCommand().toggleItalic().run()}
           className={btnCls(editor.isActive('italic'))}
           title="斜体 (Cmd/Ctrl+I)"
         >
@@ -189,7 +526,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="w-px h-4 bg-border mx-1" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          onClick={() => startInlineCommand().toggleHeading({ level: 2 }).run()}
           className={btnCls(editor.isActive('heading', { level: 2 }))}
           title="二级标题"
         >
@@ -197,7 +534,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          onClick={() => startInlineCommand().toggleHeading({ level: 3 }).run()}
           className={btnCls(editor.isActive('heading', { level: 3 }))}
           title="三级标题"
         >
@@ -206,7 +543,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="w-px h-4 bg-border mx-1" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          onClick={() => startInlineCommand().toggleBulletList().run()}
           className={btnCls(editor.isActive('bulletList'))}
           title="无序列表"
         >
@@ -214,7 +551,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          onClick={() => startInlineCommand().toggleOrderedList().run()}
           className={btnCls(editor.isActive('orderedList'))}
           title="有序列表"
         >
@@ -222,7 +559,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          onClick={() => startInlineCommand().toggleBlockquote().run()}
           className={btnCls(editor.isActive('blockquote'))}
           title="引用"
         >
@@ -230,7 +567,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          onClick={() => startInlineCommand().setHorizontalRule().run()}
           className={btnCls(false)}
           title="分割线"
         >
