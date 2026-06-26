@@ -206,6 +206,40 @@ body {
   text-indent: 2em;
 }
 
+/* ── 正文写作稿纸：降低控件感，突出文章层级 ───────────── */
+.sf-manuscript-editor {
+  box-shadow: none;
+}
+
+.sf-manuscript-editor > div:first-child {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  margin-bottom: 24px;
+}
+
+.sf-manuscript-editor > div:last-child {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 39px,
+    var(--border-subtle) 40px
+  );
+}
+
+.sf-manuscript-editor .tiptap-editor {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 2.2;
+  letter-spacing: 0.01em;
+  padding: 4px 10px 28px;
+}
+
+.sf-manuscript-editor .tiptap-editor p {
+  margin: 0 0 1.15em;
+  text-indent: 2em;
+}
+
 /* ── 稿纸横线背景 ─────────────────────────────────── */
 .sf-ruled {
   background-image: repeating-linear-gradient(

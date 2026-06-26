@@ -136,7 +136,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:111`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
 | `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:60` |
-| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:159` |
+| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:163` |
 | `geography.concept-map` | `src/components/geography/GeographyPanel.tsx:127` |
 | `geography.world-map` | `src/components/geography/WorldMapPanel.tsx:103` |
 | `inspiration.reverse` | `src/components/project/InspirationPanel.tsx:106` |
@@ -173,4 +173,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `c5f46ce`
+生成时间基准:commit `f235652`

@@ -162,6 +162,9 @@ export default function WorkspacePage() {
     setActiveModule('chapters-list')
   }
 
+  const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow'])
+  const isImmersiveModule = immersiveModules.has(activeModule)
+
   /** 根据当前模块渲染主面板内容 */
   const renderMainPanel = () => {
     switch (activeModule) {
@@ -291,12 +294,18 @@ export default function WorkspacePage() {
       />
 
       {/* 主面板 */}
-      <main className="flex-1 overflow-y-auto p-6 relative">
+      <main
+        className={`relative flex-1 overflow-y-auto ${
+          isImmersiveModule
+            ? 'bg-[radial-gradient(circle_at_top_left,var(--border-subtle)_1px,transparent_1px)] [background-size:32px_32px]'
+            : 'p-6'
+        }`}
+      >
         {/* 属性面板切换按钮 */}
         <button
           onClick={() => setShowProperties(v => !v)}
           title={showProperties ? '关闭属性面板' : '打开属性面板'}
-          className={`absolute top-4 right-4 p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors z-10 ${showProperties ? 'text-accent' : ''}`}
+          className={`absolute top-4 right-4 z-30 rounded p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary ${showProperties ? 'text-accent' : ''}`}
         >
           <PanelRight className="w-4 h-4" />
         </button>

@@ -798,12 +798,20 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="min-h-full bg-bg-base/40">
       {/* 标题栏 */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="sticky top-0 z-20 border-b border-border bg-bg-base/95 backdrop-blur">
+      <div className="flex items-center justify-between px-6 py-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold text-text-primary">{currentChapter.title}</h2>
-          <span className="text-xs text-text-muted">{wordCount} 字</span>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-text-muted">
+              创作区 · 正文
+            </p>
+            <h2 className="font-serif text-xl font-semibold text-text-primary">{currentChapter.title}</h2>
+          </div>
+          <span className="rounded-full border border-border bg-bg-elevated px-2.5 py-1 text-xs text-text-muted">
+            {wordCount.toLocaleString()} 字
+          </span>
           <select
             aria-label="章节状态"
             value={currentChapter.status}
@@ -820,11 +828,11 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowContext(!showContext)}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-text-muted hover:text-text-primary">
+            className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-bg-hover hover:text-text-primary">
             <Eye className="w-3.5 h-3.5" /> 上下文
           </button>
           <button onClick={() => currentChapter.id && updateChapter(currentChapter.id, { content, wordCount })}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-text-muted hover:text-accent">
+            className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-bg-hover hover:text-accent">
             <Save className="w-3.5 h-3.5" /> 保存
           </button>
         </div>
@@ -832,7 +840,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
       {/* 上下文查看器 */}
       {showContext && (
-        <div className="mb-3 p-3 bg-bg-elevated border border-border rounded-lg text-xs text-text-muted max-h-64 overflow-y-auto">
+        <div className="mx-6 mb-3 max-h-64 overflow-y-auto rounded-xl border border-border bg-bg-elevated p-3 text-xs text-text-muted shadow-theme-sm">
           <p className="font-medium text-text-secondary mb-1">📋 发送给 AI 的上下文：</p>
           <div className="whitespace-pre-wrap">
             {worldCtx && <p>【世界观】{worldCtx.slice(0, 500)}...</p>}
@@ -897,25 +905,25 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       )}
 
       {/* AI 工具栏 */}
-      <div className="flex flex-wrap gap-2 mb-3">
+      <div className="flex flex-wrap gap-2 border-t border-border/60 bg-bg-surface/35 px-6 py-3">
         <button onClick={handleGenerate} disabled={ai.isStreaming}
-          className="px-3 py-1.5 bg-accent text-white text-xs rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
+          className="rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors">
           ✨ 生成正文
         </button>
         <button onClick={handleContinue} disabled={ai.isStreaming || !plainText}
-          className="px-3 py-1.5 bg-bg-elevated text-text-secondary text-xs rounded-md hover:text-text-primary disabled:opacity-50 transition-colors">
+          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           📝 续写
         </button>
         <button onClick={handleExpand} disabled={ai.isStreaming}
-          className="px-3 py-1.5 bg-bg-elevated text-text-secondary text-xs rounded-md hover:text-text-primary disabled:opacity-50 transition-colors">
+          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           📖 扩写
         </button>
         <button onClick={handlePolish} disabled={ai.isStreaming}
-          className="px-3 py-1.5 bg-bg-elevated text-text-secondary text-xs rounded-md hover:text-text-primary disabled:opacity-50 transition-colors">
+          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           💎 润色
         </button>
         <button onClick={handleDeAI} disabled={ai.isStreaming}
-          className="px-3 py-1.5 bg-bg-elevated text-text-secondary text-xs rounded-md hover:text-text-primary disabled:opacity-50 transition-colors">
+          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           🔥 去AI味
         </button>
         <button onClick={handleExtractState} disabled={ai.isStreaming || extracting || !plainText}
@@ -977,8 +985,24 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         </button>
         <CInput value={customInstruction} onChange={e => setCustomInstruction(e.target.value)}
           placeholder="自定义指令..."
-          className="flex-1 min-w-[150px] px-2 py-1.5 bg-bg-surface border border-border rounded-md text-xs text-text-primary focus:outline-none focus:border-accent" />
+          className="min-w-[220px] flex-1 rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent" />
       </div>
+      </div>
+
+      <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
+      {outlineNode && (
+        <div className="rounded-xl border border-border bg-bg-surface/70 px-5 py-4 shadow-theme-sm">
+          <div className="flex items-start gap-3">
+            <span className="mt-1 text-accent">☰</span>
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">本章目标 · {outlineNode.title}</p>
+              <p className="mt-1 text-sm leading-7 text-text-secondary">
+                {outlineNode.summary || '暂无章纲摘要。'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* D3: 大纲预览 */}
       {showOutlinePreview && outlineNodeId && (
@@ -1157,16 +1181,28 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       )}
 
       {/* TipTap 富文本编辑器 */}
-      <RichEditor
-        ref={editorRef}
-        value={content}
-        onChange={(html, plain) => {
-          setContent(html)
-          setPlainText(plain)
-        }}
-        placeholder="开始写作..."
-        minHeight={400}
-      />
+      <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-bg-elevated px-8 py-8 shadow-theme-md">
+        <div className="mb-8 text-center">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-text-muted">
+            {typeof currentChapter.order === 'number' ? `第 ${currentChapter.order + 1} 章` : '正文'}
+          </p>
+          <h1 className="mt-4 font-serif text-3xl font-semibold tracking-wide text-text-primary">
+            {currentChapter.title}
+          </h1>
+          <div className="mx-auto mt-5 h-px w-24 bg-border" />
+        </div>
+        <RichEditor
+          ref={editorRef}
+          value={content}
+          onChange={(html, plain) => {
+            setContent(html)
+            setPlainText(plain)
+          }}
+          placeholder="开始写作..."
+          minHeight={560}
+          className="sf-manuscript-editor border-0 bg-transparent shadow-none"
+        />
+      </div>
 
       {/* Phase 24.3: 选中文本浮动工具栏 */}
       <FloatingToolbar
@@ -1194,6 +1230,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           rows={2}
           className="w-full p-2 bg-bg-elevated border border-border rounded text-xs text-text-muted resize-y focus:outline-none focus:border-accent"
         />
+      </div>
+
       </div>
 
       {/* 状态变更审核弹窗 */}
