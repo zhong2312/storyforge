@@ -1182,15 +1182,6 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
       {/* TipTap 富文本编辑器 */}
       <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-bg-elevated px-8 py-8 shadow-theme-md">
-        <div className="mb-8 text-center">
-          <p className="text-[11px] uppercase tracking-[0.28em] text-text-muted">
-            {typeof currentChapter.order === 'number' ? `第 ${currentChapter.order + 1} 章` : '正文'}
-          </p>
-          <h1 className="mt-4 font-serif text-3xl font-semibold tracking-wide text-text-primary">
-            {currentChapter.title}
-          </h1>
-          <div className="mx-auto mt-5 h-px w-24 bg-border" />
-        </div>
         <RichEditor
           ref={editorRef}
           value={content}
@@ -1201,6 +1192,17 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           placeholder="开始写作..."
           minHeight={560}
           className="sf-manuscript-editor border-0 bg-transparent shadow-none"
+          contentHeader={
+            <div className="mb-8 mt-8 text-center">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-text-muted">
+                {typeof currentChapter.order === 'number' ? `第 ${currentChapter.order + 1} 章` : '正文'}
+              </p>
+              <h1 className="mt-4 font-serif text-3xl font-semibold tracking-wide text-text-primary">
+                {currentChapter.title}
+              </h1>
+              <div className="mx-auto mt-5 h-px w-24 bg-border" />
+            </div>
+          }
         />
       </div>
 

@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
@@ -13,6 +13,7 @@ import {
 import {
   Bold as BoldIcon,
   Italic as ItalicIcon,
+  Strikethrough,
   Heading2,
   Heading3,
   List as ListIcon,
@@ -105,6 +106,8 @@ interface Props {
   minHeight?: number
   /** 是否禁用 */
   disabled?: boolean
+  /** 工具栏与正文之间的内容（例如章节标题）；用于让格式工具栏固定在最上方 */
+  contentHeader?: ReactNode
 }
 
 /**
@@ -113,7 +116,7 @@ interface Props {
  * - value 允许传入旧的纯文本（自动包装为 <p>），新内容以 HTML 保存
  */
 const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
-  { value, onChange, placeholder = '开始写作...', className = '', minHeight = 400, disabled = false },
+  { value, onChange, placeholder = '开始写作...', className = '', minHeight = 400, disabled = false, contentHeader },
   ref,
 ) {
   // 避免 onChange 引起 editor 重建
@@ -121,7 +124,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   onChangeRef.current = onChange
   const savedSelectionRef = useRef<{ from: number; to: number } | null>(null)
   const pendingTextStyleRef = useRef<PendingTextStyle>({})
-  const applyingPendingStyleRef = useRef(false)
   const [pendingTextStyle, setPendingTextStyle] = useState<PendingTextStyle>({})
 
   const updatePendingTextStyle = (patch: PendingTextStyle) => {
@@ -191,47 +193,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         },
       },
     },
-    onUpdate: ({ editor, transaction }) => {
-      if (!applyingPendingStyleRef.current) {
-        const attrs = pendingTextStyleRef.current
-        if (
-          transaction.docChanged
-          && (attrs.color || attrs.backgroundColor || attrs.fontFamily || attrs.fontSize)
-        ) {
-          const textStyleMark = editor.schema.marks.textStyle
-          const ranges: Array<{ from: number; to: number }> = []
-
-          for (const step of transaction.steps as Array<{
-            from?: number
-            slice?: { size?: number }
-            toJSON: () => { from?: number; slice?: { content?: unknown } }
-          }>) {
-            const json = step.toJSON()
-            const insertedSize = step.slice?.size ?? 0
-            if (
-              typeof step.from === 'number'
-              && insertedSize > 0
-              && json.slice?.content
-            ) {
-              ranges.push({ from: step.from, to: step.from + insertedSize })
-            }
-          }
-
-          if (textStyleMark && ranges.length > 0) {
-            const tr = editor.state.tr
-            for (const range of ranges) {
-              tr.addMark(range.from, range.to, textStyleMark.create(attrs))
-            }
-            if (tr.steps.length > 0) {
-              applyingPendingStyleRef.current = true
-              editor.view.dispatch(tr)
-              applyingPendingStyleRef.current = false
-              return
-            }
-          }
-        }
-      }
-
+    onUpdate: ({ editor }) => {
       const html = editor.getHTML()
       const plain = editor.getText()
       onChangeRef.current(html, plain)
@@ -523,6 +485,14 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         >
           <ItalicIcon className="w-3.5 h-3.5" />
         </button>
+        <button
+          type="button"
+          onClick={() => startInlineCommand().toggleStrike().run()}
+          className={btnCls(editor.isActive('strike'))}
+          title="删除线"
+        >
+          <Strikethrough className="w-3.5 h-3.5" />
+        </button>
         <div className="w-px h-4 bg-border mx-1" />
         <button
           type="button"
@@ -598,6 +568,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           <Redo2 className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {contentHeader}
 
       {/* 编辑区 */}
       <div
