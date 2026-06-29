@@ -598,9 +598,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="字体"
           value={displayFontFamily}
-          onClick={(event) => {
-            applyFontFamily(event.currentTarget.value)
-          }}
           onChange={(event) => {
             applyFontFamily(event.target.value)
           }}
@@ -616,9 +613,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="字号"
           value={displayFontSize}
-          onClick={(event) => {
-            applyFontSize(event.currentTarget.value)
-          }}
           onChange={(event) => {
             applyFontSize(event.target.value)
           }}
@@ -633,9 +627,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="行距"
           value={currentLineHeight}
-          onClick={(event) => {
-            applyLineHeight(event.currentTarget.value)
-          }}
           onChange={(event) => {
             applyLineHeight(event.target.value)
           }}
@@ -649,9 +640,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <select
           aria-label="段距"
           value={currentParagraphSpacing}
-          onClick={(event) => {
-            applyParagraphSpacing(event.currentTarget.value)
-          }}
           onChange={(event) => {
             applyParagraphSpacing(event.target.value)
           }}
