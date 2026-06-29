@@ -485,16 +485,17 @@ body {
 }
 
 .sf-manuscript-editor .tiptap-editor {
-  font-family: var(--font-serif);
-  font-size: 18px;
-  line-height: 2.2;
+  /* 用户排版偏好(全局持久)优先,留空则用内置默认。默认字号从 18 调小到 16。 */
+  font-family: var(--editor-user-font-family, var(--font-serif));
+  font-size: var(--editor-user-font-size, 16px);
+  line-height: var(--editor-user-line-height, 2.2);
   letter-spacing: 0.01em;
   padding: 4px 10px 28px;
   color: var(--editor-ink-primary);
 }
 
 .sf-manuscript-editor .tiptap-editor p {
-  margin: 0 0 1.15em;
+  margin: 0 0 var(--editor-user-paragraph-spacing, 1.15em);
   text-indent: 2em;
 }
 
