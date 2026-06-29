@@ -11,3 +11,8 @@ public/fmg/
 tree.txt
 *.bak
 coverage/
+
+# Release packaging outputs
+release/
+packaging/desktop-server/web/*
+!packaging/desktop-server/web/placeholder.txt

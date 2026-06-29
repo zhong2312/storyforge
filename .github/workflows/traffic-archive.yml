@@ -20,7 +20,9 @@ jobs:
         env:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}   # 需自建 PAT（repo scope）存为该 Secret
-        run: python3 scripts/archive-traffic.py
+        run: |
+          python3 scripts/archive-traffic.py
+          python3 scripts/archive-release-downloads.py
 
       - name: Commit updated data
         run: |
