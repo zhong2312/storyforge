@@ -12,23 +12,32 @@ import { create } from 'zustand'
 import type { ReviewResult } from '../lib/ai/adapters/review-adapter'
 import type { AntiAIResult } from '../lib/ai/adapters/anti-ai-adapter'
 import type { ReadabilityResult } from '../lib/ai/adapters/readability-adapter'
+import type { ConsistencyAuditResult } from '../lib/ai/adapters/consistency-audit-adapter'
 
-export type ReviewTab = 'review' | 'antiAI' | 'readability'
+export type ReviewTab = 'consistency' | 'review' | 'antiAI' | 'readability'
 
 export interface ChapterReviewState {
   review: ReviewResult | null
   antiAI: AntiAIResult | null
   readability: ReadabilityResult | null
+  consistency: ConsistencyAuditResult | null
   activeTab: ReviewTab
 }
 
-const EMPTY: ChapterReviewState = { review: null, antiAI: null, readability: null, activeTab: 'review' }
+const EMPTY: ChapterReviewState = {
+  review: null,
+  antiAI: null,
+  readability: null,
+  consistency: null,
+  activeTab: 'review',
+}
 
 interface ReviewResultStore {
   byChapter: Record<number, ChapterReviewState>
   setReview: (chapterId: number, r: ReviewResult) => void
   setAntiAI: (chapterId: number, r: AntiAIResult) => void
   setReadability: (chapterId: number, r: ReadabilityResult) => void
+  setConsistency: (chapterId: number, r: ConsistencyAuditResult) => void
   setActiveTab: (chapterId: number, tab: ReviewTab) => void
 }
 
@@ -41,6 +50,7 @@ export const useReviewResultStore = create<ReviewResultStore>(set => ({
   setReview: (chapterId, r) => set(s => ({ byChapter: patch(s.byChapter, chapterId, { review: r }) })),
   setAntiAI: (chapterId, r) => set(s => ({ byChapter: patch(s.byChapter, chapterId, { antiAI: r }) })),
   setReadability: (chapterId, r) => set(s => ({ byChapter: patch(s.byChapter, chapterId, { readability: r }) })),
+  setConsistency: (chapterId, r) => set(s => ({ byChapter: patch(s.byChapter, chapterId, { consistency: r }) })),
   setActiveTab: (chapterId, tab) => set(s => ({ byChapter: patch(s.byChapter, chapterId, { activeTab: tab }) })),
 }))
 

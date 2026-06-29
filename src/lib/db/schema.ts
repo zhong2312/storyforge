@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import { migrateLegacyTablesToCodex } from '../migrations/legacy-to-codex-upgrade'
 import { migrateCharactersToAxes } from '../migrations/character-axes-upgrade'
+import { migrateStateCardsToTemporalFactCandidates } from '../migrations/state-cards-to-temporal-facts'
 import type {
   Project,
   Worldview,
@@ -42,6 +43,9 @@ import type {
   CodexEntry,
 } from '../types'
 import type { AIUsageEntry } from '../ai/usage-log'
+import type { TemporalFact } from '../types/temporal-fact'
+import type { RetrievalChunk } from '../types/retrieval-chunk'
+import type { NarrativeSummaryNode } from '../types/narrative-summary'
 
 class StoryForgeDB extends Dexie {
   projects!: Table<Project>
@@ -115,6 +119,15 @@ class StoryForgeDB extends Dexie {
 
   // AI 消耗统计
   aiUsageLog!: Table<AIUsageEntry, number>
+
+  // NS-4 —— 时序事实账本（双层事实记忆：status candidate=Evidence Observation / confirmed=Canon Assertion）
+  temporalFacts!: Table<TemporalFact, number>
+
+  // NS-5 —— 叙事感知混合检索块（可重建派生缓存，不导出）
+  retrievalChunks!: Table<RetrievalChunk, number>
+
+  // NS-5 —— 章→卷→全书层级摘要树（可重建派生缓存，不导出）
+  narrativeSummaryNodes!: Table<NarrativeSummaryNode, number>
 
   constructor() {
     super('storyforge')
@@ -336,6 +349,25 @@ class StoryForgeDB extends Dexie {
       await tx.table('outlineNodes').toCollection().modify((node: any) => {
         if (node.summary == null) node.summary = ''
       })
+    })
+
+    // v35: NS-4 时序事实账本。新增 temporalFacts 后，把旧 stateCards 无损桥接为
+    // Evidence Observation 候选：旧状态卡原样保留，不自动升 Canon，不删除不覆盖。
+    this.version(35).stores({
+      temporalFacts: '++id, projectId, worldGroupId, characterId, locationId, codexEntryId, predicate, status, sourceChapterId',
+    }).upgrade(async (tx) => {
+      await migrateStateCardsToTemporalFactCandidates(tx)
+    })
+
+    // v36: NS-5 检索块（可重建派生缓存，从章节正文切块）。新增空表，不转换存量数据。
+    this.version(36).stores({
+      retrievalChunks: '++id, projectId, worldGroupId, sourceChapterId',
+    })
+
+    // v37: NS-5 层级叙事摘要树（章→卷→全书）。派生缓存，不导出；
+    // 老项目通过设置页“建立检索索引”或生成上下文前按需重建。
+    this.version(37).stores({
+      narrativeSummaryNodes: '++id, projectId, worldGroupId, level, sourceChapterId, sourceOutlineNodeId, status',
     })
   }
 }

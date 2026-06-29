@@ -23,6 +23,7 @@ const ALL_MODULE_KEYS: { value: PromptModuleKey; label: string }[] = [
   { value: 'detail.scene',                label: '细纲 · 场景（待启用）' },
   { value: 'chapter.content',             label: '章节 · 正文生成' },
   { value: 'chapter.continue',            label: '章节 · 续写' },
+  { value: 'chapter.memory',              label: '章节 · 连续性记忆抽取' },
   { value: 'chapter.polish',              label: '章节 · 润色' },
   { value: 'chapter.expand',              label: '章节 · 扩写' },
   { value: 'chapter.de-ai',               label: '章节 · 去 AI 味' },
@@ -208,6 +209,24 @@ export default function PromptTemplateEditor({ template, onChanged, onDeleted }:
             </select>
           )}
         </div>
+
+        {(draft.moduleKey === 'chapter.content' || draft.moduleKey === 'chapter.continue') && (
+          <div className="flex items-center gap-2 text-xs">
+            <label className="text-text-secondary flex-shrink-0">连续性上下文</label>
+            <select
+              value={draft.continuityMode ?? 'inherit'}
+              onChange={e => update({
+                continuityMode: e.target.value as PromptTemplate['continuityMode'],
+              })}
+              disabled={isSystem}
+              className="flex-1 px-2 py-1 bg-bg-base border border-border rounded text-text-primary disabled:opacity-60"
+            >
+              <option value="inherit">继承默认注入</option>
+              <option value="required">强制注入</option>
+              <option value="off">关闭注入</option>
+            </select>
+          </div>
+        )}
 
         {/* 操作按钮 */}
         <div className="flex flex-wrap gap-2 pt-1">

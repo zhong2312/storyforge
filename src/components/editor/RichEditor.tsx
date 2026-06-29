@@ -1,10 +1,20 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef } from 'react'
+import { forwardRef, useImperativeHandle, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Extension } from '@tiptap/core'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import {
+  BackgroundColor,
+  Color,
+  FontFamily,
+  FontSize,
+  TextStyle,
+} from '@tiptap/extension-text-style'
+import {
   Bold as BoldIcon,
   Italic as ItalicIcon,
+  Strikethrough,
   Heading2,
   Heading3,
   List as ListIcon,
@@ -13,8 +23,170 @@ import {
   Undo2,
   Redo2,
   Minus,
+  Palette,
+  PaintBucket,
 } from 'lucide-react'
 import { toHtml, countWords } from '../../lib/utils/html'
+
+const FONT_FAMILY_OPTIONS = [
+  {
+    label: '默认正文',
+    value: '',
+    preview: 'var(--font-serif)',
+  },
+  {
+    label: '宋体',
+    value: '"SimSun", "Songti SC", "Noto Serif CJK SC", serif',
+    preview: '"SimSun", "Songti SC", serif',
+  },
+  {
+    label: '黑体',
+    value: '"SimHei", "Microsoft YaHei", "PingFang SC", "Heiti SC", sans-serif',
+    preview: '"SimHei", "Microsoft YaHei", sans-serif',
+  },
+  {
+    label: '仿宋',
+    value: '"FangSong", "FangSong_GB2312", "STFangsong", serif',
+    preview: '"FangSong", "STFangsong", serif',
+  },
+  {
+    label: '楷体',
+    value: '"KaiTi", "Kaiti SC", "STKaiti", serif',
+    preview: '"KaiTi", "Kaiti SC", serif',
+  },
+  {
+    label: '微软雅黑',
+    value: '"Microsoft YaHei", "PingFang SC", sans-serif',
+    preview: '"Microsoft YaHei", "PingFang SC", sans-serif',
+  },
+] as const
+
+const FONT_SIZE_OPTIONS = ['12px', '14px', '16px', '18px', '20px', '22px', '24px', '28px', '32px'] as const
+const LINE_HEIGHT_OPTIONS = [
+  { label: '默认行距', value: '' },
+  { label: '1.0', value: '1' },
+  { label: '1.15', value: '1.15' },
+  { label: '1.5', value: '1.5' },
+  { label: '2.0', value: '2' },
+  { label: '2.5', value: '2.5' },
+  { label: '3.0', value: '3' },
+] as const
+const PARAGRAPH_SPACING_OPTIONS = [
+  { label: '默认段距', value: '' },
+  { label: '无段距', value: '0' },
+  { label: '0.5行', value: '0.5em' },
+  { label: '1行', value: '1em' },
+  { label: '1.5行', value: '1.5em' },
+  { label: '2行', value: '2em' },
+] as const
+
+const TEXT_COLOR_PRESETS = [
+  { label: '正文', value: 'var(--editor-ink-primary)' },
+  { label: '强黑/强白', value: 'var(--editor-ink-strong)' },
+  { label: '暖褐', value: 'var(--editor-ink-cream)' },
+  { label: '大黄', value: 'var(--editor-ink-gold)' },
+  { label: '橙红', value: 'var(--editor-ink-orange)' },
+  { label: '蓝', value: 'var(--editor-ink-blue)' },
+  { label: '绿', value: 'var(--editor-ink-green)' },
+  { label: '大红', value: 'var(--editor-ink-red)' },
+  { label: '紫', value: 'var(--editor-ink-purple)' },
+] as const
+const BACKGROUND_COLOR_PRESETS = [
+  { label: '清除文字背景色', value: '#00000000' },
+  { label: '黄底', value: 'var(--editor-mark-yellow)' },
+  { label: '红底', value: 'var(--editor-mark-red)' },
+  { label: '蓝底', value: 'var(--editor-mark-blue)' },
+  { label: '绿底', value: 'var(--editor-mark-green)' },
+  { label: '紫底', value: 'var(--editor-mark-purple)' },
+  { label: '褐底', value: 'var(--editor-mark-brown)' },
+  { label: '墨底', value: 'var(--editor-mark-ink)' },
+] as const
+const BLOCK_SPACING_NODE_TYPES = new Set(['paragraph', 'heading'])
+
+const LEGACY_THEME_COLOR_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/(#f5e6d3|rgb\(\s*245\s*,\s*230\s*,\s*211\s*\))/gi, 'var(--editor-ink-cream)'],
+  [/(#ffffff|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\))/gi, 'var(--editor-ink-strong)'],
+  [/(#d6b98c|rgb\(\s*214\s*,\s*185\s*,\s*140\s*\))/gi, 'var(--editor-ink-muted)'],
+  [/(#d97757|rgb\(\s*217\s*,\s*119\s*,\s*87\s*\))/gi, 'var(--editor-ink-orange)'],
+  [/(#60a5fa|rgb\(\s*96\s*,\s*165\s*,\s*250\s*\))/gi, 'var(--editor-ink-blue)'],
+  [/(#4ade80|rgb\(\s*74\s*,\s*222\s*,\s*128\s*\))/gi, 'var(--editor-ink-green)'],
+  [/(#ef4444|rgb\(\s*239\s*,\s*68\s*,\s*68\s*\))/gi, 'var(--editor-ink-red)'],
+  [/(#3a2418|rgb\(\s*58\s*,\s*36\s*,\s*24\s*\))/gi, 'var(--editor-mark-ink)'],
+  [/(#4a3326|rgb\(\s*74\s*,\s*51\s*,\s*38\s*\))/gi, 'var(--editor-mark-brown)'],
+  [/(#5c3b2d|rgb\(\s*92\s*,\s*59\s*,\s*45\s*\))/gi, 'var(--editor-mark-red)'],
+  [/(#1f2937|rgb\(\s*31\s*,\s*41\s*,\s*55\s*\))/gi, 'var(--editor-mark-blue)'],
+  [/(#3f2f08|rgb\(\s*63\s*,\s*47\s*,\s*8\s*\))/gi, 'var(--editor-mark-yellow)'],
+  [/(#14532d|rgb\(\s*20\s*,\s*83\s*,\s*45\s*\))/gi, 'var(--editor-mark-green)'],
+]
+
+function normalizeThemeAdaptiveColorHtml(html: string): string {
+  return LEGACY_THEME_COLOR_REPLACEMENTS.reduce(
+    (next, [pattern, replacement]) => next.replace(pattern, replacement),
+    html,
+  )
+}
+
+function rgbToHex(color: string): string | null {
+  const match = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+  if (!match) return null
+
+  return `#${[match[1], match[2], match[3]]
+    .map(part => Math.max(0, Math.min(255, Number(part))).toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+function resolveColorForInput(color: string, fallback: string): string {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color
+  const rgb = rgbToHex(color)
+  if (rgb) return rgb
+
+  const varName = color.match(/var\((--[^),\s]+)/)?.[1]
+  if (varName && typeof window !== 'undefined') {
+    const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+    if (/^#[0-9a-f]{6}$/i.test(resolved)) return resolved
+    const resolvedRgb = rgbToHex(resolved)
+    if (resolvedRgb) return resolvedRgb
+  }
+
+  return fallback
+}
+
+const BlockSpacing = Extension.create({
+  name: 'blockSpacing',
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: Array.from(BLOCK_SPACING_NODE_TYPES),
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: element => element.style.lineHeight || null,
+            renderHTML: attributes => {
+              if (!attributes.lineHeight) return {}
+              return { style: `line-height: ${attributes.lineHeight}` }
+            },
+          },
+          paragraphSpacing: {
+            default: null,
+            parseHTML: element => element.style.marginBottom || null,
+            renderHTML: attributes => {
+              if (!attributes.paragraphSpacing) return {}
+              return { style: `margin-bottom: ${attributes.paragraphSpacing}` }
+            },
+          },
+        },
+      },
+    ]
+  },
+})
+
+type PendingTextStyle = {
+  backgroundColor?: string
+  color?: string
+  fontFamily?: string
+  fontSize?: string
+}
 
 export interface RichEditorHandle {
   /** 在光标位置插入 HTML 内容（若有选区则替换选区） */
@@ -50,6 +222,8 @@ interface Props {
   minHeight?: number
   /** 是否禁用 */
   disabled?: boolean
+  /** 工具栏与正文之间的内容（例如章节标题）；用于让格式工具栏固定在最上方 */
+  contentHeader?: ReactNode
 }
 
 /**
@@ -58,21 +232,65 @@ interface Props {
  * - value 允许传入旧的纯文本（自动包装为 <p>），新内容以 HTML 保存
  */
 const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
-  { value, onChange, placeholder = '开始写作...', className = '', minHeight = 400, disabled = false },
+  { value, onChange, placeholder = '开始写作...', className = '', minHeight = 400, disabled = false, contentHeader },
   ref,
 ) {
   // 避免 onChange 引起 editor 重建
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const savedSelectionRef = useRef<{ from: number; to: number } | null>(null)
+  const pendingTextStyleRef = useRef<PendingTextStyle>({})
+  const [pendingTextStyle, setPendingTextStyle] = useState<PendingTextStyle>({})
+  const [, setThemeRevision] = useState(0)
+
+  const updatePendingTextStyle = (patch: PendingTextStyle) => {
+    const next: PendingTextStyle = {
+      ...pendingTextStyleRef.current,
+      ...patch,
+    }
+
+    for (const key of Object.keys(next) as Array<keyof PendingTextStyle>) {
+      if (!next[key]) delete next[key]
+    }
+
+    pendingTextStyleRef.current = next
+    setPendingTextStyle(next)
+  }
+
+  const insertPendingStyledText = (
+    view: EditorView,
+    from: number,
+    to: number,
+    text: string,
+  ) => {
+    const attrs = pendingTextStyleRef.current
+    if (!attrs.color && !attrs.backgroundColor && !attrs.fontFamily && !attrs.fontSize) {
+      return false
+    }
+
+    const textStyleMark = view.state.schema.marks.textStyle
+    if (!textStyleMark) return false
+
+    const tr = view.state.tr.insertText(text, from, to)
+    tr.addMark(from, from + text.length, textStyleMark.create(attrs))
+    view.dispatch(tr)
+    return true
+  }
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
       }),
+      TextStyle,
+      Color,
+      BackgroundColor,
+      FontFamily,
+      FontSize,
+      BlockSpacing,
       Placeholder.configure({ placeholder }),
     ],
-    content: toHtml(value),
+    content: normalizeThemeAdaptiveColorHtml(toHtml(value)),
     editable: !disabled,
     editorProps: {
       attributes: {
@@ -80,11 +298,27 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           'tiptap-editor prose prose-invert max-w-none focus:outline-none px-4 py-3 text-text-primary text-sm leading-relaxed',
         spellcheck: 'false',
       },
+      handleTextInput: (view, from, to, text) => insertPendingStyledText(view, from, to, text),
+      handleDOMEvents: {
+        beforeinput: (view, event) => {
+          const inputEvent = event as InputEvent
+          if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return false
+
+          const { from, to } = view.state.selection
+          const handled = insertPendingStyledText(view, from, to, inputEvent.data)
+          if (handled) event.preventDefault()
+          return handled
+        },
+      },
     },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML()
       const plain = editor.getText()
       onChangeRef.current(html, plain)
+    },
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection
+      savedSelectionRef.current = { from, to }
     },
   })
 
@@ -93,7 +327,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   useEffect(() => {
     if (!editor) return
     const current = editor.getHTML()
-    const incoming = toHtml(value)
+    const incoming = normalizeThemeAdaptiveColorHtml(toHtml(value))
     if (incoming !== current) {
       editor.commands.setContent(incoming, { emitUpdate: false })
     }
@@ -103,6 +337,12 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   useEffect(() => {
     if (editor) editor.setEditable(!disabled)
   }, [disabled, editor])
+
+  useEffect(() => {
+    const rerenderForTheme = () => setThemeRevision(revision => revision + 1)
+    window.addEventListener('themechange', rerenderForTheme)
+    return () => window.removeEventListener('themechange', rerenderForTheme)
+  }, [])
 
   useImperativeHandle(
     ref,
@@ -164,15 +404,324 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
     }`
 
+  const rememberSelection = () => {
+    const { from, to } = editor.state.selection
+    savedSelectionRef.current = { from, to }
+  }
+
+  const startInlineCommand = () => {
+    const chain = editor.chain().focus()
+    const selection = savedSelectionRef.current
+    if (!selection) return chain
+
+    const docSize = editor.state.doc.content.size
+    const from = Math.max(0, Math.min(selection.from, docSize))
+    const to = Math.max(from, Math.min(selection.to, docSize))
+    return chain.setTextSelection({ from, to })
+  }
+
+  const normalizeSelection = () => {
+    const selection = savedSelectionRef.current ?? editor.state.selection
+    const docSize = editor.state.doc.content.size
+    const from = Math.max(0, Math.min(selection.from, docSize))
+    const to = Math.max(from, Math.min(selection.to, docSize))
+    return { from, to }
+  }
+
+  const getActiveBlockAttributes = () => {
+    const { from, to } = normalizeSelection()
+    const resolved = editor.state.doc.resolve(from)
+
+    for (let depth = resolved.depth; depth > 0; depth -= 1) {
+      const node = resolved.node(depth)
+      if (BLOCK_SPACING_NODE_TYPES.has(node.type.name)) {
+        return node.attrs as { lineHeight?: string | null; paragraphSpacing?: string | null }
+      }
+    }
+
+    let foundAttrs: { lineHeight?: string | null; paragraphSpacing?: string | null } | null = null
+    const scanTo = to > from ? to : Math.min(from + 1, editor.state.doc.content.size)
+    editor.state.doc.nodesBetween(from, scanTo, (node) => {
+      if (!BLOCK_SPACING_NODE_TYPES.has(node.type.name)) return true
+      foundAttrs = node.attrs as { lineHeight?: string | null; paragraphSpacing?: string | null }
+      return false
+    })
+
+    if (foundAttrs) return foundAttrs
+
+    return {} as { lineHeight?: string | null; paragraphSpacing?: string | null }
+  }
+
+  const applyBlockSpacing = (attrs: { lineHeight?: string | null; paragraphSpacing?: string | null }) => {
+    const { from, to } = normalizeSelection()
+    const { state, view } = editor
+    const tr = state.tr
+    const touched = new Set<number>()
+
+    const applyToNode = (pos: number) => {
+      if (touched.has(pos)) return
+      const node = state.doc.nodeAt(pos)
+      if (!node || !BLOCK_SPACING_NODE_TYPES.has(node.type.name)) return
+
+      touched.add(pos)
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        ...attrs,
+      }, node.marks)
+    }
+
+    const includeParentBlock = (pos: number) => {
+      const resolved = state.doc.resolve(pos)
+      for (let depth = resolved.depth; depth > 0; depth -= 1) {
+        const node = resolved.node(depth)
+        if (!BLOCK_SPACING_NODE_TYPES.has(node.type.name)) continue
+        applyToNode(resolved.before(depth))
+        break
+      }
+    }
+
+    includeParentBlock(from)
+    includeParentBlock(to)
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (BLOCK_SPACING_NODE_TYPES.has(node.type.name)) applyToNode(pos)
+    })
+
+    if (!touched.size) return
+
+    view.dispatch(tr.scrollIntoView())
+    editor.commands.focus()
+  }
+
+  const textStyleAttrs = editor.getAttributes('textStyle') as {
+    backgroundColor?: string | null
+    color?: string | null
+    fontFamily?: string | null
+    fontSize?: string | null
+  }
+
+  const currentFontFamily = textStyleAttrs.fontFamily ?? ''
+  const currentFontSize = textStyleAttrs.fontSize ?? ''
+  const currentColor = textStyleAttrs.color ?? ''
+  const currentBackgroundColor = textStyleAttrs.backgroundColor ?? ''
+  const blockAttrs = getActiveBlockAttributes()
+  const currentLineHeight = blockAttrs.lineHeight ?? ''
+  const currentParagraphSpacing = blockAttrs.paragraphSpacing ?? ''
+  const selection = savedSelectionRef.current ?? editor.state.selection
+  const hasSavedRange = selection.from !== selection.to
+  const displayFontFamily = currentFontFamily || (!hasSavedRange ? pendingTextStyle.fontFamily ?? '' : '')
+  const displayFontSize = currentFontSize || (!hasSavedRange ? pendingTextStyle.fontSize ?? '' : '')
+  const displayColor = currentColor || pendingTextStyle.color || 'var(--editor-ink-primary)'
+  const displayBackgroundColor = currentBackgroundColor || pendingTextStyle.backgroundColor || '#00000000'
+  const colorInputValue = resolveColorForInput(displayColor, '#f5e6d3')
+  const backgroundColorInputValue = resolveColorForInput(
+    displayBackgroundColor === '#00000000' ? 'var(--editor-mark-yellow)' : displayBackgroundColor,
+    '#ffe45c',
+  )
+
+  const selectCls = 'h-8 rounded-md border border-border bg-bg-surface px-2 text-xs text-text-secondary outline-none transition-colors hover:text-text-primary focus:border-accent'
+
+  const applyFontFamily = (fontFamily: string) => {
+    updatePendingTextStyle({ fontFamily: fontFamily || undefined })
+
+    if (hasSavedRange) {
+      if (fontFamily) startInlineCommand().setFontFamily(fontFamily).run()
+      else startInlineCommand().unsetFontFamily().run()
+      return
+    }
+
+    if (fontFamily) startInlineCommand().setFontFamily(fontFamily).run()
+    else startInlineCommand().unsetFontFamily().run()
+  }
+
+  const applyFontSize = (fontSize: string) => {
+    updatePendingTextStyle({ fontSize: fontSize || undefined })
+
+    if (hasSavedRange) {
+      if (fontSize) startInlineCommand().setFontSize(fontSize).run()
+      else startInlineCommand().unsetFontSize().run()
+      return
+    }
+
+    if (fontSize) startInlineCommand().setFontSize(fontSize).run()
+    else startInlineCommand().unsetFontSize().run()
+  }
+
+  const applyLineHeight = (lineHeight: string) => {
+    applyBlockSpacing({ lineHeight: lineHeight || null })
+  }
+
+  const applyParagraphSpacing = (paragraphSpacing: string) => {
+    applyBlockSpacing({ paragraphSpacing: paragraphSpacing || null })
+  }
+
+  const applyTextColor = (color: string) => {
+    updatePendingTextStyle({ color })
+
+    if (hasSavedRange) {
+      startInlineCommand().setColor(color).run()
+      return
+    }
+
+    startInlineCommand().setColor(color).run()
+  }
+
+  const clearTextColor = () => {
+    if (hasSavedRange) {
+      startInlineCommand().unsetColor().run()
+      return
+    }
+
+    updatePendingTextStyle({ color: undefined })
+    startInlineCommand().unsetColor().run()
+  }
+
+  const setTextBackgroundColor = (color: string) => {
+    if (color === '#00000000') {
+      updatePendingTextStyle({ backgroundColor: undefined })
+      startInlineCommand().unsetBackgroundColor().run()
+      return
+    }
+
+    updatePendingTextStyle({ backgroundColor: color })
+    startInlineCommand().setBackgroundColor(color).run()
+  }
+
   return (
     <div
       className={`w-full bg-bg-surface border border-border rounded-lg overflow-hidden focus-within:border-accent transition-colors ${className}`}
     >
       {/* 工具栏 */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border bg-bg-elevated flex-wrap">
+      <div
+        className="flex items-center gap-1.5 px-2 py-2 border-b border-border bg-bg-elevated flex-wrap"
+        onMouseDownCapture={rememberSelection}
+      >
+        <select
+          aria-label="字体"
+          value={displayFontFamily}
+          onClick={(event) => {
+            applyFontFamily(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyFontFamily(event.target.value)
+          }}
+          className={`${selectCls} w-32`}
+          title="字体"
+        >
+          {FONT_FAMILY_OPTIONS.map(option => (
+            <option key={option.label} value={option.value} style={{ fontFamily: option.preview }}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="字号"
+          value={displayFontSize}
+          onClick={(event) => {
+            applyFontSize(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyFontSize(event.target.value)
+          }}
+          className={`${selectCls} w-20`}
+          title="字号"
+        >
+          <option value="">默认</option>
+          {FONT_SIZE_OPTIONS.map(size => (
+            <option key={size} value={size}>{Number.parseInt(size, 10)}</option>
+          ))}
+        </select>
+        <select
+          aria-label="行距"
+          value={currentLineHeight}
+          onClick={(event) => {
+            applyLineHeight(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyLineHeight(event.target.value)
+          }}
+          className={`${selectCls} w-24`}
+          title="行距"
+        >
+          {LINE_HEIGHT_OPTIONS.map(option => (
+            <option key={option.label} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <select
+          aria-label="段距"
+          value={currentParagraphSpacing}
+          onClick={(event) => {
+            applyParagraphSpacing(event.currentTarget.value)
+          }}
+          onChange={(event) => {
+            applyParagraphSpacing(event.target.value)
+          }}
+          className={`${selectCls} w-24`}
+          title="段距"
+        >
+          {PARAGRAPH_SPACING_OPTIONS.map(option => (
+            <option key={option.label} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1 rounded-md border border-border bg-bg-surface px-1.5 py-1" title="字色">
+          <Palette className="h-3.5 w-3.5 text-text-muted" />
+          <input
+            aria-label="字色"
+            type="color"
+            value={colorInputValue}
+            onChange={(event) => applyTextColor(event.target.value)}
+            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+          />
+          <div className="hidden items-center gap-0.5 md:flex">
+            {TEXT_COLOR_PRESETS.map(color => (
+              <button
+                key={color.label}
+                type="button"
+                aria-label={`字色 ${color.label}`}
+                onClick={() => applyTextColor(color.value)}
+                className="h-4 w-4 rounded border border-border hover:border-accent"
+                style={{ backgroundColor: color.value }}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={clearTextColor}
+            className="px-1 text-[10px] text-text-muted hover:text-text-primary"
+          >
+            清
+          </button>
+        </div>
+        <div className="flex items-center gap-1 rounded-md border border-border bg-bg-surface px-1.5 py-1" title="文字背景色">
+          <PaintBucket className="h-3.5 w-3.5 text-text-muted" />
+          <input
+            aria-label="文字背景色"
+            type="color"
+            value={backgroundColorInputValue}
+            onChange={(event) => setTextBackgroundColor(event.target.value)}
+            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+          />
+          <div className="hidden items-center gap-0.5 md:flex">
+            {BACKGROUND_COLOR_PRESETS.map(color => (
+              <button
+                key={color.label}
+                type="button"
+                aria-label={color.label}
+                onClick={() => setTextBackgroundColor(color.value)}
+                className="h-4 w-4 rounded border border-border hover:border-accent"
+                style={{
+                  backgroundColor: color.value === '#00000000' ? 'transparent' : color.value,
+                  backgroundImage: color.value === '#00000000'
+                    ? 'linear-gradient(135deg, transparent 45%, var(--error) 46%, var(--error) 54%, transparent 55%)'
+                    : undefined,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="w-px h-5 bg-border mx-0.5" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => startInlineCommand().toggleBold().run()}
           className={btnCls(editor.isActive('bold'))}
           title="加粗 (Cmd/Ctrl+B)"
         >
@@ -180,16 +729,24 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
+          onClick={() => startInlineCommand().toggleItalic().run()}
           className={btnCls(editor.isActive('italic'))}
           title="斜体 (Cmd/Ctrl+I)"
         >
           <ItalicIcon className="w-3.5 h-3.5" />
         </button>
+        <button
+          type="button"
+          onClick={() => startInlineCommand().toggleStrike().run()}
+          className={btnCls(editor.isActive('strike'))}
+          title="删除线"
+        >
+          <Strikethrough className="w-3.5 h-3.5" />
+        </button>
         <div className="w-px h-4 bg-border mx-1" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          onClick={() => startInlineCommand().toggleHeading({ level: 2 }).run()}
           className={btnCls(editor.isActive('heading', { level: 2 }))}
           title="二级标题"
         >
@@ -197,7 +754,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          onClick={() => startInlineCommand().toggleHeading({ level: 3 }).run()}
           className={btnCls(editor.isActive('heading', { level: 3 }))}
           title="三级标题"
         >
@@ -206,7 +763,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="w-px h-4 bg-border mx-1" />
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          onClick={() => startInlineCommand().toggleBulletList().run()}
           className={btnCls(editor.isActive('bulletList'))}
           title="无序列表"
         >
@@ -214,7 +771,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          onClick={() => startInlineCommand().toggleOrderedList().run()}
           className={btnCls(editor.isActive('orderedList'))}
           title="有序列表"
         >
@@ -222,7 +779,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          onClick={() => startInlineCommand().toggleBlockquote().run()}
           className={btnCls(editor.isActive('blockquote'))}
           title="引用"
         >
@@ -230,7 +787,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         </button>
         <button
           type="button"
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          onClick={() => startInlineCommand().setHorizontalRule().run()}
           className={btnCls(false)}
           title="分割线"
         >
@@ -261,6 +818,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           <Redo2 className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {contentHeader}
 
       {/* 编辑区 */}
       <div

@@ -60,6 +60,24 @@ describe('R-06: deleteNode 级联 emotionBeatCards', () => {
       projectId, chapterId, beats: [] as any, overallArc: '',
       createdAt: now, updatedAt: now,
     } as any)
+    const factId = await db.temporalFacts.add({
+      projectId, subjectName: '林飞', predicate: 'location', factKind: 'state', value: '洛阳',
+      sourceType: 'chapter', sourceChapterId: chapterId,
+      validFromChapterId: chapterId, validToChapterId: chapterId,
+      status: 'confirmed', locked: false, createdAt: now, updatedAt: now,
+    } as any) as number
+    await db.retrievalChunks.add({
+      projectId, sourceChapterId: chapterId, chunkIndex: 0, text: '正文',
+      keywords: [], embedding: null, embeddingModel: null,
+      sourceTextHash: 'hash', createdAt: now,
+    } as any)
+    await db.narrativeSummaryNodes.add({
+      projectId, worldGroupId: null, level: 'chapter',
+      sourceChapterId: chapterId, sourceOutlineNodeId: nodeId,
+      title: '第一章', summary: '正文摘要', keywords: [],
+      sourceHash: 'hash', status: 'verified', generatedBy: 'system-rollup',
+      createdAt: now, updatedAt: now,
+    } as any)
 
     // 加载到内存(模拟真实使用)
     await useChapterStore.getState().loadAll(projectId)
@@ -81,6 +99,14 @@ describe('R-06: deleteNode 级联 emotionBeatCards', () => {
       await db.emotionBeatCards.count(),
       'emotionBeatCards 应清空(旧 deleteNode 在这里漏删)',
     ).toBe(0)
+    const fact = await db.temporalFacts.get(factId)
+    expect(fact).toBeTruthy()
+    expect(fact?.sourceChapterId).toBeNull()
+    expect(fact?.validFromChapterId).toBeNull()
+    expect(fact?.validToChapterId).toBeNull()
+    expect(fact?.status).toBe('invalid-range') // 删章不自动改时序，进入具体异常复核
+    expect(await db.retrievalChunks.where('sourceChapterId').equals(chapterId).count()).toBe(0)
+    expect(await db.narrativeSummaryNodes.where('sourceChapterId').equals(chapterId).count()).toBe(0)
 
     // 断言:章节 store 内存也同步移除
     expect(

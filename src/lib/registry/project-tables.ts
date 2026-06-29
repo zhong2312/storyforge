@@ -103,6 +103,7 @@ export const PROJECT_TABLES: TableSpec[] = [
     ] },
 
   { table: db.chapters, name: 'chapters', owner: 'project', exportable: true,
+    selfIdPaths: ['continuityHandoff.chapterId', 'planReconciliation.chapterId'],
     refs: [
       { kind: 'simple', field: 'id', target: 'emotionBeatCards[chapterId]', onDelete: 'cascade' },
       // 软引用:itemLedger/storyTimelineEvents 的 chapterId 保留(独立产物,见 chapter store 注释)
@@ -165,6 +166,46 @@ export const PROJECT_TABLES: TableSpec[] = [
   // ───────────────────── 文风学习（FB-5） ─────────────────────
   { table: db.userStyleProfiles, name: 'userStyleProfiles', owner: 'project', exportable: true,
     note: '每项目一份 AI 文风画像;projectId 单例' },
+
+  // ───────────────────── NS-4 时序事实账本 ─────────────────────
+  // 导出/导入：全部分类型 FK + 三个章节引用 + 自引用 supersedesFactId 都做 exportRemap，
+  //   未映射（引用的实体/章已不在导出内）默认置 null，事实不丢、引用不悬空。
+  // 项目级删除：owner:'project' 自动覆盖。
+  // 单独删除/合并：角色删除/合并由 character-references.ts 统一重映射；章节删除由 chapter store
+  //   调 fact-ledger/lifecycle.ts 清 source/valid chapter FK 并降级待复核。绝不自动改写相邻时序。
+  { table: db.temporalFacts, name: 'temporalFacts', owner: 'project', worldScoped: true,
+    exportable: true, exportIdField: true,
+    defaults: { status: 'candidate', locked: false },
+    exportRemap: [
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_wgExportId' },
+      { field: 'characterId', remapVia: 'characters', exportAs: '_charExportId' },
+      { field: 'locationId', remapVia: 'importantLocations', exportAs: '_locExportId' },
+      { field: 'storyArcId', remapVia: 'storyArcs', exportAs: '_arcExportId' },
+      { field: 'subjectWorldGroupId', remapVia: 'worldGroups', exportAs: '_subjWgExportId' },
+      { field: 'codexEntryId', remapVia: 'codexEntries', exportAs: '_codexExportId' },
+      { field: 'objectCharacterId', remapVia: 'characters', exportAs: '_objCharExportId' },
+      { field: 'objectLocationId', remapVia: 'importantLocations', exportAs: '_objLocExportId' },
+      { field: 'objectCodexEntryId', remapVia: 'codexEntries', exportAs: '_objCodexExportId' },
+      { field: 'sourceChapterId', remapVia: 'chapters', exportAs: '_srcChapExportId' },
+      { field: 'validFromChapterId', remapVia: 'chapters', exportAs: '_vFromChapExportId' },
+      { field: 'validToChapterId', remapVia: 'chapters', exportAs: '_vToChapExportId' },
+      { field: 'supersedesFactId', remapVia: 'temporalFacts', selfTree: true, exportAs: '_supersedesExportId' },
+    ],
+    note: 'NS-4 时序事实；candidate=observation/confirmed=canon；stale/source-missing/invalid-range 进入异常审核；时序只存 chapterId 不缓存 order' },
+
+  // ───────────────────── NS-5 检索块（可重建派生缓存） ─────────────────────
+  // exportable:false —— 从章节正文切块而来、含大体积向量，是可重建缓存，不进 JSON 备份；
+  // 导入后由 chapter 正文重建。项目级删除由 owner 覆盖；删章/改章触发该章块重建（在 chunk 写入层处理）。
+  { table: db.retrievalChunks, name: 'retrievalChunks', owner: 'project', worldScoped: true,
+    exportable: false,
+    note: 'NS-5 检索块·可重建派生缓存(关键词+可选 embedding)，不导出，导入后从正文重建' },
+
+  // ───────────────────── NS-5 层级叙事摘要树（可重建派生缓存） ─────────────────────
+  // exportable:false —— 从章节正文/已验证章节记忆/大纲 roll-up 得出，可按需重建；
+  // 用于章→卷→全书的远距离叙事骨架，不替代事实账本，也不作为 Canon。
+  { table: db.narrativeSummaryNodes, name: 'narrativeSummaryNodes', owner: 'project', worldScoped: true,
+    exportable: false,
+    note: 'NS-5 章→卷→全书层级摘要树·可重建派生缓存；四态 pending/rebuilding/verified/stale' },
 
   // ───────────────────── 多世界 ─────────────────────
   { table: db.worldGroups, name: 'worldGroups', owner: 'project', exportable: true,

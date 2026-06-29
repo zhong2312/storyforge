@@ -7,6 +7,7 @@
 import type { Table } from 'dexie'
 import type { AIProvider } from '../types/ai'
 import type { ContextLayer, ContextSegment } from '../ai/context-budget'
+import type { PreparedContinuityContext } from '../ai/chapter-memory/continuity-context'
 
 /**
  * 表的归属方式 —— 决定删项目时如何定位该表的记录。
@@ -118,6 +119,11 @@ export interface TableSpec<T = any> {
   projectResolver?: (projectId: number) => Promise<number[]>
   /** 是否带 worldGroupId(参与多世界隔离/盖章/删世界级联) */
   worldScoped?: boolean
+  /**
+   * 导入后必须改写为本行新主键的嵌套字段路径。
+   * 例：chapters.continuityHandoff.chapterId。
+   */
+  selfIdPaths?: string[]
   /** worldGroupId 的字段名(默认 'worldGroupId') */
   worldGroupField?: string
   /** 是否带 homeWorldGroupId(仅 characters) */
@@ -200,6 +206,15 @@ export interface AdoptInput {
   worldGroupId?: number | null
   /** 集合表中定点更新既有记录；AI 补全空卷/空章等场景使用。 */
   recordId?: number
+  /**
+   * NS-1: chapters 派生记忆的原子 compare-and-set。
+   * adopt() 必须在写 summary/handoff 的同一事务中重算当前正文 hash。
+   */
+  compareAndSet?: {
+    kind: 'chapter-source-text-hash'
+    expectedHash: string
+    textNormalizationVersion: string
+  }
   target: string
   data: Record<string, unknown> | Record<string, unknown>[]
   mode: 'replace' | 'append' | 'add' | 'add-many' | 'merge-diffs'
@@ -234,6 +249,8 @@ export interface AssembleContextInput {
   extraStateIds?: number[]
   /** 手动输入/当前字段内容，供“内容反推结构化设定”类动作走注册表。 */
   manualSourceText?: string
+  /** assembleContext 内部批量预取；调用方无需传。 */
+  continuitySnapshot?: PreparedContinuityContext
 }
 
 export interface ContextSource {
@@ -243,6 +260,8 @@ export interface ContextSource {
   layer: ContextLayer
   /** Approximate per-source soft cap. Adapters can still return less. */
   budgetTokens: number
+  /** NS-1: assembleContext 总预算裁剪时不得整段删除。 */
+  protectedFromTrim?: boolean
   requiresWorldGroupId?: boolean
   requiresOutlineNodeId?: boolean
   requiresChapterId?: boolean
@@ -259,4 +278,5 @@ export interface AssembleContextResult {
   totalInputTokens: number
   inputBudget: number
   overBudgetBeforeTrim: boolean
+  overBudgetAfterTrim: boolean
 }

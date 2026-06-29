@@ -13,6 +13,7 @@ import { PROJECT_TABLES } from '../registry/project-tables'
 import { remapWorldPortalTargets } from '../utils/world-portals'
 import { transactionTablesFor } from '../registry/lifecycle'
 import { importLegacyArraysToCodex } from '../migrations/legacy-to-codex-upgrade'
+import { migrateStateCardsToTemporalFactCandidates } from '../migrations/state-cards-to-temporal-facts'
 import type { TableSpec } from '../registry/types'
 import type { ProjectExportData } from './json-export'
 import { normalizeCharacterAxes } from '../character/character-axes'
@@ -57,6 +58,24 @@ function topoSortTreeRows(rows: any[]): any[] {
     }
   }
   return sorted
+}
+
+function patchSelfIdPaths(obj: Record<string, any>, paths: string[], newId: number): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  for (const path of paths) {
+    const [root, ...rest] = path.split('.')
+    if (!root || rest.length === 0 || obj[root] == null || typeof obj[root] !== 'object') continue
+    // 导入输入本就是 JSON 契约，按 JSON 语义深拷贝可避免修改原始备份对象。
+    const rootCopy = JSON.parse(JSON.stringify(obj[root]))
+    let cursor: Record<string, any> = rootCopy
+    for (const part of rest.slice(0, -1)) {
+      if (cursor[part] == null || typeof cursor[part] !== 'object') cursor[part] = {}
+      cursor = cursor[part]
+    }
+    cursor[rest[rest.length - 1]] = newId
+    patch[root] = rootCopy
+  }
+  return patch
 }
 
 /**
@@ -135,6 +154,12 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
         }
 
         const newId = await (db as any)[spec.name].add(obj) as number
+        if (spec.selfIdPaths?.length) {
+          const selfPatch = patchSelfIdPaths(obj, spec.selfIdPaths, newId)
+          if (Object.keys(selfPatch).length > 0) {
+            await (db as any)[spec.name].update(newId, selfPatch)
+          }
+        }
         const key = spec.exportIdField ? exportId : exportIndex
         if (key != null) newIdMap.set(key, newId)
         if (stashed) pendingRefRemap.push({ newId, stashed })
@@ -152,6 +177,13 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
       }
 
       newIdMaps.set(spec.name, newIdMap)
+    }
+
+    // NS-4：旧备份可能只有 stateCards、没有 temporalFacts。导入后用新项目内的
+    // 新 stateCard 主键生成可审候选；旧卡保留，不自动升 Canon。函数幂等，若备份已有
+    // 对应候选不会重复写。
+    if (((data as any).temporalFacts?.length ?? 0) === 0) {
+      await migrateStateCardsToTemporalFactCandidates(db, newProjectId)
     }
 
     return newProjectId

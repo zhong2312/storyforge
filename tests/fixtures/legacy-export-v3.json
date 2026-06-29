@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "exportedAt": 0,
+  "exportedAt": 1782304513952,
   "project": {
     "name": "全量作品",
     "genre": "fantasy",
@@ -45,6 +45,88 @@
       "_worldGroupExportId": 0
     }
   ],
+  "geographies": [
+    {
+      "overview": "三大洲",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_worldGroupExportId": 0
+    }
+  ],
+  "histories": [
+    {
+      "summary": "上古神战",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_worldGroupExportId": 0
+    }
+  ],
+  "worldNodes": [
+    {
+      "name": "主世界",
+      "description": "起点",
+      "sortOrder": 0,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "portalsJSON": "[{\"name\":\"镜门\",\"targetWorldId\":1,\"x\":1,\"y\":2}]",
+      "_parentExportId": null,
+      "_worldGroupExportId": 0,
+      "_exportId": 0
+    },
+    {
+      "name": "镜界",
+      "description": "镜中",
+      "sortOrder": 1,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_parentExportId": 0,
+      "_worldGroupExportId": 0,
+      "_exportId": 1
+    }
+  ],
+  "historicalTimelineEvents": [
+    {
+      "title": "封神之战",
+      "year": -1000,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_worldGroupExportId": 0
+    }
+  ],
+  "historicalKeywords": [
+    {
+      "keyword": "神器",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_worldGroupExportId": 0
+    }
+  ],
+  "importantLocations": [
+    {
+      "name": "青云山",
+      "type": "mountain",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_parentExportId": null,
+      "_exportId": 0
+    },
+    {
+      "name": "青云峰",
+      "type": "peak",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_parentExportId": 0,
+      "_exportId": 1
+    }
+  ],
+  "worldRulesProfiles": [
+    {
+      "rules": "魔法守恒",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_worldGroupExportId": 0
+    }
+  ],
   "characters": [
     {
       "name": "林惊羽",
@@ -63,30 +145,38 @@
       "_homeWorldGroupExportId": null
     }
   ],
+  "characterRelations": [
+    {
+      "type": "ally",
+      "description": "同门",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "_fromCharacterIndex": 0,
+      "_toCharacterIndex": 1
+    }
+  ],
   "outlineNodes": [
     {
-      "parentId": null,
       "type": "volume",
       "title": "第一卷",
       "summary": "开篇",
       "order": 0,
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
+      "_parentExportId": null,
       "_worldGroupExportId": 0,
-      "_exportId": 0,
-      "_parentExportId": null
+      "_exportId": 0
     },
     {
-      "parentId": 1,
       "type": "chapter",
       "title": "第1章",
       "summary": "觉醒",
       "order": 0,
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
+      "_parentExportId": 0,
       "_worldGroupExportId": 0,
-      "_exportId": 1,
-      "_parentExportId": 0
+      "_exportId": 1
     }
   ],
   "chapters": [
@@ -99,52 +189,6 @@
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
       "_outlineExportId": 1
-    }
-  ],
-  "foreshadows": [
-    {
-      "name": "神秘玉佩",
-      "type": "item",
-      "status": "planted",
-      "description": "身世之谜",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000
-    }
-  ],
-  "geographies": [
-    {
-      "overview": "三大洲",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0
-    }
-  ],
-  "histories": [
-    {
-      "summary": "上古神战",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0
-    }
-  ],
-  "creativeRules": [
-    {
-      "citedReferenceIds": [
-        1
-      ],
-      "content": "多爽点",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000
-    }
-  ],
-  "characterRelations": [
-    {
-      "type": "ally",
-      "description": "同门",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_fromCharacterIndex": 0,
-      "_toCharacterIndex": 1
     }
   ],
   "detailedOutlines": [
@@ -180,19 +224,12 @@
       "_chapterExportId": 0
     }
   ],
-  "stateCards": [
+  "foreshadows": [
     {
-      "category": "character",
-      "entityName": "林惊羽",
-      "fields": "[{\"key\":\"境界\",\"value\":\"炼气一层\"}]",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000
-    }
-  ],
-  "userStyleProfiles": [
-    {
-      "profile": "简洁明快",
-      "enabled": true,
+      "name": "神秘玉佩",
+      "type": "item",
+      "status": "planted",
+      "description": "身世之谜",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000
     }
@@ -206,29 +243,32 @@
       "updatedAt": 1700000000000
     }
   ],
-  "worldNodes": [
+  "stateCards": [
     {
-      "parentId": null,
-      "name": "主世界",
-      "description": "起点",
-      "sortOrder": 0,
+      "category": "character",
+      "entityName": "林惊羽",
+      "fields": "[{\"key\":\"境界\",\"value\":\"炼气一层\"}]",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "itemLedger": [
+    {
+      "itemName": "青锋剑",
+      "action": "gain",
+      "quantity": 1,
+      "chapterTitle": "第1章",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0,
-      "portalsJSON": "[{\"name\":\"镜门\",\"targetWorldId\":1,\"x\":1,\"y\":2}]",
-      "_exportId": 0,
-      "_parentExportId": null
-    },
+      "_chapterExportId": 0
+    }
+  ],
+  "storyTimelineEvents": [
     {
-      "parentId": 1,
-      "name": "镜界",
-      "description": "镜中",
-      "sortOrder": 1,
+      "title": "获得青锋剑",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0,
-      "_exportId": 1,
-      "_parentExportId": 0
+      "_chapterExportId": 0
     }
   ],
   "notes": [
@@ -239,41 +279,79 @@
       "updatedAt": 1700000000000
     }
   ],
-  "references": [
+  "creativeRules": [
     {
-      "title": "斗破苍穹",
-      "author": "天蚕土豆",
-      "type": "story",
-      "note": "参考爽点",
+      "citedReferenceIds": [
+        1
+      ],
+      "content": "多爽点",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "codexCategories": [
+    {
+      "name": "势力",
+      "order": 0,
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
+      "_parentExportId": null,
+      "_worldGroupExportId": 0,
       "_exportId": 0
-    }
-  ],
-  "referenceChunkAnalysis": [
+    },
     {
-      "chunkIndex": 0,
-      "openingTechnique": "天才陨落钩子",
+      "name": "宗门",
+      "order": 0,
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_referenceExportId": 0
+      "_parentExportId": 0,
+      "_worldGroupExportId": 0,
+      "_exportId": 1
     }
   ],
-  "historicalTimelineEvents": [
+  "codexEntries": [
     {
-      "title": "封神之战",
-      "year": -1000,
+      "name": "青云宗",
+      "summary": "正道魁首",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
+      "_categoryExportId": 1,
       "_worldGroupExportId": 0
     }
   ],
-  "historicalKeywords": [
+  "userStyleProfiles": [
     {
-      "keyword": "神器",
+      "profile": "简洁明快",
+      "enabled": true,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "temporalFacts": [
+    {
+      "subjectName": "林惊羽",
+      "predicate": "powerStage",
+      "factKind": "state",
+      "value": "炼气一层",
+      "sourceType": "chapter",
+      "status": "confirmed",
+      "locked": false,
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0
+      "_wgExportId": 0,
+      "_charExportId": 0,
+      "_locExportId": null,
+      "_arcExportId": null,
+      "_subjWgExportId": null,
+      "_codexExportId": null,
+      "_objCharExportId": null,
+      "_objLocExportId": null,
+      "_objCodexExportId": null,
+      "_srcChapExportId": 0,
+      "_vFromChapExportId": 0,
+      "_vToChapExportId": null,
+      "_supersedesExportId": null,
+      "_exportId": 0
     }
   ],
   "worldGroups": [
@@ -301,79 +379,24 @@
       "_toGroupExportId": 1
     }
   ],
-  "itemLedger": [
+  "references": [
     {
-      "itemName": "青锋剑",
-      "action": "gain",
-      "quantity": 1,
-      "chapterTitle": "第1章",
+      "title": "斗破苍穹",
+      "author": "天蚕土豆",
+      "type": "story",
+      "note": "参考爽点",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_chapterExportId": 0
+      "_exportId": 0
     }
   ],
-  "storyTimelineEvents": [
+  "referenceChunkAnalysis": [
     {
-      "title": "获得青锋剑",
+      "chunkIndex": 0,
+      "openingTechnique": "天才陨落钩子",
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000,
-      "_chapterExportId": 0
-    }
-  ],
-  "importantLocations": [
-    {
-      "name": "青云山",
-      "type": "mountain",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_exportId": 0,
-      "_parentExportId": null
-    },
-    {
-      "name": "青云峰",
-      "type": "peak",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_exportId": 1,
-      "_parentExportId": 0
-    }
-  ],
-  "worldRulesProfiles": [
-    {
-      "rules": "魔法守恒",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0
-    }
-  ],
-  "codexCategories": [
-    {
-      "name": "势力",
-      "order": 0,
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0,
-      "_exportId": 0,
-      "_parentExportId": null
-    },
-    {
-      "name": "宗门",
-      "order": 0,
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0,
-      "_exportId": 1,
-      "_parentExportId": 0
-    }
-  ],
-  "codexEntries": [
-    {
-      "name": "青云宗",
-      "summary": "正道魁首",
-      "createdAt": 1700000000000,
-      "updatedAt": 1700000000000,
-      "_worldGroupExportId": 0,
-      "_categoryExportId": 1
+      "_referenceExportId": 0
     }
   ]
 }

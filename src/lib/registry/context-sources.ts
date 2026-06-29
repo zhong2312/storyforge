@@ -4,6 +4,11 @@
  * 本文件只登记读取源和旧适配器桥接。1.3b 再把生成入口迁移到 assembleContext()。
  */
 import { db } from '../db/schema'
+import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
+import { getFactPredicate } from './fact-predicate-registry'
+import { retrieveChunks, embedQuery, readNarrativeSummaryContext } from '../retrieval/retrieval'
+import { isEmbeddingReady, embeddingModelTag } from '../ai/adapters/embedding-adapter'
+import { useAIConfigStore } from '../../stores/ai-config'
 import {
   buildCreativeRulesContext,
   buildHistoricalContext,
@@ -175,6 +180,114 @@ async function readDetailedOutline(projectId: number, outlineNodeId?: number | n
   return parts.join('\n')
 }
 
+async function readItemLedger(projectId: number): Promise<string> {
+  const rows = await db.itemLedger.where('projectId').equals(projectId).toArray()
+  if (!rows.length) return ''
+  return [
+    '【物品流水证据】',
+    ...rows.slice(-120).map(row =>
+      `#${row.id ?? 0} ${row.chapterTitle ?? `章节#${row.chapterId ?? '?'}`}：${row.action === 'gain' ? '获得' : '消耗'} ${row.itemName} ×${row.quantity}${row.note ? `（${row.note}）` : ''}`),
+  ].join('\n')
+}
+
+async function readStoryTimeline(projectId: number): Promise<string> {
+  const rows = await db.storyTimelineEvents.where('projectId').equals(projectId).sortBy('order')
+  if (!rows.length) return ''
+  return [
+    '【故事年表证据】',
+    ...rows.slice(-120).map(row =>
+      `#${row.id ?? 0} ${row.storyTime ? `${row.storyTime} · ` : ''}${row.title}${row.description ? `：${row.description}` : ''}（${row.chapterTitle ?? `章节#${row.chapterId ?? '?'}`}）`),
+  ].join('\n')
+}
+
+async function readCharacterRelations(projectId: number): Promise<string> {
+  const [rows, characters] = await Promise.all([
+    db.characterRelations.where('projectId').equals(projectId).toArray(),
+    db.characters.where('projectId').equals(projectId).toArray(),
+  ])
+  if (!rows.length) return ''
+  const names = new Map(characters.filter(item => item.id != null).map(item => [item.id!, item.name]))
+  return [
+    '【角色关系证据】',
+    ...rows.slice(0, 160).map(row =>
+      `#${row.id ?? 0} ${names.get(row.fromCharacterId) ?? `角色#${row.fromCharacterId}`} → ${names.get(row.toCharacterId) ?? `角色#${row.toCharacterId}`}：${row.label}${row.description ? `（${row.description}）` : ''}`),
+  ].join('\n')
+}
+
+/**
+ * NS-4 · 当前有效事实投影（事实账本 → 生成上下文）。
+ * 只注入 confirmed（Canon）事实，按【规范章序】实时解析 validFrom/To（绝不缓存 order）判定"截止本章是否有效"，
+ * 并按当前世界（∪ 默认 null 世界）过滤。这是事实账本改善长期一致性的回报通道。
+ */
+async function readCurrentFacts(projectId: number, chapterId?: number | null, worldGroupId?: number | null): Promise<string> {
+  if (chapterId == null) return ''
+  const [facts, outlineNodes, chapters] = await Promise.all([
+    db.temporalFacts.where('projectId').equals(projectId).filter(f => f.status === 'confirmed').toArray(),
+    db.outlineNodes.where('projectId').equals(projectId).toArray(),
+    db.chapters.where('projectId').equals(projectId).toArray(),
+  ])
+  if (!facts.length) return ''
+  const { sequence } = resolveCanonicalChapterSequence(outlineNodes, chapters)
+  const orderOf = new Map<number, number>()
+  sequence.forEach((entry, i) => { if (entry.chapter.id != null) orderOf.set(entry.chapter.id, i) })
+  const currentOrder = orderOf.get(chapterId)
+  if (currentOrder == null) return ''
+
+  const validNow = facts.filter(fact => {
+    if (fact.worldGroupId != null && fact.worldGroupId !== (worldGroupId ?? null)) return false // 世界隔离
+    const from = fact.validFromChapterId != null ? orderOf.get(fact.validFromChapterId) : -1
+    if (from == null || from > currentOrder) return false   // 引用不存在的章 / 尚未生效
+    if (fact.validToChapterId != null) {
+      const to = orderOf.get(fact.validToChapterId)
+      if (to != null && to <= currentOrder) return false     // 已失效
+    }
+    return true
+  })
+  if (!validNow.length) return ''
+  const lines = validNow.slice(0, 80).map(fact => {
+    const spec = getFactPredicate(fact.predicate)
+    return `- ${fact.subjectName}｜${spec?.label ?? fact.predicate}：${fact.value}`
+  })
+  return ['【当前有效事实（截止本章·已确认，请勿与之矛盾）】', ...lines].join('\n')
+}
+
+/**
+ * NS-5 · 相关前文召回（叙事感知混合检索的回报通道）。
+ * 按本章涉及的实体召回历史块（关键词通道，未来章硬过滤、世界隔离、按时间重组），
+ * 解决"几百章前的远距离细节/伏笔"被遗忘导致的矛盾。
+ */
+async function readRetrievedPassages(projectId: number, chapterId?: number | null, outlineNodeId?: number | null, worldGroupId?: number | null): Promise<string> {
+  if (chapterId == null) return ''
+  const [characters, node] = await Promise.all([
+    db.characters.where('projectId').equals(projectId).toArray(),
+    outlineNodeId != null ? db.outlineNodes.get(outlineNodeId) : Promise.resolve(undefined),
+  ])
+  const charNames = characters.map(c => c.name).filter(n => n && n.length >= 2)
+  const summary = node?.summary || ''
+  const mentioned = charNames.filter(n => summary.includes(n))
+  const queryTerms = mentioned.length ? mentioned : charNames // 摘要没提具体角色 → 用全部角色作宽召回
+  if (!queryTerms.length) {
+    return await readNarrativeSummaryContext({ projectId, currentChapterId: chapterId, worldGroupId })
+  }
+
+  // NS-5：若启用 embedding，按"章纲摘要 + 涉及角色"嵌一次查询向量 → 混合检索（失败自动退回关键词）
+  const embCfg = useAIConfigStore.getState().embedding
+  const queryEmbedding = isEmbeddingReady(embCfg)
+    ? await embedQuery([summary, ...queryTerms].filter(Boolean).join(' ').slice(0, 1000), embCfg, projectId)
+    : null
+
+  const got = await retrieveChunks({
+    projectId, currentChapterId: chapterId, worldGroupId, queryTerms, queryEmbedding,
+    queryEmbeddingModel: queryEmbedding ? embeddingModelTag(embCfg) : null, topK: 6,
+  })
+  const hierarchy = await readNarrativeSummaryContext({ projectId, currentChapterId: chapterId, worldGroupId })
+  if (!got.length) return hierarchy
+  const chapters = await db.chapters.where('projectId').equals(projectId).toArray()
+  const titleOf = new Map(chapters.filter(c => c.id != null).map(c => [c.id!, c.title]))
+  const lines = got.map(r => `〖${titleOf.get(r.chunk.sourceChapterId) ?? '前文'}〗${r.chunk.text}`)
+  return [hierarchy, '【相关前文召回（防止远距离细节/伏笔矛盾，仅供参考）】', ...lines].filter(Boolean).join('\n\n')
+}
+
 export const CONTEXT_SOURCES: ContextSource[] = [
   {
     key: 'manualText',
@@ -211,6 +324,7 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     scope: 'node',
     layer: 'L1',
     budgetTokens: 800,
+    protectedFromTrim: true,
     requiresOutlineNodeId: true,
     read: input => readChapterOutline(input.projectId, input.outlineNodeId, input.chapterId),
   },
@@ -223,6 +337,24 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: input => readExistingVolumeOutlines(input.projectId),
   },
   {
+    key: 'currentFacts',
+    label: '当前有效事实(事实账本投影)',
+    scope: 'chapter',
+    layer: 'L1',
+    budgetTokens: 2000,
+    requiresChapterId: true,
+    read: input => readCurrentFacts(input.projectId, input.chapterId, input.worldGroupId),
+  },
+  {
+    key: 'retrievedPassages',
+    label: '相关前文召回(NS-5 混合检索)',
+    scope: 'chapter',
+    layer: 'L2',
+    budgetTokens: 2500,
+    requiresChapterId: true,
+    read: input => readRetrievedPassages(input.projectId, input.chapterId, input.outlineNodeId, input.worldGroupId),
+  },
+  {
     key: 'detailedOutline',
     label: '本章细纲(场景拆解)',
     scope: 'node',
@@ -233,12 +365,43 @@ export const CONTEXT_SOURCES: ContextSource[] = [
   },
   {
     key: 'previousChapterEnding',
-    label: '上一章结尾',
+    label: '全局直接前驱原文尾部',
     scope: 'manual',
     layer: 'L1',
-    budgetTokens: 500,
-    enabled: input => !!input.previousChapterEnding,
-    read: async input => input.previousChapterEnding ? `【上一章结尾】\n${input.previousChapterEnding}` : '',
+    budgetTokens: 1800,
+    protectedFromTrim: true,
+    enabled: input => !!(input.continuitySnapshot?.previousTailText || input.previousChapterEnding),
+    read: async input => input.continuitySnapshot?.previousTailText
+      || (input.previousChapterEnding ? `【上一章结尾】\n${input.previousChapterEnding}` : ''),
+  },
+  {
+    key: 'chapterContinuityHandoff',
+    label: '全局直接前驱连续性交接',
+    scope: 'chapter',
+    layer: 'L1',
+    budgetTokens: 1600,
+    protectedFromTrim: true,
+    requiresChapterId: true,
+    read: async input => input.continuitySnapshot?.handoffText || '',
+  },
+  {
+    key: 'previousPlanReconciliation',
+    label: '前章计划正文对账',
+    scope: 'chapter',
+    layer: 'L1',
+    budgetTokens: 1400,
+    protectedFromTrim: true,
+    requiresChapterId: true,
+    read: async input => input.continuitySnapshot?.planReconciliationText || '',
+  },
+  {
+    key: 'recentChapterSummaries',
+    label: '当前世界最近已验证摘要',
+    scope: 'chapter',
+    layer: 'L1',
+    budgetTokens: 2200,
+    requiresChapterId: true,
+    read: async input => input.continuitySnapshot?.recentSummariesText || '',
   },
   {
     key: 'worldview',
@@ -350,6 +513,30 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     layer: 'L2',
     budgetTokens: 1800,
     read: input => readStateCards(input.projectId, input.stateReferenceText, input.extraStateIds),
+  },
+  {
+    key: 'itemLedger',
+    label: '物品流水',
+    scope: 'project',
+    layer: 'L2',
+    budgetTokens: 2400,
+    read: input => readItemLedger(input.projectId),
+  },
+  {
+    key: 'storyTimeline',
+    label: '故事年表',
+    scope: 'project',
+    layer: 'L2',
+    budgetTokens: 2600,
+    read: input => readStoryTimeline(input.projectId),
+  },
+  {
+    key: 'characterRelations',
+    label: '角色关系',
+    scope: 'project',
+    layer: 'L2',
+    budgetTokens: 2200,
+    read: input => readCharacterRelations(input.projectId),
   },
   {
     key: 'references',

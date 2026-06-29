@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { parseWorldPortals } from '../../src/lib/utils/world-portals'
+import { CHAPTER_TEXT_NORMALIZATION_VERSION, hashChapterText } from '../../src/lib/ai/chapter-memory/text-normalization'
 
 const now = Date.now()
 
@@ -41,9 +42,28 @@ async function seedFullProject(): Promise<number> {
     scenes: [{ sceneId: 's1', title: '废墟苏醒', summary: '主角醒来', characterIds: [], location: '废墟', conflict: '失忆', pace: 'normal', estimatedWords: 800, notes: '' }],
     createdAt: now, updatedAt: now,
   } as any)
+  const chapterContent = '<p>主角在废墟中睁开眼，记忆一片空白……</p>'
+  const chapterHash = await hashChapterText(chapterContent)
   await db.chapters.add({
     projectId, outlineNodeId: chapNodeId, title: '第1章 觉醒',
-    content: '<p>主角在废墟中睁开眼，记忆一片空白……</p>', wordCount: 18, status: 'draft', order: 0, notes: '',
+    content: chapterContent, wordCount: 18, status: 'draft', order: 0, notes: '',
+    summary: '主角在废墟醒来并失忆。',
+    summarySourceTextHash: chapterHash,
+    summaryTextNormalizationVersion: CHAPTER_TEXT_NORMALIZATION_VERSION,
+    continuityHandoff: {
+      chapterId: 1,
+      sourceTextHash: chapterHash,
+      schemaVersion: 1,
+      extractorVersion: 'test',
+      textNormalizationVersion: CHAPTER_TEXT_NORMALIZATION_VERSION,
+      finalScene: { location: '废墟', activeCharacters: ['林惊羽'], lastAction: '睁开眼' },
+      stateChanges: ['林惊羽苏醒'],
+      knowledgeChanges: [],
+      commitments: [],
+      openLoops: ['失忆原因'],
+      evidenceQuotes: [{ quote: '主角在废墟中睁开眼', startOffset: 0, endOffset: 10 }],
+      generatedAt: now,
+    },
     createdAt: now, updatedAt: now,
   } as any)
   await db.characters.add({
@@ -105,6 +125,10 @@ describe('R-roundtrip · 全量内容导出→导入往返', () => {
     const chapter = await db.chapters.where('projectId').equals(newId).first()
     expect(chapter?.content).toContain('废墟中睁开眼')
     expect(chapter?.outlineNodeId).toBe(newChap.id) // 正文外键重映射正确
+    expect(chapter?.summarySourceTextHash).toHaveLength(64)
+    expect(chapter?.summaryTextNormalizationVersion).toBe(CHAPTER_TEXT_NORMALIZATION_VERSION)
+    expect(chapter?.continuityHandoff?.finalScene.location).toBe('废墟')
+    expect(chapter?.continuityHandoff?.chapterId).toBe(chapter?.id)
 
     const char = await db.characters.where('projectId').equals(newId).first()
     expect(char?.name).toBe('林惊羽')
@@ -151,5 +175,53 @@ describe('R-roundtrip · 全量内容导出→导入往返', () => {
     expect(chapter?.content).toContain('废墟中睁开眼')
     const detail = await db.detailedOutlines.where('projectId').equals(id3).first()
     expect(detail?.scenes?.[0]?.title).toBe('废墟苏醒')
+  })
+
+  it('NS-4 旧备份只有 stateCards 时，导入后生成可审 TemporalFact 候选且不重复', async () => {
+    const srcId = await seedFullProject()
+    const exported = await exportProjectJSON(srcId)
+    delete (exported as any).temporalFacts // 模拟 NS-4 前旧备份：只有 stateCards，没有事实账本
+
+    const importedId = await importProjectJSON(exported)
+    const importedFacts = await db.temporalFacts.where('projectId').equals(importedId).toArray()
+    expect(importedFacts).toHaveLength(1)
+    expect(importedFacts[0]).toMatchObject({
+      subjectName: '林惊羽',
+      predicate: 'powerStage',
+      value: '炼气一层',
+      status: 'candidate',
+      sourceType: 'import',
+    })
+
+    const exportedAgain = await exportProjectJSON(importedId)
+    const importedAgainId = await importProjectJSON(exportedAgain)
+    const importedAgainFacts = await db.temporalFacts.where('projectId').equals(importedAgainId).toArray()
+    expect(importedAgainFacts).toHaveLength(1) // 新备份已有 temporalFacts，不再按 stateCards 重复生成
+  })
+
+  it('NS-4 temporalFacts 往返:分类型 FK(character/chapter/worldGroup)重映射到新项目实体', async () => {
+    const pid = await db.projects.add({ name: '事实往返', genre: 'fantasy', description: '', targetWordCount: 0, enableMultiWorld: false, createdAt: now, updatedAt: now } as any) as number
+    const wgId = await db.worldGroups.add({ projectId: pid, name: '主世界', type: 'main', order: 0, createdAt: now, updatedAt: now } as any) as number
+    const charId = await db.characters.add({ projectId: pid, name: '秦弦', role: 'protagonist', createdAt: now, updatedAt: now } as any) as number
+    const nodeId = await db.outlineNodes.add({ projectId: pid, parentId: null, type: 'chapter', title: '第1章', summary: '', order: 0, createdAt: now, updatedAt: now } as any) as number
+    const chapId = await db.chapters.add({ projectId: pid, outlineNodeId: nodeId, title: '第1章', content: '<p>正文</p>', wordCount: 2, status: 'draft', order: 0, notes: '', createdAt: now, updatedAt: now } as any) as number
+    await db.temporalFacts.add({ projectId: pid, worldGroupId: wgId, characterId: charId, subjectName: '秦弦', predicate: 'powerStage', factKind: 'state', value: '金丹', sourceType: 'chapter', sourceChapterId: chapId, validFromChapterId: chapId, status: 'confirmed', locked: false, createdAt: now, updatedAt: now } as any)
+
+    const exported = await exportProjectJSON(pid)
+    const newId = await importProjectJSON(exported)
+
+    const facts = await db.temporalFacts.where('projectId').equals(newId).toArray()
+    expect(facts.length).toBe(1)
+    const f = facts[0]
+    const newChar = await db.characters.where('projectId').equals(newId).first()
+    const newChap = await db.chapters.where('projectId').equals(newId).first()
+    const newWg = await db.worldGroups.where('projectId').equals(newId).first()
+    expect(f.value).toBe('金丹')                  // 内容不丢
+    expect(f.predicate).toBe('powerStage')
+    expect(f.characterId).toBe(newChar!.id)       // 角色 FK 重映射到新项目
+    expect(f.characterId).not.toBe(charId)
+    expect(f.sourceChapterId).toBe(newChap!.id)   // 源章节 FK 重映射
+    expect(f.validFromChapterId).toBe(newChap!.id)
+    expect(f.worldGroupId).toBe(newWg!.id)        // 世界组 FK 重映射
   })
 })

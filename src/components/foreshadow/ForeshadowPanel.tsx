@@ -42,7 +42,7 @@ export default function ForeshadowPanel({ project }: Props) {
   const [filterStatus, setFilterStatus] = useState<ForeshadowStatus | 'all'>('all')
   const [selected, setSelected] = useState<number | null>(null)
   const [showAI, setShowAI] = useState(() => !!(ai.output || ai.isStreaming || ai.error))
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   const [systemOverride, setSystemOverride] = useState<string | null>(null)
   const [userOverride, setUserOverride] = useState<string | null>(null)
@@ -90,6 +90,10 @@ export default function ForeshadowPanel({ project }: Props) {
 
   const filtered = filterStatus === 'all' ? foreshadows : foreshadows.filter(f => f.status === filterStatus)
   const selectedF = foreshadows.find(f => f.id === selected)
+  const statusCounts = STATUS_FLOW.reduce<Record<ForeshadowStatus, number>>((acc, status) => {
+    acc[status] = foreshadows.filter(f => f.status === status).length
+    return acc
+  }, { planned: 0, planted: 0, echoed: 0, resolved: 0 })
 
   const handleAdd = async () => {
     const id = await addForeshadow({
@@ -160,21 +164,36 @@ export default function ForeshadowPanel({ project }: Props) {
   }
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="min-h-full bg-bg-base/30 px-8 py-8">
+      <div className="mx-auto max-w-7xl space-y-6">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-text-muted">创作区</p>
+          <h1 className="mt-3 font-serif text-4xl font-semibold tracking-wide text-text-primary">伏笔追踪</h1>
+          <p className="mt-3 text-sm text-text-secondary">
+            {foreshadows.length} 个伏笔 ·{' '}
+            <span className="text-error">{statusCounts.planted} 已埋设</span> ·{' '}
+            <span className="text-warning">{statusCounts.echoed} 已呼应</span> ·{' '}
+            <span className="text-success">{statusCounts.resolved} 已回收</span>
+          </p>
+        </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleAdd}
-            className="flex items-center gap-1.5 px-3 py-2 bg-accent text-white text-sm rounded-md hover:bg-accent-hover transition-colors">
-            <Plus className="w-4 h-4" /> 添加伏笔
-          </button>
           <button onClick={handleAISuggest}
             disabled={ai.isStreaming || !config.apiKey}
-            className="flex items-center gap-1 px-2 py-2 bg-bg-elevated text-accent text-sm rounded-md hover:bg-bg-hover transition-colors disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-secondary transition-colors hover:text-accent disabled:opacity-40"
             title="AI 建议伏笔">
             {ai.isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            AI 建议
+          </button>
+          <button onClick={handleAdd}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover">
+            <Plus className="w-4 h-4" /> 新建伏笔
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-border pt-4">
         {/* 视图切换 */}
         <div className="flex items-center gap-1 bg-bg-elevated rounded-lg p-0.5">
           <button
@@ -376,6 +395,7 @@ export default function ForeshadowPanel({ project }: Props) {
       </div>
     </div>
       )}
+      </div>
     </div>
   )
 }

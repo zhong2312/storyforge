@@ -1,6 +1,7 @@
 import Dexie from 'dexie'
 import { afterEach, describe, expect, it } from 'vitest'
 import { migrateLegacyTablesToCodex } from '../../src/lib/migrations/legacy-to-codex-upgrade'
+import { migrateStateCardsToTemporalFactCandidates } from '../../src/lib/migrations/state-cards-to-temporal-facts'
 
 const opened: Dexie[] = []
 const dbNames: string[] = []
@@ -150,6 +151,41 @@ class UpgradedV34OutlineDB extends Dexie {
   }
 }
 
+// v34 老库:已有 stateCards，但还没有 NS-4 temporalFacts。
+class OldV34StateCardsDB extends Dexie {
+  constructor(name: string) {
+    super(name)
+    this.version(34).stores({
+      stateCards: '++id, projectId, category, entityName, lastChapterId',
+      characters: '++id, projectId, name',
+      importantLocations: '++id, projectId, name',
+      codexEntries: '++id, projectId, name',
+      storyArcs: '++id, projectId, name',
+      worldGroups: '++id, projectId, name',
+    })
+  }
+}
+
+// v35 升级:新增 temporalFacts，并把旧 stateCards 桥接为 candidate facts。
+class UpgradedV35StateCardsDB extends Dexie {
+  constructor(name: string) {
+    super(name)
+    this.version(34).stores({
+      stateCards: '++id, projectId, category, entityName, lastChapterId',
+      characters: '++id, projectId, name',
+      importantLocations: '++id, projectId, name',
+      codexEntries: '++id, projectId, name',
+      storyArcs: '++id, projectId, name',
+      worldGroups: '++id, projectId, name',
+    })
+    this.version(35).stores({
+      temporalFacts: '++id, projectId, worldGroupId, characterId, locationId, codexEntryId, predicate, status, sourceChapterId',
+    }).upgrade(async (tx) => {
+      await migrateStateCardsToTemporalFactCandidates(tx)
+    })
+  }
+}
+
 describe('DB upgrade fixtures · real Dexie version transitions', () => {
   it('v30→v31 clears old reference analysis but preserves import session blobs', async () => {
     const name = nextName('upgrade-v31')
@@ -287,6 +323,48 @@ describe('DB upgrade fixtures · real Dexie version transitions', () => {
     expect((await upgradedDb.table('outlineNodes').get(volId)).summary).toBe('')
     expect((await upgradedDb.table('outlineNodes').get(chapId)).summary).toBe('')
     expect(nodes.find((n: any) => n.title === '有摘要章').summary).toBe('已有章纲') // 原值不动
+  })
+
+  it('v34→v35 把五类旧 stateCards 无损桥接为 TemporalFact 候选，旧卡保留且不自动升 Canon', async () => {
+    const name = nextName('upgrade-v35-statecards')
+    const oldDb = track(new OldV34StateCardsDB(name))
+    await oldDb.open()
+    const now = Date.now()
+    const charId = await oldDb.table('characters').add({ projectId: 1, name: '林飞' })
+    const locId = await oldDb.table('importantLocations').add({ projectId: 1, name: '洛阳' })
+    const itemId = await oldDb.table('codexEntries').add({ projectId: 1, name: '青铜铃' })
+    const factionId = await oldDb.table('codexEntries').add({ projectId: 1, name: '青云门' })
+    const arcId = await oldDb.table('storyArcs').add({ projectId: 1, name: '祭典事件' })
+    await oldDb.table('stateCards').bulkAdd([
+      { projectId: 1, category: 'character', entityName: '林飞', fields: JSON.stringify([{ key: '位置', value: '洛阳' }, { key: '境界', value: '凡人' }]), lastChapterId: 11, createdAt: now, updatedAt: now },
+      { projectId: 1, category: 'location', entityName: '洛阳', fields: JSON.stringify([{ key: '状态', value: '戒严' }]), lastChapterId: 12, createdAt: now, updatedAt: now },
+      { projectId: 1, category: 'item', entityName: '青铜铃', fields: JSON.stringify([{ key: '持有者', value: '林飞' }]), lastChapterId: 13, createdAt: now, updatedAt: now },
+      { projectId: 1, category: 'faction', entityName: '青云门', fields: JSON.stringify([{ key: '立场', value: '观望' }]), lastChapterId: 14, createdAt: now, updatedAt: now },
+      { projectId: 1, category: 'event', entityName: '祭典事件', fields: JSON.stringify([{ key: '结果', value: '中断' }]), lastChapterId: 15, createdAt: now, updatedAt: now },
+    ])
+    oldDb.close()
+
+    const upgradedDb = track(new UpgradedV35StateCardsDB(name))
+    await upgradedDb.open()
+
+    expect(await upgradedDb.table('stateCards').count()).toBe(5) // 旧卡原样保留
+    const facts = await upgradedDb.table('temporalFacts').toArray()
+    expect(facts).toHaveLength(6) // 角色卡两字段，其余各一字段
+    expect(facts.every((f: any) => f.status === 'candidate')).toBe(true)
+    expect(facts.every((f: any) => f.sourceType === 'import')).toBe(true)
+    expect(facts.find((f: any) => f.predicate === 'location')?.characterId).toBe(charId)
+    expect(facts.find((f: any) => f.predicate === 'powerStage')?.characterId).toBe(charId)
+    expect(facts.find((f: any) => f.subjectName === '洛阳')?.locationId).toBe(locId)
+    expect(facts.find((f: any) => f.subjectName === '青铜铃')?.codexEntryId).toBe(itemId)
+    expect(facts.find((f: any) => f.subjectName === '青云门')?.codexEntryId).toBe(factionId)
+    expect(facts.find((f: any) => f.subjectName === '祭典事件')?.storyArcId).toBe(arcId)
+    expect(facts.filter((f: any) => f.predicate === 'legacyState').map((f: any) => JSON.parse(f.value).value))
+      .toEqual(expect.arrayContaining(['戒严', '林飞', '观望', '中断']))
+
+    // 幂等：再次运行不重复生成候选
+    const second = await migrateStateCardsToTemporalFactCandidates(upgradedDb as any)
+    expect(second.written).toBe(0)
+    expect(await upgradedDb.table('temporalFacts').count()).toBe(6)
   })
 })
 

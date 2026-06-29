@@ -8,7 +8,7 @@
 
 ## 一、Prompt 模板清单（PromptModuleKey 事实源）
 
-共 39 个 moduleKey。
+共 40 个 moduleKey。
 
 | moduleKey | 名称 | 说明 | 读取变量 |
 |---|---|---|---|
@@ -19,6 +19,7 @@
 | `outline.chapter` | 内置-章节大纲展开 | 将单卷展开为 15-25 章的章节大纲。 | `volumeTitle` `volumeSummary` `worldContext` `prevVolumeSummary` `characterContext` `worldRulesContext` `userHint` |
 | `chapter.content` | 内置-长篇连载（默认） | 通用男频网文风格的章节正文生成，支持基调/节奏/字数三个可调参数。 | `chapterTitle` `chapterSummary` `worldContext` `characters` `previousChapterEnding` `worldRulesContext` `userHint` |
 | `chapter.continue` | 内置-章节续写 | 从已有正文末尾继续往下写约 1000-2000 字。 | `chapterSummary` `worldContext` `existingContent` `userHint` |
+| `chapter.memory` | 内置-章节连续性记忆 | 一次调用同时提取章节摘要、下一章承接 handoff 与计划正文对账；引文 offset 由系统回查，不信任模型位置。 | `chapterTitle` `chapterPlan` `nextChapterPlan` `chapterText` |
 | `chapter.polish` | 内置-文本润色 | 按用户指令润色文本，保持原意不变。 | `instruction` `text` |
 | `chapter.expand` | 内置-文本扩写 | 将文本扩展丰富，增加细节、心理与环境，情节走向不变。 | `userHint` `text` |
 | `chapter.de-ai` | 内置-去 AI 味改写 | 把 AI 味重的文本改写得更像真人写的。 | `text` |
@@ -54,7 +55,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 22 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 30 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -63,8 +64,13 @@
 | `contextMemo` | 上下文快照 | project | L3 | 1500 |
 | `chapterOutline` | 当前章节大纲 | node | L1 | 800 |
 | `existingVolumeOutlines` | 已有卷大纲 | project | L1 | 2400 |
+| `currentFacts` | 当前有效事实(事实账本投影) | chapter | L1 | 2000 |
+| `retrievedPassages` | 相关前文召回(NS-5 混合检索) | chapter | L2 | 2500 |
 | `detailedOutline` | 本章细纲(场景拆解) | node | L1 | 1500 |
-| `previousChapterEnding` | 上一章结尾 | manual | L1 | 500 |
+| `previousChapterEnding` | 全局直接前驱原文尾部 | manual | L1 | 1800 |
+| `chapterContinuityHandoff` | 全局直接前驱连续性交接 | chapter | L1 | 1600 |
+| `previousPlanReconciliation` | 前章计划正文对账 | chapter | L1 | 1400 |
+| `recentChapterSummaries` | 当前世界最近已验证摘要 | chapter | L1 | 2200 |
 | `worldview` | 世界观 | world | L2 | 8000 |
 | `storyCore` | 故事核心 | project | L1 | 4000 |
 | `powerSystem` | 力量体系 | world | L2 | 4000 |
@@ -78,6 +84,9 @@
 | `storyArcs` | 故事线 | project | L2 | 1500 |
 | `emotionBeats` | 情感节拍 | chapter | L1 | 1000 |
 | `stateCards` | 状态卡 | project | L2 | 1800 |
+| `itemLedger` | 物品流水 | project | L2 | 2400 |
+| `storyTimeline` | 故事年表 | project | L2 | 2600 |
+| `characterRelations` | 角色关系 | project | L2 | 2200 |
 | `references` | 引用手法 | project | L3 | 2000 |
 | `userStyleProfile` | 我的文风 | project | L2 | 700 |
 
@@ -89,7 +98,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 | 目标表 | 可写字段 |
 |---|---|
-| `chapters` | `content` `notes` `order` `outlineNodeId` `status` `summary` `title` `wordCount` |
+| `chapters` | `content` `continuityHandoff` `notes` `order` `outlineNodeId` `planReconciliation` `status` `summary` `summarySourceTextHash` `summaryTextNormalizationVersion` `title` `wordCount` |
 | `characters` | `abilities` `activeChapterRange` `alignment` `appearance` `arc` `background` `ending` `exitChapterId` `firstAppearChapterId` `firstAppearance` `homeWorldGroupId` `isCrossWorld` `location` `moralAxis` `motivation` `name` `orderAxis` `personality` `relationships` `role` `roleWeight` `shortDescription` `storyRole` |
 | `codexCategories` | `builtInKey` `domain` `fieldSchema` `hidden` `icon` `name` `order` `parentId` `worldGroupId` |
 | `codexEntries` | `categoryId` `description` `fields` `icon` `importance` `name` `order` `refs` `summary` `tags` `worldGroupId` |
@@ -107,18 +116,19 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 42 个 category。
-未分类调用: 0 个。动态 category 调用: 1 个。
+共 43 个 category。
+未分类调用: 0 个。动态 category 调用: 3 个。
 
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:52` |
-| `chapter.content` | `src/components/editor/ChapterEditor.tsx:302` |
+| `chapter.content` | `src/components/editor/ChapterEditor.tsx:425` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
-| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:312` |
-| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:348` |
-| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:328` |
-| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:320` |
+| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:443` |
+| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:480` |
+| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:460` |
+| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:258` |
+| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:452` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.generate` | `src/components/character/CharacterPanel.tsx:146` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:83` |
@@ -126,7 +136,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:111`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
 | `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:60` |
-| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:159` |
+| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:163` |
 | `geography.concept-map` | `src/components/geography/GeographyPanel.tsx:127` |
 | `geography.world-map` | `src/components/geography/WorldMapPanel.tsx:103` |
 | `inspiration.reverse` | `src/components/project/InspirationPanel.tsx:106` |
@@ -139,10 +149,10 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `reference.characters` | `src/components/project/AnalysisReportViewer.tsx:138` |
 | `reference.summary` | `src/components/project/AnalysisReportViewer.tsx:109` |
 | `relation.extract` | `src/components/relations/CharacterRelationPanel.tsx:73` |
-| `review.anti-ai` | `src/components/editor/ReviewPanel.tsx:66` |
-| `review.quality` | `src/components/editor/ReviewPanel.tsx:58` |
-| `review.readability` | `src/components/editor/ReviewPanel.tsx:75` |
-| `review.revise` | `src/components/editor/ChapterEditor.tsx:363` |
+| `review.anti-ai` | `src/components/editor/ReviewPanel.tsx:86` |
+| `review.quality` | `src/components/editor/ReviewPanel.tsx:78` |
+| `review.readability` | `src/components/editor/ReviewPanel.tsx:95` |
+| `review.revise` | `src/components/editor/ChapterEditor.tsx:495` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
@@ -157,8 +167,10 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ### 动态 category 调用
 
+- `src/components/editor/ReviewPanel.tsx:128 · ai.start`
+- `src/components/settings/NS0EvalPanel.tsx:49 · chat`
 - `src/components/settings/prompt/WorkflowRunner.tsx:273 · ai.start`
 
 ---
 
-生成时间基准:commit `241a795`
+生成时间基准:commit `f235652`

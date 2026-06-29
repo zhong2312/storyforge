@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased — 2026-06-25 · Codex 审查补强：NS-4/NS-5 数据红线
+
+- NS-4 旧 `stateCards` 零丢失桥接：DB v35 升级与旧备份导入会把五类状态卡生成为 `temporalFacts` 候选（`candidate/import`），旧状态卡原样保留，不自动升 Canon；已补真实 Dexie 升级夹具与导出/导入回归。
+- NS-4/NS-6 事实账本生命周期：删除角色标记 `source-missing`；删除章节清 source/valid chapter FK 并标记 `source-missing` / `invalid-range`；历史正文证据失效标记 `stale`。异常事实不会进入生成上下文，事实库新增“异常待复核”入口，可由作者重新确认或否决。
+- NS-4 人类可读 IO：事实库可导出事实账本 + 层级叙事摘要 Markdown；外部编辑导回只接受 JSON 候选 diff，且永远写成 `candidate/import`，未知谓词、跨项目章节引用和重复项会被跳过。
+- NS-5 老书索引入口：设置页“建立检索索引”现在先为历史章节重建 `retrievalChunks` 和 `narrativeSummaryNodes`（章→卷→全书派生摘要树），再按配置可选补 embedding；未启用 embedding 时仍可使用层级摘要 + 关键词召回。删除/修改章节会清理或标记派生记忆 stale。
+- NS-5 未来泄漏防线：生成上下文不直接注入预计算“全书摘要”，而是按规范章序只用当前章之前的 verified 章节点现场 roll-up 成“截至本章”的全书/本卷摘要。
+- 文档状态改为保守口径：本轮补齐此前 Codex 自审列出的层级摘要、异常审核和 human-readable IO 缺口；仍需 Claude 最终审查后才能合并 main。
+
+## Unreleased — 2026-06-25 · NS-5 叙事感知混合检索（关键词 + embedding 语义通道）
+
+- 检索块地基 `retrievalChunks`（DB v36，`exportable:false` 可重建缓存，不进备份）：章节正文切块、抽实体关键词、按正文 hash 失效重建；导入后由正文一键重建，避免大体积向量进 JSON。
+- 混合检索核心：关键词重叠召回 + 可选 embedding 余弦，加权融合；硬过滤未来章（规范章序）、世界隔离、按时间重组；新增 `retrievedPassages` 上下文源接入正文生成与一致性审计，章节接受时自动建索引。
+- embedding 语义通道通电：`embedding-adapter` 走 OpenAI 兼容 `/embeddings` 单一出口（批量+超时+`retrieval.embed` 消耗记账）；`ensureChunkEmbeddings` 幂等回填、换模型自动重算；`embedQuery` 失败优雅退回关键词、不阻断生成。
+- 跨模型安全：检索按 `queryEmbeddingModel` 守卫，只对同模型块向量算余弦，绝不跨模型混算。
+- 配置与 UI（Labs，默认关）：`EmbeddingConfig` 子配置（key 复用「记住」开关，不记住→sessionStorage）；设置页「语义检索」卡含两预设（本地 Ollama `bge-m3` 隐私首选 / OpenAI `text-embedding-3-small`）、端点配置、为当前项目历史章节批量建索引（带进度）、隐私与成本提示。
+- 新增 `R-NS5-embedding` 测试：混合排序、跨模型不混算、回填幂等/换模型重算、未启用与失败的优雅降级。纯增量：除占用 v36 外无新增表、不动三注册表表清单。
+
+## Unreleased — 2026-06-25 · NS-6 全闭环：影响分析 + 校验读事实/召回
+
+- 一致性审计证据接入 NS-4 事实账本（`currentFacts`）与 NS-5 远距召回（`retrievedPassages`）：校验现与生成读同一套已确认事实 + 相关前文，专抓几百章前的矛盾；传 `outlineNodeId/worldGroupId` 保证多世界隔离正确。
+- 正文修改的 stale 传播 + 影响分析（确定性逻辑，不烧 AI）：改某章后，源自该章、证据已对不上新正文的【已确认】事实降级为候选/待复核（不删、不动 locked），并列出后续受影响章交作者复核；编辑器加「影响分析」按钮。
+- 新增 `R-NS6-impact` 测试：证据失效降级、locked/候选保护、不删事实、后续章清单。
+
+## Unreleased — 2026-06-24 · NS-4 双层事实记忆（事实库）
+
+- 新增 `temporalFacts`（DB v35，worldScoped，导出/导入闭环含 13 字段 + 自树 supersede 主键重映射）：候选=证据观察 / 已确认=权威断言两层；`validFrom/ToChapterId` 锚定章节 id（永不存缓存序号）。
+- 受控谓词注册表 `FACT_PREDICATE_REGISTRY`（位置/存亡/境界/持有/关系等）：模型只能抽表内谓词，表外丢弃，防自由发挥。
+- 事实抽取适配器：章节正文 → TemporalFact 候选，引文逐字回查正文，校验不过即丢。
+- 单一写回入口 `fact-ledger`（FK 解析 + 去重 + 候选写入；确认时按单值状态 supersede 旧值、尊重 locked、事件不被顶替）；store + 事实库面板（审候选/确认/否决）。
+- `currentFacts` 上下文源：按规范章序注入"截止本章仍有效（未来不泄漏、已失效剔除、世界隔离）"的已确认事实，接入正文生成。
+- 新增 R-NS4 系列测试（谓词注册表 / 抽取 / 账本 / currentFacts）。
+
+## Unreleased — 2026-06-24 · 两个线上崩溃根治（根因·非补丁）
+
+- 老 WebView 缺 ES2023 `Array.prototype.findLast/findLastIndex/at` → 点章节即崩：在 `index.html` 模块脚本前加特性检测 polyfill（根治浏览器兼容，不在业务代码到处 `?.`）。
+- 大纲 `summary` 为 `undefined` 触发 trim 崩溃 → 数据边界强制不变量：注册表 `TableSpec.defaults`（`outlineNodes.summary=''`）+ 导入回填 + DB v34 迁移把历史 `undefined` 一次性愈合为 `''`；R-db-upgrade 迁移夹具覆盖。已在真实生产数据验证 v34 迁移无损，两修复已部署 main。
+
+## Unreleased — 2026-06-23 · 长期一致性引擎开工治理
+
+- 长期一致性路线经 Codex × Claude 多轮红队审查后定稿为 NS-0～NS-6：效果基线、跨章承接、计划对账、证据化校验、双层事实记忆、混合检索、全闭环。
+- `MASTER-BLUEPRINT.md` 新增仓库内唯一施工入口，`ROADMAP.md` 从“待审核目标”切换为可执行阶段。
+- 固化三注册表、旧库迁移、未来泄漏/世界串线、证据回查、历史修改不自动改稿等红线。
+- 开工初始基线：TypeScript、架构检查、39 张必需表、63 个测试文件/226 项测试、生产构建、生成版 AI manual 全绿。
+- NS-0 新增冻结的 development / held-out 长篇一致性夹具、三类生产 prompt runner、500 字尾部快照、自动评分与仅开发环境真实 API 跑分面板。
+- Agnes held-out legacy 基线确认旧管线存在明显缺口：事实召回 33.3%、约束召回 50%、错误世界泄漏 33.3%；NS-1 硬门与成本护栏已在跑分前冻结。
+- NS-1/T1 增加章节 handoff 与摘要来源指纹字段；正文标准化 SHA-256、原子 CAS 写回和导出导入主键重映射阻止旧异步任务覆盖新正文。
+- NS-1/T2 用一次 `chapter.memory` 结构化调用同时生成摘要和交接记忆，删除旧 6000 字头部摘要截断；AI 引文必须由系统回查到标准化正文后才保存。
+- NS-1/T3～T5 完成长篇老书的有界惰性补建、hash stale 降级、outline 树规范章节顺序，以及注册表驱动的跨世界直接前驱/当前世界最近摘要上下文。
+- NS-1/T6～T7 增加 8K/32K/128K 连续性保护块、最终请求裁剪复核和模板 `continuityMode`；物理窗口不足时显式拒绝，不再静默丢掉承接约束。
+- NS-1/T8 最终 held-out 与开发跑分隔离，盲测只显示 aggregate 并在首次完整配对后锁定；硬门通过前 NS-1 保持进行中。
+- NS-1 首次最终盲测虽消除未来/跨世界泄漏并把事实提高到 83.3%，但约束仅 66.7%，按预注册门槛判定失败；保留失败记录、不看单例、不降阈值，强化通用输出契约后改用全新 held-out 复验。
+- NS-1 第二次盲测证明仅靠提示不能隔离未来/异世界资料；正文生成与续写 prompt builder 现会在请求前硬移除明确标记的规划/异世界句子，冻结 legacy 路径不变。
+- NS-1 评测从“正文是否逐字复述禁令”升级为独立语义裁判：负向约束按是否实际违反评分，泄漏只在未来/异世界事实被当成当前事实时成立；裁判成本不混入生产 token 护栏。
+- NS-1 最终 v5 sealed held-out 通过：fixed 候选事实/约束 100%/100%、零泄漏、较 legacy 事实提升 25 点，输入成本 1.54×；natural 候选同样 100%/100% 且零泄漏。相对提升只用于 fixed 公平对照，natural 验绝对质量与成本。
+- NS-2 把计划—正文对账并入同一次 `chapter.memory`：完成/未完成/偏移/新增约束/下一章影响全部带正文证据与正文/计划双 hash；作者可确认实际进展或应用章纲候选，下一章从注册表优先读取，不自动改正文。
+- NS-3 在质量审校中新增 Fast Guard / Deep Audit：复用状态卡、物品流水、故事年表、关系、伏笔、故事线与章节记忆，统一输出 hard/risk/unknown 证据链；伪造引文丢弃、无证据 hard 自动降级，全程只读。
+
 ## Unreleased — 2026-06-18 · R1 角色设计双轴重构
 
 - 角色模型拆分为四档戏份权重与 DnD 九宫格阵营；“主要反派”“中立主要角色”等组合可直接表达。

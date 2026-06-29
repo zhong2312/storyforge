@@ -154,7 +154,7 @@ async function applyMergeGroup(
   }
   merged.relationships = append(merged.relationships || '', aliasNote)
 
-  await db.transaction('rw', db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, async () => {
+  await db.transaction('rw', [db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, db.temporalFacts], async () => {
     await db.characters.update(primary.id!, { ...merged, updatedAt: Date.now() })
     for (const o of others) {
       if (!o.id) continue

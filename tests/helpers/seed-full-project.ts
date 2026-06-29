@@ -74,6 +74,9 @@ export async function seedFullProject() {
   // ── FB-5 文风画像 ──
   await db.userStyleProfiles.add({ projectId, profile: '简洁明快', enabled: true, createdAt: now, updatedAt: now } as any)
 
+  // ── NS-4 时序事实账本（带分类型 FK，供全表往返覆盖） ──
+  await db.temporalFacts.add({ projectId, worldGroupId: wgA, characterId: char1, subjectName: '林惊羽', predicate: 'powerStage', factKind: 'state', value: '炼气一层', sourceType: 'chapter', sourceChapterId: chapter, validFromChapterId: chapter, status: 'confirmed', locked: false, createdAt: now, updatedAt: now } as any)
+
   return { projectId, wgA, wgB, char1, char2, vol, chapNode, chapter, ref1, cat, subCat, rootWorld, mirrorWorld, locParent }
 }
 

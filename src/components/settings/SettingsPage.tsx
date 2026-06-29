@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import AIConfigPanel from './AIConfigPanel'
 import { resetWelcomeGuide } from '../guide/WelcomeGuide'
+import NS0EvalPanel from './NS0EvalPanel'
 
 /**
  * 设置页（Phase 4 之后）：
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   return (
     <div className="h-full overflow-auto p-6">
       <AIConfigPanel />
+      {import.meta.env.DEV && <NS0EvalPanel />}
 
       {/* 其他设置 */}
       <div className="max-w-2xl mt-6 p-4 bg-bg-surface border border-border rounded-xl">

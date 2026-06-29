@@ -9,6 +9,10 @@
  */
 
 import type { AIProvider, ChatMessage } from '../types'
+import {
+  CONTINUITY_CORE_END,
+  CONTINUITY_CORE_START,
+} from './chapter-memory/continuity-envelope'
 
 // ── 模型上下文窗口预设 ──────────────────────────────
 
@@ -240,6 +244,7 @@ export interface TrimmedMessagesResult {
   trimmed: boolean
   totalInputTokens: number
   inputBudget: number
+  protectedEnvelopePreserved: boolean
 }
 
 /** True request-side trimming used before fetch, not only for the UI budget preview. */
@@ -272,13 +277,47 @@ export function trimMessagesToFit(
       copy[index].content = '（此段因上下文窗口限制已裁剪）'
     } else {
       const keepTokens = Math.max(64, tokens - overflow - 128)
-      copy[index].content = trimTextToApproxTokens(copy[index].content, keepTokens)
+      copy[index].content = trimTextToApproxTokensPreservingContinuity(copy[index].content, keepTokens)
     }
     total = copy.reduce((sum, message) => sum + estimateTokens(message.content), 0)
     trimmed = true
   }
 
-  return { messages: copy, trimmed, totalInputTokens: total, inputBudget }
+  const protectedBlocks = messages.flatMap(message => extractContinuityBlocks(message.content))
+  const protectedEnvelopePreserved = total <= inputBudget && protectedBlocks.every(block =>
+    copy.some(message => message.content.includes(block))
+  )
+  return { messages: copy, trimmed, totalInputTokens: total, inputBudget, protectedEnvelopePreserved }
+}
+
+function extractContinuityBlocks(text: string): string[] {
+  const blocks: string[] = []
+  let searchFrom = 0
+  while (searchFrom < text.length) {
+    const start = text.indexOf(CONTINUITY_CORE_START, searchFrom)
+    if (start < 0) break
+    const end = text.indexOf(CONTINUITY_CORE_END, start)
+    if (end < 0) break
+    const block = text.slice(start, end + CONTINUITY_CORE_END.length)
+    blocks.push(block)
+    searchFrom = end + CONTINUITY_CORE_END.length
+  }
+  return blocks
+}
+
+function trimTextToApproxTokensPreservingContinuity(text: string, keepTokens: number): string {
+  const blocks = extractContinuityBlocks(text)
+  if (!blocks.length) return trimTextToApproxTokens(text, keepTokens)
+  const protectedBlock = blocks[blocks.length - 1]
+  const protectedTokens = estimateTokens(protectedBlock)
+  if (protectedTokens > keepTokens) {
+    // 调用方会通过 protectedEnvelopePreserved=false 明确拒绝该物理窗口。
+    return trimTextToApproxTokens(protectedBlock, keepTokens)
+  }
+  const prefix = text.slice(0, text.lastIndexOf(protectedBlock))
+  const remainingTokens = Math.max(0, keepTokens - protectedTokens - 16)
+  const keptPrefix = remainingTokens > 0 ? trimTextToApproxTokens(prefix, remainingTokens) : ''
+  return [keptPrefix, protectedBlock].filter(Boolean).join('\n')
 }
 
 function trimTextToApproxTokens(text: string, keepTokens: number): string {

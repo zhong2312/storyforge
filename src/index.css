@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 /* ============================================================
-   StoryForge · Design Tokens v2 — from storyforge-redesign
-   三主题：熔炉(forge) / 古卷(scroll) / 纸与墨(paper)
+   StoryForge · Design Tokens v3
+   六主题：暖白编辑室(warm) / 墨玉青(jade) / 冷灰银蓝(slate)
+          熔炉(forge) / 古卷(scroll) / 纸与墨(paper)
    ============================================================ */
 
 /* ---------- 全局不变量 ---------- */
@@ -16,9 +17,177 @@
 }
 
 /* ============================================================
-   熔炉 · Forge — 暗夜琥珀，火光余烬（默认）
+   暖白编辑室 · Warm Studio — 长时间写作默认主题
    ============================================================ */
 :root,
+[data-theme="warm"] {
+  --bg-base: #F4EFE7;
+  --bg-surface: #E9E0D4;
+  --bg-elevated: #FFFDF8;
+  --bg-hover: rgba(54, 45, 36, 0.05);
+
+  --text-primary: #2B2620;
+  --text-secondary: #6A5B4B;
+  --text-muted: #9A8A78;
+
+  --accent: #965A3A;
+  --accent-hover: #85492F;
+  --accent-muted: #D3A47C;
+
+  --success: #15803D;
+  --warning: #B45309;
+  --error: #B91C1C;
+  --info: #1D4ED8;
+
+  --border: rgba(54, 45, 36, 0.14);
+  --border-hover: rgba(54, 45, 36, 0.26);
+
+  --accent-soft: rgba(150, 90, 58, 0.12);
+  --border-subtle: rgba(54, 45, 36, 0.07);
+  --shadow-sm: 0 1px 3px rgba(54, 45, 36, 0.08);
+  --shadow-md: 0 6px 18px rgba(54, 45, 36, 0.10);
+  --shadow-lg: 0 16px 44px rgba(54, 45, 36, 0.14);
+
+  --editor-page-bg: #FFFDF8;
+  --editor-ruled-line: rgba(54, 45, 36, 0.08);
+  --editor-selection-bg: rgba(166, 106, 74, 0.22);
+  --editor-selection-text: #1E1711;
+
+  --editor-ink-primary: #2B2620;
+  --editor-ink-strong: #100D0A;
+  --editor-ink-cream: #6E421F;
+  --editor-ink-muted: #725A32;
+  --editor-ink-gold: #8A5B00;
+  --editor-ink-orange: #B54708;
+  --editor-ink-red: #B91C1C;
+  --editor-ink-blue: #1D4ED8;
+  --editor-ink-green: #15803D;
+  --editor-ink-purple: #7E22CE;
+
+  --editor-mark-yellow: #FFE45C;
+  --editor-mark-red: #FFD6D6;
+  --editor-mark-blue: #D7E8FF;
+  --editor-mark-green: #D8F5DF;
+  --editor-mark-purple: #EAD7FF;
+  --editor-mark-brown: #F1E3CD;
+  --editor-mark-ink: #E9DAC3;
+}
+
+/* ============================================================
+   墨玉青 · Jade Ink — 深色外壳 + 白纸正文
+   ============================================================ */
+[data-theme="jade"] {
+  --bg-base: #101A17;
+  --bg-surface: #16231F;
+  --bg-elevated: #20342E;
+  --bg-hover: rgba(101, 191, 168, 0.08);
+
+  --text-primary: #ECF4EE;
+  --text-secondary: #B1C8BD;
+  --text-muted: #6F8C80;
+
+  --accent: #65BFA8;
+  --accent-hover: #7DD3BF;
+  --accent-muted: #3B8C78;
+
+  --success: #6EE7B7;
+  --warning: #F6C77A;
+  --error: #FCA5A5;
+  --info: #93C5FD;
+
+  --border: rgba(163, 205, 189, 0.18);
+  --border-hover: rgba(163, 205, 189, 0.34);
+
+  --accent-soft: rgba(101, 191, 168, 0.16);
+  --border-subtle: rgba(163, 205, 189, 0.10);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.34);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 20px 64px rgba(0, 0, 0, 0.40);
+
+  --editor-page-bg: #F7F1E5;
+  --editor-ruled-line: rgba(30, 43, 37, 0.08);
+  --editor-selection-bg: rgba(77, 148, 130, 0.22);
+  --editor-selection-text: #15221E;
+
+  --editor-ink-primary: #1F2A25;
+  --editor-ink-strong: #0C1411;
+  --editor-ink-cream: #6E421F;
+  --editor-ink-muted: #6C5A35;
+  --editor-ink-gold: #8A5B00;
+  --editor-ink-orange: #B54708;
+  --editor-ink-red: #B91C1C;
+  --editor-ink-blue: #1D4ED8;
+  --editor-ink-green: #047857;
+  --editor-ink-purple: #7E22CE;
+
+  --editor-mark-yellow: #FFE45C;
+  --editor-mark-red: #FFD6D6;
+  --editor-mark-blue: #D7E8FF;
+  --editor-mark-green: #D8F5DF;
+  --editor-mark-purple: #EAD7FF;
+  --editor-mark-brown: #ECE0C7;
+  --editor-mark-ink: #D8C8A8;
+}
+
+/* ============================================================
+   冷灰银蓝 · Slate — 设定库 / 事实库 / 管理页生产力主题
+   ============================================================ */
+[data-theme="slate"] {
+  --bg-base: #EEF2F6;
+  --bg-surface: #E3EAF1;
+  --bg-elevated: #F8FAFC;
+  --bg-hover: rgba(23, 32, 51, 0.05);
+
+  --text-primary: #172033;
+  --text-secondary: #4B5B70;
+  --text-muted: #7A8796;
+
+  --accent: #3F6F96;
+  --accent-hover: #335D80;
+  --accent-muted: #8AA8C0;
+
+  --success: #047857;
+  --warning: #A16207;
+  --error: #B91C1C;
+  --info: #1D4ED8;
+
+  --border: rgba(23, 32, 51, 0.13);
+  --border-hover: rgba(23, 32, 51, 0.25);
+
+  --accent-soft: rgba(63, 111, 150, 0.12);
+  --border-subtle: rgba(23, 32, 51, 0.07);
+  --shadow-sm: 0 1px 3px rgba(23, 32, 51, 0.08);
+  --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.10);
+  --shadow-lg: 0 16px 44px rgba(23, 32, 51, 0.13);
+
+  --editor-page-bg: #FFFFFF;
+  --editor-ruled-line: rgba(23, 32, 51, 0.07);
+  --editor-selection-bg: rgba(63, 111, 150, 0.22);
+  --editor-selection-text: #111827;
+
+  --editor-ink-primary: #172033;
+  --editor-ink-strong: #070B12;
+  --editor-ink-cream: #704214;
+  --editor-ink-muted: #5B5A36;
+  --editor-ink-gold: #8A5B00;
+  --editor-ink-orange: #B54708;
+  --editor-ink-red: #B91C1C;
+  --editor-ink-blue: #1D4ED8;
+  --editor-ink-green: #047857;
+  --editor-ink-purple: #7E22CE;
+
+  --editor-mark-yellow: #FFE45C;
+  --editor-mark-red: #FFD6D6;
+  --editor-mark-blue: #D7E8FF;
+  --editor-mark-green: #D8F5DF;
+  --editor-mark-purple: #EAD7FF;
+  --editor-mark-brown: #E8DED1;
+  --editor-mark-ink: #DDE5EE;
+}
+
+/* ============================================================
+   熔炉 · Forge — 暗夜琥珀，火光余烬
+   ============================================================ */
 [data-theme="forge"] {
   --bg-base: #1A0F0A;
   --bg-surface: #251810;
@@ -46,6 +215,30 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 6px 24px rgba(139, 62, 31, 0.35);
   --shadow-lg: 0 16px 64px rgba(139, 62, 31, 0.5);
+
+  --editor-page-bg: #2A1A12;
+  --editor-ruled-line: rgba(200, 161, 85, 0.13);
+  --editor-selection-bg: rgba(217, 119, 87, 0.34);
+  --editor-selection-text: #FFF7ED;
+
+  --editor-ink-primary: #F5E6D3;
+  --editor-ink-strong: #FFFFFF;
+  --editor-ink-cream: #F5E6D3;
+  --editor-ink-muted: #D6B98C;
+  --editor-ink-gold: #FACC15;
+  --editor-ink-orange: #FB923C;
+  --editor-ink-red: #F87171;
+  --editor-ink-blue: #93C5FD;
+  --editor-ink-green: #86EFAC;
+  --editor-ink-purple: #C4B5FD;
+
+  --editor-mark-yellow: #6B4E10;
+  --editor-mark-red: #5A1F1F;
+  --editor-mark-blue: #1E3A5F;
+  --editor-mark-green: #14532D;
+  --editor-mark-purple: #3B2A63;
+  --editor-mark-brown: #4A3326;
+  --editor-mark-ink: #3A2418;
 }
 
 /* ============================================================
@@ -78,6 +271,30 @@
   --shadow-sm: 0 1px 3px rgba(60, 38, 10, 0.10);
   --shadow-md: 0 4px 16px rgba(60, 38, 10, 0.12);
   --shadow-lg: 0 8px 32px rgba(60, 38, 10, 0.15);
+
+  --editor-page-bg: #F8EFD2;
+  --editor-ruled-line: rgba(60, 38, 10, 0.10);
+  --editor-selection-bg: rgba(123, 58, 26, 0.28);
+  --editor-selection-text: #1E1208;
+
+  --editor-ink-primary: #1E1208;
+  --editor-ink-strong: #090604;
+  --editor-ink-cream: #6A3D12;
+  --editor-ink-muted: #775A24;
+  --editor-ink-gold: #8A5B00;
+  --editor-ink-orange: #A94716;
+  --editor-ink-red: #A11E1E;
+  --editor-ink-blue: #184B8A;
+  --editor-ink-green: #1C6B35;
+  --editor-ink-purple: #6B3FA0;
+
+  --editor-mark-yellow: #FFE36A;
+  --editor-mark-red: #FFD2CC;
+  --editor-mark-blue: #CFE4FF;
+  --editor-mark-green: #CFEFD9;
+  --editor-mark-purple: #E6D8FF;
+  --editor-mark-brown: #E8DAB0;
+  --editor-mark-ink: #D8BE7A;
 }
 
 /* ============================================================
@@ -93,8 +310,8 @@
   --text-secondary: #56503F;
   --text-muted: #8A7E6A;
 
-  --accent: #B85C3F;
-  --accent-hover: #A04E35;
+  --accent: #A04E35;
+  --accent-hover: #8E442E;
   --accent-muted: #D6A86C;
 
   --success: #16A34A;
@@ -110,6 +327,30 @@
   --shadow-sm: 0 1px 2px rgba(31, 27, 22, 0.04);
   --shadow-md: 0 4px 12px rgba(31, 27, 22, 0.08);
   --shadow-lg: 0 12px 40px rgba(31, 27, 22, 0.10);
+
+  --editor-page-bg: #FFFDF7;
+  --editor-ruled-line: rgba(31, 27, 22, 0.08);
+  --editor-selection-bg: rgba(37, 99, 235, 0.20);
+  --editor-selection-text: #111827;
+
+  --editor-ink-primary: #1F1B16;
+  --editor-ink-strong: #050505;
+  --editor-ink-cream: #7A4A1F;
+  --editor-ink-muted: #725A32;
+  --editor-ink-gold: #8A5B00;
+  --editor-ink-orange: #B54708;
+  --editor-ink-red: #B91C1C;
+  --editor-ink-blue: #1D4ED8;
+  --editor-ink-green: #15803D;
+  --editor-ink-purple: #7E22CE;
+
+  --editor-mark-yellow: #FFE45C;
+  --editor-mark-red: #FFD6D6;
+  --editor-mark-blue: #D7E8FF;
+  --editor-mark-green: #D8F5DF;
+  --editor-mark-purple: #EAD7FF;
+  --editor-mark-brown: #F1E7D4;
+  --editor-mark-ink: #E9DEC8;
 }
 
 /* ============================================================
@@ -124,6 +365,11 @@
   --success: #4ADE80; --warning: #FBBF24; --error: #EF4444; --info: #60A5FA;
   --border: rgba(200,161,85,0.22); --border-hover: rgba(200,161,85,0.40);
   --accent-soft: rgba(217,119,87,0.18); --border-subtle: rgba(200,161,85,0.12);
+  --editor-page-bg: #2A1A12; --editor-ruled-line: rgba(200,161,85,0.13);
+  --editor-selection-bg: rgba(217,119,87,0.34); --editor-selection-text: #FFF7ED;
+  --editor-ink-primary: #F5E6D3; --editor-ink-strong: #FFFFFF; --editor-ink-cream: #F5E6D3; --editor-ink-muted: #D6B98C;
+  --editor-ink-gold: #FACC15; --editor-ink-orange: #FB923C; --editor-ink-red: #F87171; --editor-ink-blue: #93C5FD; --editor-ink-green: #86EFAC; --editor-ink-purple: #C4B5FD;
+  --editor-mark-yellow: #6B4E10; --editor-mark-red: #5A1F1F; --editor-mark-blue: #1E3A5F; --editor-mark-green: #14532D; --editor-mark-purple: #3B2A63; --editor-mark-brown: #4A3326; --editor-mark-ink: #3A2418;
 }
 
 [data-theme="ocean"],
@@ -135,6 +381,11 @@
   --success: #4ADE80; --warning: #FBBF24; --error: #EF4444; --info: #60A5FA;
   --border: rgba(200,161,85,0.22); --border-hover: rgba(200,161,85,0.40);
   --accent-soft: rgba(217,119,87,0.18);
+  --editor-page-bg: #2A1A12; --editor-ruled-line: rgba(200,161,85,0.13);
+  --editor-selection-bg: rgba(217,119,87,0.34); --editor-selection-text: #FFF7ED;
+  --editor-ink-primary: #F5E6D3; --editor-ink-strong: #FFFFFF; --editor-ink-cream: #F5E6D3; --editor-ink-muted: #D6B98C;
+  --editor-ink-gold: #FACC15; --editor-ink-orange: #FB923C; --editor-ink-red: #F87171; --editor-ink-blue: #93C5FD; --editor-ink-green: #86EFAC; --editor-ink-purple: #C4B5FD;
+  --editor-mark-yellow: #6B4E10; --editor-mark-red: #5A1F1F; --editor-mark-blue: #1E3A5F; --editor-mark-green: #14532D; --editor-mark-purple: #3B2A63; --editor-mark-brown: #4A3326; --editor-mark-ink: #3A2418;
 }
 
 [data-theme="mist"],
@@ -142,10 +393,15 @@
   --bg-base: #FAF7F0; --bg-surface: #F5F1E8; --bg-elevated: #FFFFFF;
   --bg-hover: rgba(31,27,22,0.04);
   --text-primary: #1F1B16; --text-secondary: #56503F; --text-muted: #8A7E6A;
-  --accent: #B85C3F; --accent-hover: #A04E35; --accent-muted: #D6A86C;
+  --accent: #A04E35; --accent-hover: #8E442E; --accent-muted: #D6A86C;
   --success: #16A34A; --warning: #D97706; --error: #DC2626; --info: #2563EB;
   --border: rgba(31,27,22,0.12); --border-hover: rgba(31,27,22,0.22);
   --accent-soft: rgba(184,92,63,0.10);
+  --editor-page-bg: #FFFDF7; --editor-ruled-line: rgba(31,27,22,0.08);
+  --editor-selection-bg: rgba(37,99,235,0.20); --editor-selection-text: #111827;
+  --editor-ink-primary: #1F1B16; --editor-ink-strong: #050505; --editor-ink-cream: #7A4A1F; --editor-ink-muted: #725A32;
+  --editor-ink-gold: #8A5B00; --editor-ink-orange: #B54708; --editor-ink-red: #B91C1C; --editor-ink-blue: #1D4ED8; --editor-ink-green: #15803D; --editor-ink-purple: #7E22CE;
+  --editor-mark-yellow: #FFE45C; --editor-mark-red: #FFD6D6; --editor-mark-blue: #D7E8FF; --editor-mark-green: #D8F5DF; --editor-mark-purple: #EAD7FF; --editor-mark-brown: #F1E7D4; --editor-mark-ink: #E9DEC8;
 }
 
 /* ========================================
@@ -190,8 +446,8 @@ body {
 
 /* 选中文字颜色 */
 ::selection {
-  background: var(--accent-muted);
-  color: var(--text-primary);
+  background: var(--editor-selection-bg);
+  color: var(--editor-selection-text);
 }
 
 /* ── 衬线正文（章节内容区）───────────────────────── */
@@ -203,6 +459,42 @@ body {
 }
 .sf-prose p {
   margin: 0 0 1.3em;
+  text-indent: 2em;
+}
+
+/* ── 正文写作稿纸：降低控件感，突出文章层级 ───────────── */
+.sf-manuscript-editor {
+  box-shadow: none;
+}
+
+.sf-manuscript-editor > div:first-child {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  margin-bottom: 24px;
+}
+
+.sf-manuscript-editor > div:last-child {
+  background-color: var(--editor-page-bg);
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 39px,
+    var(--editor-ruled-line) 40px
+  );
+}
+
+.sf-manuscript-editor .tiptap-editor {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 2.2;
+  letter-spacing: 0.01em;
+  padding: 4px 10px 28px;
+  color: var(--editor-ink-primary);
+}
+
+.sf-manuscript-editor .tiptap-editor p {
+  margin: 0 0 1.15em;
   text-indent: 2em;
 }
 
@@ -244,6 +536,11 @@ body {
 .tiptap-editor {
   min-height: 100%;
   outline: none;
+}
+
+.tiptap-editor ::selection {
+  background: var(--editor-selection-bg);
+  color: var(--editor-selection-text);
 }
 
 .tiptap-editor p {
@@ -311,4 +608,62 @@ body {
   pointer-events: none;
   height: 0;
   float: left;
+}
+
+/* 浅色主题下修正历史遗留的 Tailwind 亮色工具类：这些类原本面向暗色底，放到纸面上会发虚。 */
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-green-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-emerald-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-green-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-emerald-400"] {
+  color: #065F46 !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-sky-300,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-sky-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-blue-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-sky-300"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-sky-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-blue-400"] {
+  color: #1E40AF !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-yellow-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-amber-300,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-amber-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-amber-500,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-yellow-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-amber-300"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-amber-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-amber-500"] {
+  color: #92400E !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-red-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-red-500,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-red-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-red-500"] {
+  color: #B91C1C !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-purple-300,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-purple-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-purple-500,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-purple-300"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-purple-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-purple-500"] {
+  color: #7E22CE !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-pink-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-pink-500,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-pink-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-pink-500"] {
+  color: #BE185D !important;
+}
+
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-orange-400,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) .text-orange-500,
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-orange-400"],
+:is([data-theme="paper"], [data-theme="scroll"], [data-theme="warm"], [data-theme="slate"]) [class*="text-orange-500"] {
+  color: #C2410C !important;
 }

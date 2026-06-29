@@ -19,6 +19,7 @@ export type PromptModuleKey =
   // 章节正文
   | 'chapter.content'
   | 'chapter.continue'
+  | 'chapter.memory'
   | 'chapter.polish'
   | 'chapter.expand'
   | 'chapter.de-ai'
@@ -134,6 +135,8 @@ export interface PromptTemplate {
   }
   /** 短篇模式标识（短篇 / 中篇 / 长篇）— 影响默认参数 */
   lengthMode?: 'short' | 'medium' | 'long'
+  /** NS-1: 连续性保护块策略。 */
+  continuityMode?: 'inherit' | 'required' | 'off'
 
   createdAt: number
   updatedAt: number
@@ -171,6 +174,7 @@ export interface PromptVariableContext {
   chapterSummary?: string
   previousChapterEnding?: string
   existingContent?: string
+  chapterText?: string
   // 编辑/润色
   text?: string
   instruction?: string

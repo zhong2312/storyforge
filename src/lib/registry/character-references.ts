@@ -1,4 +1,5 @@
 import { db } from '../db/schema'
+import { remapTemporalFactCharacterRefs } from '../fact-ledger/lifecycle'
 import { parseFields, stringifyFields } from '../types/state-card'
 import { PROJECT_TABLES } from './project-tables'
 import type { ArrayRef, JsonRef } from './types'
@@ -20,6 +21,12 @@ export async function applyCharacterReferenceRemap(input: CharacterReferenceRema
   await remapRegisteredCharacterArrays(input.projectId, input.fromCharacterId, toCharacterId)
   await remapRegisteredCharacterJson(input.projectId, input.fromCharacterId, toCharacterId)
   await remapCharacterStateCards(input.projectId, input.fromName, toName)
+  await remapTemporalFactCharacterRefs({
+    projectId: input.projectId,
+    fromCharacterId: input.fromCharacterId,
+    toCharacterId,
+    toName,
+  })
 }
 
 function targetTable(target: string): string {

@@ -3,6 +3,7 @@ import { db } from '../lib/db/schema'
 import type { Character } from '../lib/types'
 import { applyCharacterReferenceRemap } from '../lib/registry/character-references'
 import { normalizeCharacterAxes } from '../lib/character/character-axes'
+import { transactionTablesFor } from '../lib/registry/lifecycle'
 
 // 注:势力(Faction)已于 C2 并入「势力」词条,旧 factions 表数据由
 // migrations/faction-to-codex 一次性迁移;本 store 不再管理势力。
@@ -58,7 +59,7 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   },
 
   deleteCharacter: async (id) => {
-    await db.transaction('rw', db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, async () => {
+    await db.transaction('rw', transactionTablesFor('importProject'), async () => {
       const char = await db.characters.get(id)
       if (!char) return
       await db.characters.delete(id)

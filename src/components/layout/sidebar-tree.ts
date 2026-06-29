@@ -5,7 +5,7 @@ import {
   Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
   Map, ClipboardList, GitBranch, Clock, MapPin, Scale,
-  Drama, Package, CalendarClock, ScanSearch, Coins, Feather,
+  Drama, Package, CalendarClock, ScanSearch, Coins, Feather, Database,
 } from 'lucide-react'
 
 /**
@@ -65,6 +65,9 @@ export type SidebarModule =
 
   // 物品栏（Phase 25.5.2-b）
   | 'inventory'
+
+  // 事实库（NS-4 时序事实账本）
+  | 'fact-library'
 
   // 故事进程年表（Phase 25.5.2-a）
   | 'story-timeline'
@@ -177,6 +180,7 @@ export const NAV_TREE: TreeSection[] = [
       leaf('locations',        '重要地点', MapPin),
       leaf('state-table',      '状态表',   ClipboardList),
       leaf('inventory',        '物品栏',   Package),
+      leaf('fact-library',     '事实库',   Database),
       leaf('story-timeline',   '故事年表', CalendarClock),
       leaf('scene-verify',     '场景考证', ScanSearch),
     ],

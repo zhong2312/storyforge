@@ -40,6 +40,12 @@ describe('R-15: character reference remap', () => {
       fields: stringifyFields([{ key: '位置', value: '旧城' }]),
       createdAt: now, updatedAt: now,
     } as any)
+    const factId = await db.temporalFacts.add({
+      projectId, characterId: deletedId, subjectName: '旧角色',
+      predicate: 'location', factKind: 'state', value: '旧城',
+      sourceType: 'chapter', status: 'confirmed', locked: false,
+      createdAt: now, updatedAt: now,
+    } as any) as number
 
     await useCharacterStore.getState().loadAll(projectId)
     await useCharacterStore.getState().deleteCharacter(deletedId)
@@ -50,6 +56,9 @@ describe('R-15: character reference remap', () => {
     expect(await db.characterRelations.count()).toBe(0)
     expect(await db.stateCards.where('projectId').equals(projectId).count()).toBe(0)
     expect(await db.characters.get(deletedId)).toBeUndefined()
+    const fact = await db.temporalFacts.get(factId)
+    expect(fact?.characterId).toBeNull()
+    expect(fact?.status).toBe('source-missing') // 删除主体后不保留悬空 Canon，进入异常复核
   })
 
   it('remaps merged character ids to the primary character and merges state cards by name', async () => {
@@ -82,8 +91,14 @@ describe('R-15: character reference remap', () => {
         createdAt: now, updatedAt: now,
       },
     ] as any[])
+    const factId = await db.temporalFacts.add({
+      projectId, characterId: aliasId, objectCharacterId: aliasId, subjectName: '别名角色',
+      predicate: 'relation', factKind: 'state', value: '同门',
+      sourceType: 'manual', status: 'confirmed', locked: false,
+      createdAt: now, updatedAt: now,
+    } as any) as number
 
-    await db.transaction('rw', db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, async () => {
+    await db.transaction('rw', db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, db.temporalFacts, async () => {
       await applyCharacterReferenceRemap({
         projectId,
         fromCharacterId: aliasId,
@@ -102,6 +117,11 @@ describe('R-15: character reference remap', () => {
     expect(cards).toHaveLength(1)
     expect(cards[0].entityName).toBe('主角色')
     expect(parseFields(cards[0].fields).map(f => f.key).sort()).toEqual(['伤势', '位置'])
+    const fact = await db.temporalFacts.get(factId)
+    expect(fact?.characterId).toBe(primaryId)
+    expect(fact?.objectCharacterId).toBe(primaryId)
+    expect(fact?.subjectName).toBe('主角色')
+    expect(fact?.status).toBe('confirmed') // 合并是稳定重映射，不降级
   })
 })
 

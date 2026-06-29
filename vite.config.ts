@@ -106,6 +106,25 @@ export default defineConfig({
         rewrite: (path: string) => path.replace(/^\/agnes-proxy/, ''),
         secure: true,
       },
+      // NS-5 embedding：国内嵌入服务本地代理（绕浏览器 CORS）
+      '/siliconflow-proxy': {
+        target: 'https://api.siliconflow.cn',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/siliconflow-proxy/, ''),
+        secure: true,
+      },
+      '/qwen-proxy': {
+        target: 'https://dashscope.aliyuncs.com',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/qwen-proxy/, ''),
+        secure: true,
+      },
+      '/glm-proxy': {
+        target: 'https://open.bigmodel.cn',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/glm-proxy/, ''),
+        secure: true,
+      },
     },
   },
   build: {
