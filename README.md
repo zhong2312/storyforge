@@ -3,6 +3,7 @@
 > **项目截图、开发进度、使用教程在知乎同步更新，欢迎来知乎交流：**  
 > **📄 [知乎专栏文档](https://zhuanlan.zhihu.com/p/2038714210188780594)**  
 > **💬 QQ 交流群：1082374587**（欢迎加群讨论需求、反馈 bug、交流小说创作）
+> **项目视频说明书** https://www.bilibili.com/video/BV1q37j6QExh/?vd_source=f5f8f127d3b9d13bc53e7394ffe8902b#reply116816768865987
 
 ---
 
