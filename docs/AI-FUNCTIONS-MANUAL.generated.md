@@ -55,7 +55,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 30 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 32 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -89,6 +89,8 @@
 | `characterRelations` | 角色关系 | project | L2 | 2200 |
 | `references` | 引用手法 | project | L3 | 2000 |
 | `userStyleProfile` | 我的文风 | project | L2 | 700 |
+| `characterFacts` | 该角色的剧情事实 | project | L1 | 1500 |
+| `characterPassages` | 该角色的正文表现 | project | L1 | 2500 |
 
 > 层级裁剪顺序:超预算时 L3 → L2 → L1 依次裁剪,L0 永不裁剪。
 
@@ -132,7 +134,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.generate` | `src/components/character/CharacterPanel.tsx:157` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:83` |
-| `character.supplement` | `src/components/character/CharacterSupplementAction.tsx:64` |
+| `character.supplement` | `src/components/character/CharacterSupplementAction.tsx:80` |
 | `codex.extract` | `src/components/codex/CodexPanel.tsx:204` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:111`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
@@ -174,4 +176,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `c4f7e9d`
+生成时间基准:commit `6d65854`

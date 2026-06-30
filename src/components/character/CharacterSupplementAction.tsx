@@ -37,6 +37,8 @@ export default function CharacterSupplementAction({ character, projectId, worldG
   const ai = useAIStream(createAISessionKey(projectId, 'character.supplement', String(character.id)))
   const [open, setOpen] = useState(false)
   const [done, setDone] = useState<number | null>(null)
+  // C2 反向哺喂：结合剧情已写内容（事实账本 + 正文召回）做补全
+  const [useEvidence, setUseEvidence] = useState(false)
   // 默认勾选「当前为空」的维度（缺什么补什么）；若全填满则默认全选让用户自行决定重写哪些
   const [selected, setSelected] = useState<Set<CharacterDimensionKey>>(() => {
     const filled = new Set(filledDimensions(character))
@@ -56,10 +58,24 @@ export default function CharacterSupplementAction({ character, projectId, worldG
       model: aiConfig.model,
       sourceKeys: ['worldview', 'storyCore', 'powerSystem', 'codex', 'creativeRules', 'worldRules', 'locations'],
     })
+    // C2：反向哺喂——以该角色为主体，召回剧情里已确认的事实 + 正文真实表现作为硬约束
+    let evidenceContext: string | undefined
+    if (useEvidence) {
+      const evidence = await assembleContext({
+        projectId,
+        worldGroupId: worldGroupId ?? null,
+        provider: aiConfig.provider,
+        model: aiConfig.model,
+        subjectCharacterName: character.name,
+        sourceKeys: ['characterFacts', 'characterPassages'],
+      })
+      evidenceContext = evidence.text.trim() || undefined
+    }
     const messages = buildCharacterSupplementPrompt({
       character,
       dimensions: dims,
       worldContext: assembled.text,
+      evidenceContext,
     })
     const text = await ai.start(messages, undefined, { category: 'character.supplement', projectId })
     if (!text) return
@@ -99,6 +115,20 @@ export default function CharacterSupplementAction({ character, projectId, worldG
             <p className="text-[11px] text-text-muted mb-2">勾选要补全的维度（默认选中当前为空的）。AI 会参考该角色已有设定与世界观，只补这些字段、不覆盖其它。</p>
 
             <CharacterDimensionPicker selected={selected} onChange={setSelected} />
+
+            {/* C2 反向哺喂开关 */}
+            <label className="mt-2 flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={useEvidence}
+                onChange={e => setUseEvidence(e.target.checked)}
+                className="mt-0.5 accent-accent"
+              />
+              <span className="text-[11px] text-text-secondary leading-snug">
+                结合剧情已写内容（反向哺喂）
+                <span className="block text-text-muted">把该角色在正文里已确认的事实 + 真实表现喂给 AI，补全更贴合实际剧情、不脱节。NPC 写着写着升成主角时尤其有用。</span>
+              </span>
+            </label>
 
             {ai.error && <div className="mt-2 text-xs text-error">{ai.error}</div>}
             {ai.isStreaming && (

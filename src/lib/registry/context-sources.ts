@@ -288,6 +288,47 @@ async function readRetrievedPassages(projectId: number, chapterId?: number | nul
   return [hierarchy, '【相关前文召回（防止远距离细节/伏笔矛盾，仅供参考）】', ...lines].filter(Boolean).join('\n\n')
 }
 
+/**
+ * C2 反向哺喂 · 某角色的「已确认事实」证据。
+ * 取事实账本里 subjectName == 该角色名 的 confirmed 事实（按当前世界 ∪ null 过滤），
+ * 不依赖章节——补全角色设定时要的是 TA 在全书已被确认的客观事实。
+ */
+async function readCharacterFacts(projectId: number, name?: string, worldGroupId?: number | null): Promise<string> {
+  const subject = name?.trim()
+  if (!subject) return ''
+  const facts = await db.temporalFacts.where('projectId').equals(projectId)
+    .filter(f => f.status === 'confirmed' && f.subjectName === subject).toArray()
+  const scoped = facts.filter(f => f.worldGroupId == null || f.worldGroupId === (worldGroupId ?? null))
+  if (!scoped.length) return ''
+  const lines = scoped.slice(0, 60).map(fact => {
+    const spec = getFactPredicate(fact.predicate)
+    return `- ${spec?.label ?? fact.predicate}：${fact.value}`
+  })
+  return [`【「${subject}」在剧情中已确认的事实（补全须与之一致，勿矛盾）】`, ...lines].join('\n')
+}
+
+/**
+ * C2 反向哺喂 · 某角色的「正文表现」证据。
+ * 关键词扫描全书 retrievalChunks（提到该角色名的块，当前世界 ∪ null），按章序取靠后的若干段，
+ * 让补全贴合 TA 真正写出来的样子。不依赖 currentChapterId（要全书证据，不做未来章过滤）。
+ */
+async function readCharacterPassages(projectId: number, name?: string, worldGroupId?: number | null): Promise<string> {
+  const subject = name?.trim()
+  if (!subject || subject.length < 2) return ''
+  const [chunks, chapters] = await Promise.all([
+    db.retrievalChunks.where('projectId').equals(projectId).toArray(),
+    db.chapters.where('projectId').equals(projectId).toArray(),
+  ])
+  const hits = chunks
+    .filter(c => (c.worldGroupId == null || c.worldGroupId === (worldGroupId ?? null)) && c.text.includes(subject))
+    .sort((a, b) => (b.sourceChapterId ?? 0) - (a.sourceChapterId ?? 0))
+    .slice(0, 6)
+  if (!hits.length) return ''
+  const titleOf = new Map(chapters.filter(c => c.id != null).map(c => [c.id!, c.title]))
+  const lines = hits.map(c => `〖${titleOf.get(c.sourceChapterId) ?? '正文'}〗${c.text}`)
+  return [`【「${subject}」在正文中的真实表现（补全须符合，勿编造与正文矛盾的设定）】`, ...lines].join('\n\n')
+}
+
 export const CONTEXT_SOURCES: ContextSource[] = [
   {
     key: 'manualText',
@@ -555,6 +596,26 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     layer: 'L2',
     budgetTokens: 700,
     read: input => readUserStyleProfile(input.projectId),
+  },
+  {
+    // C2 反向哺喂：某角色在剧情里已确认的事实（需 subjectCharacterName）。
+    key: 'characterFacts',
+    label: '该角色的剧情事实',
+    scope: 'project',
+    layer: 'L1',
+    budgetTokens: 1500,
+    enabled: input => !!input.subjectCharacterName?.trim(),
+    read: input => readCharacterFacts(input.projectId, input.subjectCharacterName, input.worldGroupId),
+  },
+  {
+    // C2 反向哺喂：某角色在正文里的真实表现（需 subjectCharacterName）。
+    key: 'characterPassages',
+    label: '该角色的正文表现',
+    scope: 'project',
+    layer: 'L1',
+    budgetTokens: 2500,
+    enabled: input => !!input.subjectCharacterName?.trim(),
+    read: input => readCharacterPassages(input.projectId, input.subjectCharacterName, input.worldGroupId),
   },
 ]
 

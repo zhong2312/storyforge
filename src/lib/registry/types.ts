@@ -249,6 +249,8 @@ export interface AssembleContextInput {
   extraStateIds?: number[]
   /** 手动输入/当前字段内容，供“内容反推结构化设定”类动作走注册表。 */
   manualSourceText?: string
+  /** C2 反向哺喂：以某角色为主体，召回剧情里关于 TA 的事实/正文证据（characterFacts/characterPassages 源用）。 */
+  subjectCharacterName?: string
   /** assembleContext 内部批量预取；调用方无需传。 */
   continuitySnapshot?: PreparedContinuityContext
 }
