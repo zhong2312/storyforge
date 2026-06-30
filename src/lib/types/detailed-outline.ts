@@ -27,6 +27,21 @@ export interface DetailedScene {
   notes: string               // 作者备注
 }
 
+/**
+ * 归一化场景列表（CF-20260630-2 数据红线）。
+ * 历史 bug：FIELD_REGISTRY 曾把 `detailedOutlines.scenes` 登记为 `json`，adopt() 会 JSON.stringify
+ * 成字符串入库，导致渲染端 `scenes.reduce/.map` 崩溃（"scenes.reduce is not a function"）。
+ * 读取时统一回数组、best-effort 自愈旧字符串数据（不动 DB、刷新即正常）。
+ */
+export function normalizeDetailedScenes(value: unknown): DetailedScene[] {
+  const arr = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? (() => { try { const p = JSON.parse(value || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()
+      : []
+  return arr.filter((s): s is DetailedScene => !!s && typeof s === 'object' && !Array.isArray(s))
+}
+
 /** 情绪走向 */
 export type EmotionArc = 'rising' | 'falling' | 'flat' | 'wave' | 'climax'
 

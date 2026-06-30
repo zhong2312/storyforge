@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { db } from '../lib/db/schema'
 import type { DetailedOutline } from '../lib/types'
+import { normalizeDetailedScenes } from '../lib/types/detailed-outline'
 
 interface DetailedOutlineStore {
   detailedOutlines: DetailedOutline[]
@@ -22,7 +23,8 @@ export const useDetailedOutlineStore = create<DetailedOutlineStore>((set, get) =
   loadAll: async (projectId: number) => {
     set({ loading: true })
     const list = await db.detailedOutlines.where('projectId').equals(projectId).toArray()
-    set({ detailedOutlines: list, loading: false })
+    // CF-2 自愈：旧库可能把 scenes 存成字符串，读入时统一回数组，避免渲染端 .map/.reduce 崩溃
+    set({ detailedOutlines: list.map(d => ({ ...d, scenes: normalizeDetailedScenes(d.scenes) })), loading: false })
   },
 
   getOrCreate: async (projectId: number, outlineNodeId: number): Promise<DetailedOutline> => {
@@ -31,10 +33,11 @@ export const useDetailedOutlineStore = create<DetailedOutlineStore>((set, get) =
     // 内存没有时以 DB 为准再查一次，避免 store 未加载/竞态导致同一节点重复建细纲
     const inDb = await db.detailedOutlines.where('outlineNodeId').equals(outlineNodeId).first()
     if (inDb) {
-      if (!get().detailedOutlines.some(d => d.id === inDb.id)) {
-        set({ detailedOutlines: [...get().detailedOutlines, inDb] })
+      const normalized = { ...inDb, scenes: normalizeDetailedScenes(inDb.scenes) }
+      if (!get().detailedOutlines.some(d => d.id === normalized.id)) {
+        set({ detailedOutlines: [...get().detailedOutlines, normalized] })
       }
-      return inDb
+      return normalized
     }
     const fresh: DetailedOutline = {
       projectId, outlineNodeId, scenes: [],

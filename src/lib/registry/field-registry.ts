@@ -260,7 +260,8 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   longtext('chapters', 'notes', ['笔记']),
 
   num('detailedOutlines', 'outlineNodeId'),
-  json('detailedOutlines', 'scenes', ['场景']),
+  // scenes 必须是数组语义：`json` 会被 adopt() JSON.stringify 成字符串 → 渲染端 .map/.reduce 崩溃（CF-2）。
+  arr('detailedOutlines', 'scenes', ['场景']),
   longtext('detailedOutlines', 'openingHook'),
   longtext('detailedOutlines', 'endingCliffhanger'),
   text('detailedOutlines', 'sceneLocation'),
