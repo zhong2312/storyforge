@@ -1,6 +1,6 @@
 import { CInput, CTextarea } from '../shared/CompositionInput'
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ArrowRight, Sparkles, Loader2, LayoutList, LayoutGrid } from 'lucide-react'
+import { Plus, Trash2, ArrowRight, Sparkles, Loader2, LayoutList, LayoutGrid, Info } from 'lucide-react'
 import { useForeshadowStore } from '../../stores/foreshadow'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
@@ -190,6 +190,20 @@ export default function ForeshadowPanel({ project }: Props) {
             className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover">
             <Plus className="w-4 h-4" /> 新建伏笔
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-accent/20 bg-accent/5 p-3 text-xs leading-relaxed text-text-secondary">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-accent" />
+          <div className="space-y-1">
+            <p>
+              <strong className="text-text-primary">伏笔不会自动改写正文。</strong>
+              这里管理的是埋设、呼应、回收任务，避免直接改动已经写好的手稿。
+            </p>
+            <p>指定「埋设章节 / 呼应章节 / 回收章节」后，对应任务会进入章节生成、续写与质量审校的上下文。</p>
+            <p>如果该章已经写完，请回到正文页按任务手动补写、续写或重生成，再把伏笔状态推进到「已埋设 / 已呼应 / 已回收」。</p>
+          </div>
         </div>
       </div>
 
