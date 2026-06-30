@@ -10,6 +10,7 @@ import {
   ORDER_AXIS_LABELS,
   ROLE_WEIGHT_LABELS,
 } from '../character/character-axes'
+import { CHARACTER_DIMENSIONS } from '../character/character-dimensions'
 
 /** 获取已缓存的上下文快照（如果有） */
 export function getContextMemo(projectId: number): string {
@@ -202,16 +203,16 @@ export function buildCharacterContext(characters: Character[]): string {
   if (core.length) {
     parts.push('【核心角色（完整信息）】')
     for (const c of core) {
-      // 核心角色:放开字段硬截断,完整注入(源级 token 软上限仍兜底)
+      // 核心角色:从 CHARACTER_DIMENSIONS 单源遍历注入所有已填维度(含 A 扩充的 13 维),
+      // 让设计的 价值观/恐惧/目标/弱点… 真正进入生成上下文。relationships 非维度,单列保留。
+      // 放开字段硬截断,完整注入(源级 token 软上限仍兜底)。
       const details = [
         `${c.name}（${axes(c)}）`,
-        c.shortDescription ? `简介：${c.shortDescription}` : '',
-        c.appearance ? `外貌：${c.appearance}` : '',
-        c.personality ? `性格：${c.personality}` : '',
-        c.background ? `背景：${c.background}` : '',
-        c.motivation ? `动机：${c.motivation}` : '',
-        c.abilities ? `能力：${c.abilities}` : '',
-        c.arc ? `成长弧线：${c.arc}` : '',
+        ...CHARACTER_DIMENSIONS.map(d => {
+          const v = (c[d.key] as string | undefined)?.trim()
+          return v ? `${d.label}：${v}` : ''
+        }),
+        c.relationships?.trim() ? `人物关系：${c.relationships.trim()}` : '',
       ].filter(Boolean).join('；')
       parts.push(details)
     }

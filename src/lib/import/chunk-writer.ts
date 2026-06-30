@@ -11,12 +11,18 @@ import { useOutlineStore } from '../../stores/outline'
 import { db } from '../db/schema'
 import { adopt } from '../registry/adopt'
 import type { UnifiedParseResult } from '../types'
+import { CHARACTER_DIMENSIONS } from '../character/character-dimensions'
 import {
   deduplicateWorldviewText,
   checkCharacterDuplicate,
   mergeCharacterFields,
   checkOutlineDuplicate,
 } from './dedup'
+
+// 角色文字字段单一事实源：所有维度 + relationships(非维度，单列保留)。加维度自动跟随导入。
+const CHARACTER_TEXT_KEYS = [...CHARACTER_DIMENSIONS.map(d => d.key), 'relationships'] as const
+const pickCharacterFields = (src: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(CHARACTER_TEXT_KEYS.map(k => [k, String(src[k] ?? '')]))
 
 export interface ApplyChunkCounts {
   worldviewFields: number
@@ -96,16 +102,7 @@ export async function applyChunkResult(
             orderAxis: c.orderAxis,
           }
         : { role: c.role || 'minor' }
-      const incomingFields: Record<string, string> = {
-        shortDescription: String(c.shortDescription || ''),
-        appearance: String(c.appearance || ''),
-        personality: String(c.personality || ''),
-        background: String(c.background || ''),
-        motivation: String(c.motivation || ''),
-        abilities: String(c.abilities || ''),
-        relationships: String(c.relationships || ''),
-        arc: String(c.arc || ''),
-      }
+      const incomingFields = pickCharacterFields(c as Record<string, unknown>)
 
       // Phase 30.5: 检查同名角色
       const dedup = checkCharacterDuplicate(c.name.trim(), nameMap)
@@ -113,16 +110,7 @@ export async function applyChunkResult(
         // 已有同名角色 → 合并字段（追加不覆盖）
         const existing = existingChars.find(ch => ch.id === dedup.existingId)
         if (existing) {
-          const existingFields: Record<string, string> = {
-            shortDescription: existing.shortDescription || '',
-            appearance: existing.appearance || '',
-            personality: existing.personality || '',
-            background: existing.background || '',
-            motivation: existing.motivation || '',
-            abilities: existing.abilities || '',
-            relationships: existing.relationships || '',
-            arc: existing.arc || '',
-          }
+          const existingFields = pickCharacterFields(existing as unknown as Record<string, unknown>)
           const merged = mergeCharacterFields(existingFields, incomingFields)
           await adopt({
             projectId,
@@ -150,14 +138,7 @@ export async function applyChunkResult(
             name: charName,
             ...axes,
             homeWorldGroupId: targetWorldGroupId,
-            shortDescription: incomingFields.shortDescription,
-            appearance: incomingFields.appearance,
-            personality: incomingFields.personality,
-            background: incomingFields.background,
-            motivation: incomingFields.motivation,
-            abilities: incomingFields.abilities,
-            relationships: incomingFields.relationships,
-            arc: incomingFields.arc,
+            ...incomingFields,
           },
         })
         // 更新映射以便同块内后续角色也能去重

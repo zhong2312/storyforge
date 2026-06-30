@@ -22,6 +22,7 @@ import {
   type ReverseMultiWorldResult,
 } from '../../lib/ai/inspiration-reverse'
 import { adopt } from '../../lib/registry/adopt'
+import { CHARACTER_DIMENSIONS } from '../../lib/character/character-dimensions'
 import AIStreamOutput from '../shared/AIStreamOutput'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
 import type { Project } from '../../lib/types'
@@ -187,15 +188,14 @@ export default function InspirationPanel({ project }: Props) {
             roleWeight: c.roleWeight,
             moralAxis: c.moralAxis,
             orderAxis: c.orderAxis,
-            shortDescription: c.shortDescription || '',
-            appearance: '',
-            personality: c.personality || '',
-            background: c.background || '',
-            motivation: c.motivation || '',
-            abilities: '',
-            relationships: '',
-            arc: c.arc || '',
             isCrossWorld: c.isCrossWorld,
+            // 维度字段从 CHARACTER_DIMENSIONS 单源派生：解析对象带什么就写什么，
+            // 不硬编码字段表(空值由 adopt 跳过；缺的维度用户可后续 C1 补全)。
+            ...Object.fromEntries(
+              CHARACTER_DIMENSIONS
+                .map(d => [d.key, (c as unknown as Record<string, unknown>)[d.key]])
+                .filter(([, v]) => typeof v === 'string' && v),
+            ),
           },
         })
       }
@@ -341,14 +341,12 @@ export default function InspirationPanel({ project }: Props) {
           roleWeight: c.roleWeight,
           moralAxis: c.moralAxis,
           orderAxis: c.orderAxis,
-          shortDescription: c.shortDescription || '',
-          appearance: '',
-          personality: c.personality || '',
-          background: c.background || '',
-          motivation: c.motivation || '',
-          abilities: '',
-          relationships: '',
-          arc: c.arc || '',
+          // 维度字段从 CHARACTER_DIMENSIONS 单源派生（同上：不硬编码字段表）
+          ...Object.fromEntries(
+            CHARACTER_DIMENSIONS
+              .map(d => [d.key, (c as unknown as Record<string, unknown>)[d.key]])
+              .filter(([, v]) => typeof v === 'string' && v),
+          ),
         },
       })
     }
