@@ -132,8 +132,8 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `chapter.memory` | `src/components/editor/ChapterEditor.tsx:258` |
 | `chapter.polish` | `src/components/editor/ChapterEditor.tsx:452` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
-| `character.generate` | `src/components/character/CharacterPanel.tsx:157` |
-| `character.structure` | `src/lib/ai/parse-character-output.ts:83` |
+| `character.generate` | `src/components/character/CharacterPanel.tsx:158` |
+| `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
 | `character.supplement` | `src/components/character/CharacterSupplementAction.tsx:80` |
 | `codex.extract` | `src/components/codex/CodexPanel.tsx:204` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:111`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
@@ -176,4 +176,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `6d65854`
+生成时间基准:commit `3567937`

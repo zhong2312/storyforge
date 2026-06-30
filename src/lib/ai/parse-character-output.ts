@@ -2,22 +2,20 @@ import type { CharacterMoralAxis, CharacterOrderAxis, CharacterRoleWeight } from
 import type { AIConfig } from '../types'
 import { chat } from './client'
 import { MORAL_AXES, ORDER_AXES, ROLE_WEIGHTS } from '../character/character-axes'
+import { CHARACTER_DIMENSIONS, type CharacterDimensionKey } from '../character/character-dimensions'
 
-/** 解析结果 —— 对应 Character 可写字段 */
-export interface ParsedCharacter {
+/**
+ * 解析结果 —— 对应 Character 可写字段。
+ * name/三轴/relationships 是特殊字段；其余可写文字字段全部来自 CHARACTER_DIMENSIONS（单一事实源）。
+ * 加一个维度只改 CHARACTER_DIMENSIONS + FIELD_REGISTRY，这里自动跟随解析与落库。
+ */
+export type ParsedCharacter = {
   name: string
   roleWeight: CharacterRoleWeight
   moralAxis: CharacterMoralAxis
   orderAxis: CharacterOrderAxis
-  shortDescription: string
-  appearance: string
-  personality: string
-  background: string
-  motivation: string
-  abilities: string
   relationships: string
-  arc: string
-}
+} & Partial<Record<CharacterDimensionKey, string>>
 
 const WEIGHT_MAP: Record<string, CharacterRoleWeight> = {
   主要: 'main', 主角: 'main', 反派: 'main', 配角: 'main',
@@ -39,6 +37,11 @@ function normalizeEnum<T extends string>(
   return fallback
 }
 
+// 维度字段的 JSON schema 行，从 CHARACTER_DIMENSIONS 动态生成（与展示/落库同源）
+const DIMENSION_SCHEMA_LINES = CHARACTER_DIMENSIONS
+  .map(d => `  "${d.key}": "${d.label}（去除 Markdown，纯文字；原文没有则填空字符串）"`)
+  .join(',\n')
+
 /**
  * 调用 AI 将角色描述文本解析为结构化 JSON，填充各字段。
  *
@@ -58,14 +61,8 @@ export async function parseCharacterOutput(
   "roleWeight": "戏份，只能是 main / secondary / npc / extra",
   "moralAxis": "道德轴，只能是 good / neutral / evil",
   "orderAxis": "秩序轴，只能是 lawful / neutral / chaotic",
-  "shortDescription": "一句话简介（不超过 50 字）",
-  "appearance": "外貌描述（去除 Markdown，纯文字段落）",
-  "personality": "性格特点",
-  "background": "背景故事",
-  "motivation": "核心动机",
-  "abilities": "能力/技能",
   "relationships": "人物关系",
-  "arc": "角色弧光/成长线"
+${DIMENSION_SCHEMA_LINES}
 }
 
 注意：
@@ -95,20 +92,18 @@ ${rawText}`
 
     const parsed = JSON.parse(jsonMatch[0]) as Record<string, string>
 
-    return {
+    const result: ParsedCharacter = {
       name:             parsed.name             || 'AI 生成角色',
       roleWeight:       normalizeEnum(parsed.roleWeight || '', ROLE_WEIGHTS, WEIGHT_MAP, 'main'),
       moralAxis:        normalizeEnum(parsed.moralAxis || '', MORAL_AXES, { 善: 'good', 正派: 'good', 中立: 'neutral', 恶: 'evil', 反派: 'evil' }, 'neutral'),
       orderAxis:        normalizeEnum(parsed.orderAxis || '', ORDER_AXES, { 守序: 'lawful', 中立: 'neutral', 混乱: 'chaotic' }, 'neutral'),
-      shortDescription: parsed.shortDescription || '',
-      appearance:       parsed.appearance       || '',
-      personality:      parsed.personality      || '',
-      background:       parsed.background       || '',
-      motivation:       parsed.motivation       || '',
-      abilities:        parsed.abilities        || '',
       relationships:    parsed.relationships    || '',
-      arc:              parsed.arc              || '',
     }
+    // 所有维度字段统一从 CHARACTER_DIMENSIONS 回填（含 A 扩充的 13 维）
+    for (const d of CHARACTER_DIMENSIONS) {
+      result[d.key] = parsed[d.key] || ''
+    }
+    return result
   } catch {
     return null
   }

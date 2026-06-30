@@ -19,6 +19,7 @@ import type {
 } from '../../lib/types'
 import CharacterStatusPanel from './CharacterStatusPanel'
 import CharacterDimensionPicker from './CharacterDimensionPicker'
+import CharacterDimensionFields from './CharacterDimensionFields'
 import CharacterSupplementAction from './CharacterSupplementAction'
 import { CHARACTER_DIMENSIONS, type CharacterDimensionKey } from '../../lib/character/character-dimensions'
 import CharacterAxesPicker from './CharacterAxesPicker'
@@ -299,24 +300,24 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
             setParsing(false)
             const nameMatch = text.match(/(?:\*\*|#{1,3}\s*|【)([^*#\n【】]{1,20})(?:\*\*|】)/)
             const fallbackName = nameMatch?.[1]?.trim() || 'AI 生成角色'
+            // 落库全部维度（含 A 扩充的 13 维）：维度字段从 CHARACTER_DIMENSIONS 统一回填，
+            // 否则 B 维度勾选器选了新维度、AI 也生成了，却在这里丢失。空串会被 adopt 跳过、不覆盖。
+            const dimData = Object.fromEntries(
+              CHARACTER_DIMENSIONS.map(d => [d.key, (parsed?.[d.key] as string) || '']),
+            )
             const result = await adopt({
               projectId: project.id!,
               worldGroupId: newCharHomeWorld(),
               target: 'characters',
               mode: 'add',
               data: {
-                name:             parsed?.name             || fallbackName,
-                roleWeight:       parsed?.roleWeight       || 'main',
-                moralAxis:        parsed?.moralAxis        || 'neutral',
-                orderAxis:        parsed?.orderAxis        || 'neutral',
-                shortDescription: parsed?.shortDescription || '',
-                appearance:       parsed?.appearance       || '',
-                personality:      parsed?.personality      || '',
-                background:       parsed?.background       || text,
-                motivation:       parsed?.motivation       || '',
-                abilities:        parsed?.abilities        || '',
-                relationships:    parsed?.relationships    || '',
-                arc:              parsed?.arc              || '',
+                name:          parsed?.name          || fallbackName,
+                roleWeight:    parsed?.roleWeight    || 'main',
+                moralAxis:     parsed?.moralAxis     || 'neutral',
+                orderAxis:     parsed?.orderAxis     || 'neutral',
+                relationships: parsed?.relationships || '',
+                ...dimData,
+                background:    parsed?.background     || text,  // 兜底：解析失败也保住全文
               },
             })
             await loadAll(project.id!)
@@ -406,16 +407,6 @@ function CharacterDetailCard({
   const { updateCharacter, loadAll } = useCharacterStore()
   const [expanded, setExpanded] = useState(true)
   const glyphColor = GLYPH_COLORS[charIndex % GLYPH_COLORS.length]
-
-  const fields: { key: keyof Character; label: string }[] = [
-    { key: 'appearance',   label: '外貌' },
-    { key: 'personality',  label: '性格' },
-    { key: 'background',   label: '背景故事' },
-    { key: 'motivation',   label: '动机' },
-    { key: 'abilities',    label: '能力' },
-    { key: 'relationships', label: '人物关系' },
-    { key: 'arc',          label: '角色弧' },
-  ]
 
   return (
     <div className="space-y-4">
@@ -520,24 +511,25 @@ function CharacterDetailCard({
       {/* Phase 23.1: 动态状态面板 */}
       <CharacterStatusPanel projectId={projectId} characterName={char.name} />
 
-      {/* 字段列表 — 横排 label: value */}
+      {/* 完整维度（含 A 扩充的 13 维）——与 NPC/次要同源渲染，主角生成/补全的内容都看得见、能改 */}
       {expanded && (
-        <div className="space-y-0 divide-y divide-border/40">
-          {fields.map(f => {
-            const val = (char[f.key] as string) || ''
-            return (
-              <div key={String(f.key)} className="flex gap-4 py-3 first:pt-0">
-                <span className="w-16 shrink-0 text-xs text-text-muted pt-0.5 text-right">{f.label}</span>
-                <div className="flex-1 min-w-0">
-                  <InlineTextarea
-                    value={val}
-                    onChange={v => onUpdate(f.key, v)}
-                    placeholder={`点击填写${f.label}…`}
-                  />
-                </div>
-              </div>
-            )
-          })}
+        <div className="space-y-4">
+          <CharacterDimensionFields
+            character={char}
+            onChange={patch => { if (char.id) updateCharacter(char.id, patch) }}
+            exclude={['shortDescription']}
+          />
+          {/* 人物关系非 CHARACTER_DIMENSIONS 成员（由关系网单独管），单列保留，避免丢失 */}
+          <div className="flex gap-2">
+            <span className="w-20 flex-shrink-0 pt-1.5 text-xs text-text-muted">人物关系</span>
+            <div className="flex-1 min-w-0">
+              <InlineTextarea
+                value={char.relationships || ''}
+                onChange={v => onUpdate('relationships', v)}
+                placeholder="点击填写人物关系…"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
