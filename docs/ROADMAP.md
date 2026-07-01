@@ -2,6 +2,7 @@
 
 > 🔒 **接手者必读宪法**: [`/CLAUDE.md`](../CLAUDE.md) — 三注册表铁律 + 动手前的「四问」+ 反面教材
 > 📐 **施工权威**: [`docs/MASTER-BLUEPRINT.md`](MASTER-BLUEPRINT.md) — 重构 Phase 0/1/2/3 完整流程
+> 🤝 **双 Agent 协作契约**: [`docs/COLLAB-WORKFLOW.md`](COLLAB-WORKFLOW.md) — Codex 开发 / Claude 审查的分工·分支·合并纪律。**Codex 请过目并在文末 §7 确认。**
 >
 > **最后更新**: 2026-06-30（追加社区反馈待修复批次：Windows 启动、细纲采纳、故事主线约束、主题可读性等；施工权威见 MASTER-BLUEPRINT）
 > **说明**: 本文档是唯一的功能规划文档。旧文档已归档至 `docs/archive/`。

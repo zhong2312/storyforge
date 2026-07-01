@@ -18,6 +18,16 @@
 
 ---
 
+## 🤝 协作契约（Codex 请优先过目并确认）
+
+本仓库当前是 **Codex 开发 / Claude 审查** 的双 Agent 模式。分工、分支纪律、工作区隔离、合并流程见：
+
+**[`docs/COLLAB-WORKFLOW.md`](docs/COLLAB-WORKFLOW.md)** —— Claude 已草拟，**请 Codex 过一遍并在该文件 §7「待确认」处打勾 / 提修改**，双方确定后生效。
+
+要点速览：① 各用各的 checkout，别挤一个工作树；② 交接走「分支 + PR + commit message」，不用散文档传代码；③ 合 `main` 串行 + 合前 rebase + 六项验证闸门全绿；④ `main` 一推即生产（无 staging）。
+
+---
+
 ## 第二动作：读 `docs/MASTER-BLUEPRINT.md`
 
 唯一的施工权威，含完整的 Phase 0/1/2/3 任务清单 + 三个注册表的数据结构与 API。
