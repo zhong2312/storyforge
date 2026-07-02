@@ -229,6 +229,7 @@
 | `codex-clipboard-95873579-1794-45e5-9123-46f5fb3ef50d.png` | LM Studio / Ollama 正确配置示例与用户自测成功 |
 | `codex-clipboard-94c2a463-230f-4697-98a6-9dca5f6f053e.png` + `QQ20260702-100105.mp4` | 角色页面中文输入粘连，录屏约 9.5 秒，分辨率 1918×1018 |
 | `codex-clipboard-8c744fc3-e073-4819-b745-74489e6d7e25.png` + `QQ20260702-110550.mp4` | v3.7.2 纯点击进入大纲后崩溃，错误为 `Cannot read properties of undefined (reading 'trim')` |
+| `codex-clipboard-9d9b765a-1ab5-41e9-8a4c-6f32af5fe2cc.png` + `codex-clipboard-fa7748f2-e323-47f1-81cb-9dfd1b8d01b7.png` | 角色驱动剧情反推的大纲与「故事设计」主线联动不足 |
 
 ## 🔴 CF-20260702-1 — 角色弧光自动填充被硬截断，文字多时“不全”
 
@@ -387,6 +388,35 @@
   - `npm run check:required-tables` ✅
   - `npm run build` ✅
 - **优先级**：✅ 已处理（生产崩溃级；应优先合入并请用户回测同一录屏路径）。
+
+## 🟠 CF-20260702-9 — 角色驱动剧情与「故事设计 / 主线」联动不足，生成大纲时对主线影响弱
+
+- **现象**：用户认为「角色驱动剧情」这个想法很好，但实际使用时，角色弧光反推出来的情节大纲经常和「故事设计」里的主线对不上；当两者不一致时，后续生成大纲似乎更听故事设计主线，角色驱动剧情对主线几乎没有影响。
+- **已确认代码定位**：
+  - `src/lib/ai/character-driven-plot.ts`：`buildCharacterDrivenPlotPrompt()` 直接从 `useWorldviewStore/useOutlineStore` 手取数据，未走 `CONTEXT_SOURCES / assembleContext()`。
+  - 该函数的 `storyCoreParts` 只拼了 `theme / centralConflict / plotPattern`，没有显式拼 `mainPlot / storyLines / logline / subPlots`；虽然 `buildWorldContext()` 里的 `worldContext` 可能包含完整故事核心，但 prompt 的专门 `【故事核心】` 块缺主线。
+  - `src/lib/ai/prompt-seeds.ts` 的 `plot.character-driven` 只要求“如果有世界观/故事设定，情节必须在设定框架内”，没有硬约束“角色弧光必须服务/改写/解释故事主线”。
+  - `src/components/outline/CharacterDrivenPlotPanel.tsx` 采纳结果时只写入 `outlineNodes` 卷/章；章节 summary 追加 `【角色弧光推进】...`，但不会回写 `storyCore.mainPlot`，也不会给后续普通卷纲生成建立“角色驱动方案已生效”的来源。
+- **根因判断**：
+  - 角色驱动剧情当前更像“另开一条从角色推大纲的生成器”，不是故事设计主线的上游/协同编辑器。
+  - 当用户已有 `storyCore.mainPlot` 时，角色驱动结果没有被要求对齐主线；当角色驱动结果与主线冲突时，也没有“改主线 / 改角色弧光 / 标记冲突”的交互。
+  - 后续普通大纲生成读取 `storyCore` 和已有大纲，但并不知道某段大纲是“角色驱动规划”的权威结果，因此用户感知为角色驱动对主线无影响。
+- **修复方案**：
+  1. `plot.character-driven` 迁移为标准 AI 动作：读经 `assembleContext()`，sourceKeys 至少包含 `storyCore / worldview / characters / existingVolumeOutlines / worldRules / codex`，不要在 adapter 里手拼 store。
+  2. `storyCore` 注入必须使用 `formatStoryCoreBlock()` 全字段，显式包含 `logline / mainPlot / storyLines / subPlots`。
+  3. prompt 增加硬约束：若主线存在，角色弧光推演必须解释“每卷/每章如何推进主线”；不得另起主线；若角色弧光与主线冲突，必须在输出中标记冲突与调整建议，而不是静默生成另一套。
+  4. 生成结果预览增加“主线对齐报告”：列出角色弧光方案推进了主线的哪一段，以及哪些角色弧光会要求修改故事主线。
+  5. 采纳时给用户选择：
+     - 只写入大纲；
+     - 写入大纲并追加/修订 `storyCore.mainPlot`（必须走 `adopt({ target:'storyCores' })`）；
+     - 暂存为“角色驱动方案”，供普通卷纲生成读取。若新增存储落点，必须先登记 `PROJECT_TABLES` 和 `CONTEXT_SOURCES`。
+  6. 普通卷纲生成的“生成依据”面板中标明是否读取了角色驱动方案 / 已采纳的角色弧光推进，避免用户误以为两套功能互不相关。
+- **验证要求**：
+  - 有明确 `storyCore.mainPlot` 时，角色驱动 prompt 最终 messages 必须包含主线文本和“不得另起主线 / 必须说明推进主线阶段”的硬约束。
+  - 构造角色目标与主线冲突的输入，输出预览必须给出冲突提示或调整建议。
+  - 采纳“同步修订主线”时，`storyCore.mainPlot` 经 `adopt()` 更新，普通卷纲生成随后能读到更新后的主线。
+  - 回归测试覆盖 adapter 组装、采纳写回、普通卷纲读取三段链路。
+- **优先级**：🟠 中高（功能理念正确，但当前和主线协同弱；会让用户觉得角色驱动是孤立功能）。
 
 # ═══ 社区反馈批次（2026-06-30 · Windows 启动 / 细纲采纳 / 主线约束 / 主题可读性）═══
 
