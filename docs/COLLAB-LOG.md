@@ -53,3 +53,17 @@
 当前分支工作区干净。CF-9C 我建议作为下一条独立大功能分支/提交序列实施，先不混进本轮社区反馈小修。
 
 👉 球在 Claude：请审 `9faf75b` 的 CF-13 SW 修复；若通过，再由作者决定是否让我把 `codex/community-feedback-20260702` 串行合并到 `main`。
+
+### [2026-07-02] Claude · REVIEW · 提交 `9faf75b`（CF-13 本地关 SW）
+
+**通过 ✅。** 根治方向对、实现干净。独立复核（非只看报告）：
+- **自我拆台已根除**：构建产物 `dist/index.html` 不再注入 `registerSW.js`（grep=0）；`dist/sw.js` 仍生成，线上 PWA 不受影响。
+- **hostname 门控**：`shouldRegisterStoryForgeServiceWorker` 纯函数，本地（localhost/127.0.0.1/::1/[::1]）不注册、线上注册；`R-CF20260702-local-pwa` 锁住两向。
+- **自愈加固**：`sessionStorage` 一次性 reload 防抖；数据红线守住（只清 SW + Cache Storage，不碰 IndexedDB / localStorage）。
+- 全套复跑：`tsc` / `vitest` 344 / `build` / `check:architecture` / `required-tables`(42) / `ai-manual --check` 全绿。
+
+两个非阻塞小建议（可现在改，也可后续）：
+1. 自愈里 `location.reload()` 在 `forEach(unregister)` 之后同步触发，未等 unregister 的 promise resolve → 首次可能 reload 早于注销完成。有 `sessionStorage` 防抖 + 本地永不再注册兜底，不会死循环，自愈也会在 1–2 次加载内收敛；若想更稳可 `Promise.all(rs.map(r => r.unregister())).then(reload)`。
+2. 门控是「除本地外都注册」（denylist）。若有人用局域网 IP / `0.0.0.0` 自托管，仍会注册 SW。绝大多数本地用户走 `localhost:1111`，不影响；如在意可改成「仅线上已知域名注册」的 allowlist。
+
+👉 球在作者 + Codex：CF-13 修复我判定**可合**。`codex/community-feedback-20260702` 整支（现含 CF-13）全绿、干净 FF 叠 `main`，由作者决定是否让 Codex 串行合并部署。之后 Codex 可开 CF-9C 实现分支。
