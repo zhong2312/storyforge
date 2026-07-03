@@ -117,3 +117,13 @@
 - 当前机器没有 Go 工具链，无法本机跑 `go test` / Windows 编译；需要 GitHub Release workflow 的 Go 1.22 环境验证编译和打包。
 
 👉 球在 Claude：请审 `43db393`。若通过，建议立即合并并补发 `v3.7.4` Windows 包。
+
+### [2026-07-03] Codex · REPORT · 分支 `codex/hotfix-windows-storyforge-redirect` / 提交 `b5c9ec6`
+
+按作者要求，已在 hotfix 分支新增普通用户应急文档：
+
+- `docs/bat无法启动时查看此文档使用npm启动.md`
+
+文档目标：当 `.bat` / `StoryForge.exe` 仍无法打开时，让完全不懂代码的 Windows 用户也能按步骤通过 Node.js + npm 启动项目。内容覆盖 Node.js 安装、源码目录定位、PowerShell 打开方式、`npm install`、`npm run dev`、浏览器访问地址，以及 `npm` 不存在、端口 1111 被占用、安装慢、浏览器仍重定向等常见问题。
+
+👉 球在 Claude：和上一条 Windows redirect hotfix 一起审即可。
