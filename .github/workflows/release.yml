@@ -1,4 +1,4 @@
-name: Release Packages
+name: Release Source Package
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag, for example v3.6.0'
+        description: 'Release tag, for example v3.7.5'
         required: true
         type: string
       prerelease:
@@ -20,7 +20,7 @@ permissions:
   contents: write
 
 jobs:
-  package:
+  release:
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -29,52 +29,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Build web app
-        run: |
-          npm ci
-          npm run build
-
-      - name: Build Windows portable executable
-        run: |
-          rm -rf release packaging/desktop-server/web
-          mkdir -p release packaging/desktop-server/web
-          cp -R dist/. packaging/desktop-server/web/
-          cd packaging/desktop-server
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../release/StoryForge-Windows-${RELEASE_TAG}.exe .
-
-      - name: Create portable zip
-        run: |
-          mkdir -p release/StoryForge-Windows-Portable
-          cp release/StoryForge-Windows-${RELEASE_TAG}.exe release/StoryForge-Windows-Portable/StoryForge.exe
-          cp packaging/windows/README-Windows-Portable.txt release/StoryForge-Windows-Portable/
-          cp README.md CHANGELOG.md release/StoryForge-Windows-Portable/
-          cd release
-          zip -r StoryForge-Windows-Portable-${RELEASE_TAG}.zip StoryForge-Windows-Portable
-          sha256sum StoryForge-Windows-${RELEASE_TAG}.exe StoryForge-Windows-Portable-${RELEASE_TAG}.zip > SHA256SUMS.txt
-
       - name: Prepare release notes
         run: |
+          mkdir -p release
           cat > release/RELEASE-NOTES.md <<'EOF'
           ## StoryForge 故事熔炉
 
-          本版本提供 Windows 免安装启动器：
+          本版本为源码版发布，不再提供 `.bat`、`.exe` 或 Windows Portable 启动器。
 
-          - `StoryForge-Windows-Portable-*.zip`：推荐普通用户下载，含 `StoryForge.exe` 和使用说明。
-          - `StoryForge-Windows-*.exe`：单文件启动器，内嵌前端构建产物；双击后启动本地服务并打开浏览器。
-          - `SHA256SUMS.txt`：校验文件完整性。
+          ### 如何启动
+
+          1. 在本页面下载 GitHub 自动生成的 `Source code (zip)`。
+          2. 解压压缩包。
+          3. 安装 Node.js LTS：https://nodejs.org/
+          4. 进入包含 `package.json` 的项目目录。
+          5. 执行：
+
+             ```powershell
+             npm install
+             npm run dev
+             ```
+
+          6. 浏览器打开：
+
+             ```text
+             http://localhost:1111/storyforge/
+             ```
+
+          更详细的零基础步骤见仓库内文档：
+
+          `docs/使用npm指令启动项目.md`
 
           使用前建议先在旧版本「数据管理」中导出 JSON 备份。
-
-          普通用户不要下载 GitHub 自动生成的 `Source code.zip`，那是给开发者看的源码包。
           EOF
 
       - name: Ensure tag exists for manual dispatch
@@ -85,7 +71,7 @@ jobs:
             git push origin "${RELEASE_TAG}"
           fi
 
-      - name: Publish release assets
+      - name: Publish source release
         env:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
@@ -95,16 +81,12 @@ jobs:
             args+=(--prerelease)
           fi
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" \
-              release/StoryForge-Windows-${RELEASE_TAG}.exe \
-              release/StoryForge-Windows-Portable-${RELEASE_TAG}.zip \
-              release/SHA256SUMS.txt \
-              --clobber
+            gh release edit "${RELEASE_TAG}" \
+              --title "StoryForge ${RELEASE_TAG}" \
+              --notes-file release/RELEASE-NOTES.md \
+              "${args[@]}"
           else
             gh release create "${RELEASE_TAG}" \
-              release/StoryForge-Windows-${RELEASE_TAG}.exe \
-              release/StoryForge-Windows-Portable-${RELEASE_TAG}.zip \
-              release/SHA256SUMS.txt \
               --title "StoryForge ${RELEASE_TAG}" \
               --notes-file release/RELEASE-NOTES.md \
               "${args[@]}"

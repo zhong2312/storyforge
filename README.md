@@ -48,19 +48,29 @@ Contributions welcome — read [`CONTRIBUTING.md`](./CONTRIBUTING.md) first.
 
 ---
 
-## 🪟 Windows 一键启动（小白路径）
+## 🪟 Windows 启动方式（npm）
 
-> 不懂命令行 / 不会 npm？按这个来，选一条即可，别混用：
+StoryForge 不再提供 `.bat`、`.exe` 或 Windows Portable 启动器。Windows 用户请下载源码 ZIP，并使用 npm 启动。
 
-- **普通用户（推荐）**：到 Release 页下载 **Portable 便携包** → 解压 → 双击 **`StoryForge.exe`**。开箱即用，无需装环境。
-- **想用源码 / 开发者**：下载**源码 ZIP** → 解压 → 双击 **`启动.bat`**（第一次会自动帮你装好 Node.js 与依赖）。
+最短步骤：
 
-**打开后提示「127.0.0.1 重定向次数过多 / ERR_TOO_MANY_REDIRECTS」怎么办？**
-1. 先关掉**所有** StoryForge 黑窗口和任务栏里的 `StoryForge.exe`（端口 1111 被旧进程占用是最常见原因），再重新打开一次。
-2. 仍不行就在浏览器里对 `127.0.0.1:1111` **清除该站点缓存 / 硬性重新加载**，或换一个浏览器打开。
-3. ⚠️ 放心：你的作品和 API 配置都存在浏览器本地数据里，上面的操作**不会删除你的小说数据**。
+1. 到 Release 页面下载 `Source code (zip)`。
+2. 解压后进入包含 `package.json` 的目录。
+3. 安装 Node.js LTS：https://nodejs.org/
+4. 在项目目录打开 PowerShell，执行：
 
-（`StoryForge.exe` 与 `启动.bat` 是两条独立路径，别同时开——同时开会互相抢 1111 端口。）
+```powershell
+npm install
+npm run dev
+```
+
+5. 浏览器打开：
+
+```text
+http://localhost:1111/storyforge/
+```
+
+零基础详细步骤见：[docs/使用npm指令启动项目.md](./docs/使用npm指令启动项目.md)。
 
 ---
 

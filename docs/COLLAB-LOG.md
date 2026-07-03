@@ -127,3 +127,16 @@
 文档目标：当 `.bat` / `StoryForge.exe` 仍无法打开时，让完全不懂代码的 Windows 用户也能按步骤通过 Node.js + npm 启动项目。内容覆盖 Node.js 安装、源码目录定位、PowerShell 打开方式、`npm install`、`npm run dev`、浏览器访问地址，以及 `npm` 不存在、端口 1111 被占用、安装慢、浏览器仍重定向等常见问题。
 
 👉 球在 Claude：和上一条 Windows redirect hotfix 一起审即可。
+
+### [2026-07-03] Codex · DECISION · `main`
+
+作者拍板：彻底停止维护 `.bat` / `.exe` / Windows Portable 启动器路线。后续 Release 仍保留版本发布，但发布形态改为源码版 Release，用户下载 GitHub 自动生成的 `Source code (zip)` 后按 npm 文档启动。
+
+本轮处理：
+- 删除仓库根目录 `启动.bat`。
+- 删除 Windows exe/portable 打包目录：`packaging/desktop-server/`、`packaging/windows/`。
+- `.github/workflows/release.yml` 改为只创建源码版 GitHub Release，不再安装 Go、不再构建或上传 `StoryForge-Windows-*.exe`、`StoryForge-Windows-Portable-*.zip`、`SHA256SUMS.txt`。
+- README 改为推荐 `Source code (zip)` + `npm install` + `npm run dev`。
+- 用户文档改名为 `docs/使用npm指令启动项目.md`，作为正式启动说明，不再作为 bat 失败后的备用说明。
+
+👉 球在 Claude：请知悉分发策略已变更；后续审查重点从 Windows 启动器转为 npm 源码启动文档与 Release 文案是否清晰。

@@ -1,8 +1,8 @@
-# bat 无法启动时，查看此文档使用 npm 启动
+# 使用 npm 指令启动项目
 
-如果双击 `.bat` 或 `StoryForge.exe` 后一直打不开、提示重定向次数过多，或者黑色窗口一闪而过，可以按下面的方法用 npm 启动。
+StoryForge 现在推荐直接使用 npm 启动。请按下面步骤操作。
 
-这套方法不需要你懂代码，只要照着一步一步做。它的作用是绕过 `.bat/.exe` 启动器，直接用项目源码启动 StoryForge。
+这套方法不需要你懂代码，只要照着一步一步做。它会从源码启动 StoryForge，并在浏览器里打开本地页面。
 
 ## 你需要准备什么
 
@@ -17,9 +17,11 @@
 3. 一路点击“下一步 / Next”安装。
 4. 安装完成后，重启一次电脑。
 
-## 第一步：准备 StoryForge 源码文件夹
+## 第一步：下载并准备 StoryForge 源码文件夹
 
-如果你下载的是 GitHub 上的源码压缩包：
+请在 GitHub Release 页面下载 `Source code (zip)`，不要下载旧版本里的 exe 或 portable 包。
+
+下载后：
 
 1. 找到下载的 `storyforge-main.zip` 或类似名字的压缩包。
 2. 右键选择“全部解压”。
@@ -126,14 +128,14 @@ http://localhost:1111/storyforge/
 
 ### 提示端口 1111 被占用
 
-说明电脑里可能已经有一个 StoryForge 正在运行。
+说明电脑里可能已经有一个 StoryForge 或其他本地服务正在运行。
 
 处理方法：
 
-1. 关掉所有 StoryForge 黑色窗口。
+1. 关掉所有正在运行的 StoryForge 命令行窗口。
 2. 关掉所有打开 StoryForge 的浏览器标签页。
 3. 打开任务管理器。
-4. 如果看到 `StoryForge.exe`，选中后点击“结束任务”。
+4. 如果看到旧版本的 `StoryForge.exe`，选中后点击“结束任务”。
 5. 回到 PowerShell，重新运行：
 
 ```powershell
@@ -176,5 +178,5 @@ http://localhost:1111/storyforge/
 
 - 使用 npm 启动时，命令行窗口不能关闭。
 - 关闭命令行窗口后，StoryForge 本地服务也会停止。
-- npm 启动只是备用方案，不会删除你的浏览器数据。
+- npm 启动不会删除你的浏览器数据。
 - 如果你已经在 StoryForge 里写了作品，建议先在“数据管理”里导出 JSON 备份。

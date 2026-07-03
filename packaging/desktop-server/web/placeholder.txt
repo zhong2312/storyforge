@@ -1,1 +1,0 @@
-This directory is replaced by the Vite dist/ output during release packaging.
