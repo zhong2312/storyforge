@@ -58,6 +58,29 @@
 
 ---
 
+# ═══ 待开发 · 快赢 ═══
+
+## 🟢 QUICKWIN-1 · 「Ollama(本地)」选项改为「本地模型」+ 兼容 LM Studio 等
+
+> 来源:WPS bug 文档(P3,Codex 标"待修·体验优化")。可顺手做,不打断 CONSISTENCY-1。
+
+**现状**
+- 设置页本地模型入口只暴露「Ollama (本地)」,`PROVIDER_PRESETS.ollama.baseUrl` 固定 `http://localhost:11434/v1`。
+- 用户也用 LM Studio 等 OpenAI-compatible 本地 `/v1`(LM Studio 默认 `http://localhost:1234/v1`),现在只能走「自定义」,体验差。
+
+**方案(轻改,不新增 provider,不碰三注册表数据)**
+- `AIConfigPanel` 的 `PROVIDER_OPTIONS`:`ollama` 的 label 从「Ollama (本地)」改为「**本地模型 (Ollama / LM Studio 等)**」;hint 说明「填本地 `/v1` 地址,如 Ollama `:11434` / LM Studio `:1234`」,并确认该 provider 下 baseUrl 可编辑。
+- 可选(与用户另一条「自动拉取模型」需求合并):本地模型加「拉取模型」按钮走 `GET /v1/models`——**本条先只做文案 + 可编辑 baseUrl,拉取按钮单独排期**。
+- 四问:纯 provider 配置 UI,不涉 `CONTEXT_SOURCES/adopt/PROJECT_TABLES`,不改 DB/schema、不触发数据红线。
+
+**验证判据**
+- 设置页本地模型选项显示「本地模型」,hint 含 Ollama/LM Studio 端口示例;LM Studio `:1234/v1` 能配上并「测试连接」通过。
+- `tsc` / `check:architecture` / `build` 全绿。
+
+**DoD**:用户不用走「自定义」就能配 LM Studio 等本地模型;本条不涉数据层。
+
+---
+
 # ═══ 已完成 ═══
 
 ## ✅ 数据云备份 + 精简瘦身（2026-06-13）
