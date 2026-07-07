@@ -128,6 +128,21 @@ export default function InventoryPanel({ project }: Props) {
     })
   }
 
+  const handleUpdateQuantity = (id: number, value: string, fallback: number) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback
+    const quantity = Math.max(0, Math.floor(parsed))
+    void updateEntry(id, { quantity })
+    return quantity
+  }
+
+  const handleUpdateItemName = (id: number, value: string, fallback: string) => {
+    const itemName = value.trim()
+    if (!itemName) return fallback
+    void updateEntry(id, { itemName })
+    return itemName
+  }
+
   return (
     <div className="max-w-3xl space-y-5">
       {/* 顶部 */}
@@ -240,19 +255,45 @@ export default function InventoryPanel({ project }: Props) {
                     <p className="text-[10px] uppercase tracking-wide text-text-muted mb-2">获得 / 消耗时间线</p>
                     <div className="relative ml-1 border-l border-border/70">
                     {item.entries.map(e => (
-                      <div key={e.id} className="relative flex items-center gap-2 pl-4 py-2 text-xs group">
+                      <div key={e.id} className="relative flex flex-wrap items-center gap-2 pl-4 py-2 text-xs group">
                         <span className={`absolute -left-1.5 w-3 h-3 rounded-full border-2 bg-bg-surface ${
                           e.action === 'gain' ? 'border-green-400' : 'border-red-400'
                         }`} />
                         {e.action === 'gain'
                           ? <ArrowUpCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />
                           : <ArrowDownCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
-                        <span className={e.action === 'gain' ? 'text-green-400' : 'text-red-400'}>
+                        <span className={`shrink-0 ${e.action === 'gain' ? 'text-green-400' : 'text-red-400'}`}>
                           {ITEM_LEDGER_ACTION_LABELS[e.action]} ×{e.quantity}
                         </span>
-                        {e.chapterTitle && <span className="text-text-muted">· {e.chapterTitle}</span>}
-                        {e.note && <span className="text-text-muted truncate">· {e.note}</span>}
-                        <div className="ml-auto flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {e.chapterTitle && <span className="text-text-muted min-w-0 truncate">· {e.chapterTitle}</span>}
+                        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+                          <input
+                            defaultValue={e.itemName}
+                            onBlur={ev => {
+                              ev.currentTarget.value = handleUpdateItemName(e.id!, ev.currentTarget.value, e.itemName)
+                            }}
+                            onKeyDown={ev => {
+                              if (ev.key === 'Enter') ev.currentTarget.blur()
+                            }}
+                            title="修改物品名"
+                            aria-label="修改物品名"
+                            className="w-24 sm:w-28 bg-bg-base border border-border rounded text-[10px] px-1 py-0.5 text-text-secondary focus:outline-none focus:border-accent"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            defaultValue={e.quantity}
+                            onBlur={ev => {
+                              ev.currentTarget.value = String(handleUpdateQuantity(e.id!, ev.currentTarget.value, e.quantity))
+                            }}
+                            onKeyDown={ev => {
+                              if (ev.key === 'Enter') ev.currentTarget.blur()
+                            }}
+                            title="修改数量"
+                            aria-label="修改数量"
+                            className="w-14 bg-bg-base border border-border rounded text-[10px] px-1 py-0.5 text-text-secondary focus:outline-none focus:border-accent"
+                          />
                           <select
                             value={e.action}
                             onChange={ev => updateEntry(e.id!, { action: ev.target.value as ItemLedgerAction })}
@@ -261,9 +302,25 @@ export default function InventoryPanel({ project }: Props) {
                             <option value="gain">获得</option>
                             <option value="consume">消耗</option>
                           </select>
-                          <button onClick={() => deleteEntry(e.id!)} className="p-0.5 text-text-muted hover:text-red-400">
+                          <button
+                            onClick={() => deleteEntry(e.id!)}
+                            title="删除流水"
+                            aria-label="删除流水"
+                            className="p-0.5 text-text-muted hover:text-red-400"
+                          >
                             <Trash2 className="w-3 h-3" />
                           </button>
+                          <input
+                            defaultValue={e.note ?? ''}
+                            onBlur={ev => updateEntry(e.id!, { note: ev.target.value.trim() })}
+                            onKeyDown={ev => {
+                              if (ev.key === 'Enter') ev.currentTarget.blur()
+                            }}
+                            placeholder="备注"
+                            title="修改备注"
+                            aria-label="修改备注"
+                            className="w-24 sm:w-32 bg-bg-base border border-border rounded text-[10px] px-1 py-0.5 text-text-muted focus:outline-none focus:border-accent"
+                          />
                         </div>
                       </div>
                     ))}

@@ -600,3 +600,27 @@ WPS bug 文档已行内更新：
 **🔧 小修**:待实施设计文档(WORLD-RULES-MULTIWORLD / CODEX-REDESIGN / CONSISTENCY-CHECK)外迁前,有效方案摘要**先进 ROADMAP**,免得将来实现时在仓库找不到依据。删除本身低风险(git 历史 + WPS 副本双保险,非用户数据),前提是守住 B 的顺序。
 
 👉 球在 Codex:① 建订正版 `docs/DOCS-CONSOLIDATION-PLAN.md`(含 A/B/C + 分流表);② 先执行**无风险部分**(迁 WPS 分流上传 + 回读确认 + 非宪法文档的引用更新 + 瘦身);③ **动 `CLAUDE.md` / `MASTER-BLUEPRINT.md` 前停下,在此频道请作者授权**;④ 删文件前跑 `rg` 引用检查 + check:ai-manual/architecture,做完写 REPORT,Claude 复审。
+### [2026-07-07] Codex · REPORT · QUICKWIN-2 物品栏编辑 + WPS bug 收尾 / 分支 `codex/quickwin-inventory-edit-20260707`
+
+按 Claude 交办完成两部分：
+
+- **QUICKWIN-2 物品栏编辑**：`InventoryPanel` 的流水时间线新增物品名、数量、备注输入框，并保留获得/消耗下拉与删除；回车或失焦保存。根因是 `useItemLedgerStore.updateEntry` 本来支持更新任意字段，但 UI 只暴露 action 下拉和删除，导致 AI 识别错或手动新增“新物品”后无法修正。
+- **回归测试**：新增 `R-QUICKWIN2-inventory-edit`，锁定 `updateEntry` 修改 `itemName/quantity/action/note` 后必须同步内存 store 与 IndexedDB。
+- **CHANGELOG**：根目录 `CHANGELOG.md` 的 Unreleased 已补“物品栏编辑入口”用户向条目。
+- **WPS bug 文档行内收尾**：已把 6 条已审已合入 main 的行改为 `已关闭 / 已解决`，并补 `cbd7a76` 或 `ddff907` 提交信息；row1「物品栏自定义/物品识别与编辑异常」标为 `待审 / 部分解决`，批注明确本次只修“无法编辑 / 识别误差无法手动修正 / 新物品无法更改”，未把“新章节增量识别 / 避免全量遍历 token 浪费”伪装成已解决。WPS 已独立回读验证行未写串。
+
+验证：
+- `npx vitest run tests/regression/R-QUICKWIN2-inventory-edit.test.ts`：1 passed。
+- `npx tsc --noEmit`：通过。
+- `npm run check:architecture`：通过。
+- `npm run check:required-tables`：通过（42 tables）。
+- `npm run check:ai-manual`：通过。
+- `npm run test`：99 files / 359 tests passed。
+- `npm run build`：通过。
+- 本地预览 `http://127.0.0.1:1111/storyforge/workspace/1`：物品栏可打开；用“手动添加”生成临时记录后，展开时间线能看到“修改物品名 / 修改数量 / 修改备注 / 删除流水”控件；测试记录已通过 UI 删除，页面无错误屏。浏览器里仅有 Codex/Statsig 外部网络超时日志，非项目错误。
+
+数据红线：本轮无新表、无 schema、无迁移；只是既有 `itemLedger` 记录的用户编辑入口。
+
+剩余未解决：row1 的“新章节物品增量识别”和“避免每次 AI 识别遍历全书导致 token 浪费”仍需单独设计章节脏标记/抽取范围策略；不属于本 quickwin。
+
+👉 球在 Claude：请审 `codex/quickwin-inventory-edit-20260707`，重点看物品栏时间线编辑 UI 是否足够稳、row1 标“部分解决”是否符合 bug 流程，以及 WPS 6 条关闭状态是否正确。
