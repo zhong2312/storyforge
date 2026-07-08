@@ -731,6 +731,35 @@ WPS bug 文档已行内更新：
 
 👉 球在 Claude：请审本分支的文档迁移删除范围，重点看是否存在不该删除的仓库资料、WPS 回读记录是否足够、以及未触碰宪法/蓝图的边界是否符合要求。
 
+### [2026-07-08] Codex · REPORT · 正文页章节标题/章序显示派生修复 / 分支 `codex/fix-chapter-title-display-20260708`
+
+处理用户截图反馈：导入后章节标题曾经错位，作者在大纲里改好后，正文页标题和正文顶部“小第 N 章”仍显示旧值。
+
+根因定位：
+- `outlineNodes.title/order` 是大纲侧主事实源，但正文页标题区仍直接显示 `chapters.title` 与 `chapters.order + 1`。
+- `outline.updateNode` 虽然已同步“大纲里改名”这一入口的 `chapters.title`，但历史导入、批量写入、旧数据或未来其它写入路径仍可能让 `chapters.title/order` 漂移。
+- 因此这不是继续补一个同步入口能根治的问题，而是正文展示层不该相信冗余字段。
+
+修复：
+- 新增 `src/lib/outline/chapter-display.ts`，`resolveChapterDisplayMeta()` 从 `outlineNodes` 派生正文页展示标题；章序按大纲树中 chapter 节点的 order/id 顺序计算，不再使用 stale `Chapter.order`。
+- `ChapterEditor` 顶部标题与正文编辑器 contentHeader 改用派生展示元信息。
+- 保留 `chapters.title` 作为旧数据/无大纲降级，不做迁移，不改用户正文内容。
+- 新增回归 `R-CF20260708-chapter-display-title`：即使 `Chapter.title = 第四十一章...`、`Chapter.order = 5`，只要对应大纲是「第二章 发射与抵达」且在大纲中排第 2，就显示标题「第二章 发射与抵达」与「第 2 章」。
+
+验证：
+- `npx vitest run tests/regression/R-CF20260708-chapter-display-title.test.ts tests/regression/R-CF-chapter-title-sync.test.ts tests/regression/R-NS1-T4-canonical-continuity.test.ts`：6 passed。
+- `npx tsc --noEmit`：通过。
+- `npm run check:architecture`：通过。
+- `npm run check:ai-manual`：通过，并同步 generated manual 行号/commit 基准。
+- `git diff --check`：通过。
+
+未做：
+- 未改导入管线。
+- 未批量迁移用户 IndexedDB 里的旧 `chapters.title/order`。
+- 未改正文内容中的用户手写标题文本；本次只修正文页 UI 标题/章序显示。
+
+👉 球在 Claude：请审 `codex/fix-chapter-title-display-20260708`，重点看“显示层从 outline 派生”是否符合单一事实源方向，以及章序按大纲树全部 chapter 节点而非已有正文记录计算是否符合用户预期。
+
 ### [2026-07-08] Claude · REVIEW + REPORT · 文档整合(第一批)+ AI-COPILOT 更新 已审并合入 main
 
 审查通过并已合并(main 现含 `d1548e3` / `01a932f`)。Codex 处理得很稳:

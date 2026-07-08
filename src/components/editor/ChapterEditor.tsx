@@ -25,6 +25,7 @@ import { db } from '../../lib/db/schema'
 import { buildGenreConstraintContext } from '../../lib/ai/genre-metadata'
 import { buildStylePromptInjection } from '../../lib/ai/writing-styles'
 import { assembleContext } from '../../lib/registry/assemble-context'
+import { resolveChapterDisplayMeta } from '../../lib/outline/chapter-display'
 import { useCreativeRulesStore } from '../../stores/project-singletons'
 import { useStoryArcStore } from '../../stores/story-arc'
 import { useForeshadowStore } from '../../stores/foreshadow'
@@ -184,6 +185,9 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   }, [currentChapter?.id, updateChapter]))
 
   const outlineNode = currentChapter ? nodes.find(n => n.id === currentChapter.outlineNodeId) : null
+  const chapterDisplay = useMemo(() => {
+    return currentChapter ? resolveChapterDisplayMeta(currentChapter, nodes, chapters) : null
+  }, [currentChapter, nodes, chapters])
   // 多世界：沿父链找到所属卷的 worldGroupId
   const chapterWorldGroupId = useMemo(() => {
     if (!project.enableMultiWorld || !outlineNode) return null
@@ -808,7 +812,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             <p className="text-[11px] uppercase tracking-[0.18em] text-text-muted">
               创作区 · 正文
             </p>
-            <h2 className="font-serif text-xl font-semibold text-text-primary">{currentChapter.title}</h2>
+            <h2 className="font-serif text-xl font-semibold text-text-primary">{chapterDisplay?.title ?? currentChapter.title}</h2>
           </div>
           <span className="rounded-full border border-border bg-bg-elevated px-2.5 py-1 text-xs text-text-muted">
             {wordCount.toLocaleString()} 字
@@ -1196,10 +1200,10 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           contentHeader={
             <div className="mb-8 mt-8 text-center">
               <p className="text-[11px] uppercase tracking-[0.28em] text-text-muted">
-                {typeof currentChapter.order === 'number' ? `第 ${currentChapter.order + 1} 章` : '正文'}
+                {chapterDisplay?.ordinal != null ? `第 ${chapterDisplay.ordinal} 章` : '正文'}
               </p>
               <h1 className="mt-4 font-serif text-3xl font-semibold tracking-wide text-text-primary">
-                {currentChapter.title}
+                {chapterDisplay?.title ?? currentChapter.title}
               </h1>
               <div className="mx-auto mt-5 h-px w-24 bg-border" />
             </div>

@@ -125,13 +125,13 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:52` |
-| `chapter.content` | `src/components/editor/ChapterEditor.tsx:426` |
+| `chapter.content` | `src/components/editor/ChapterEditor.tsx:430` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
-| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:444` |
-| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:481` |
-| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:461` |
-| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:258` |
-| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:453` |
+| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:448` |
+| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:485` |
+| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:465` |
+| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:262` |
+| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:457` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.generate` | `src/components/character/CharacterPanel.tsx:163` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
@@ -156,7 +156,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `review.anti-ai` | `src/components/editor/ReviewPanel.tsx:87` |
 | `review.quality` | `src/components/editor/ReviewPanel.tsx:79` |
 | `review.readability` | `src/components/editor/ReviewPanel.tsx:96` |
-| `review.revise` | `src/components/editor/ChapterEditor.tsx:496` |
+| `review.revise` | `src/components/editor/ChapterEditor.tsx:500` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
@@ -177,4 +177,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `56fc51f`
+生成时间基准:commit `640a912`
