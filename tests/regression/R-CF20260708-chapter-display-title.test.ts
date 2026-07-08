@@ -31,4 +31,20 @@ describe('R-CF20260708-chapter-display-title: 正文页标题从大纲派生', (
         ordinal: 2,
       })
   })
+
+  it('reindexes the surviving chapter after middle outline chapters are deleted', () => {
+    const volume = outline(1, null, 0, '第一卷', 'volume')
+    const firstNode = outline(2, 1, 0, '第一章')
+    const originalSixthNode = outline(7, 1, 5, '第六章 删除后应变第二章')
+    const originalSixthChapter = chapter(16, 7, 5, '第六章 删除后应变第二章')
+
+    expect(resolveChapterDisplayMeta(
+      originalSixthChapter,
+      [volume, firstNode, originalSixthNode],
+      [originalSixthChapter],
+    )).toEqual({
+      title: '第六章 删除后应变第二章',
+      ordinal: 2,
+    })
+  })
 })
