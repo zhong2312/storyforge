@@ -245,7 +245,7 @@ function CharacterStateCard({
         <>
           <div className="grid grid-cols-2 gap-2 mt-4">
             <Fact icon={MapPin} label="所在地点" value={location} />
-            <Fact icon={Shield} label="归属势力" value={faction} />
+            <Fact icon={Shield} label="所属势力" value={faction} />
             <Fact icon={BookOpenCheck} label="剧情进度" value={chapterTitle || '未记录'} />
             <Fact icon={Package} label="持有物" value={heldItems} />
           </div>
