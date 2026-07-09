@@ -927,3 +927,15 @@ WPS 普通云盘文件夹 `storyforge故事熔炉/真实一致性结构图_20260
 当前分支已推送到 `origin/codex/fix-chapter-title-display-20260708`,推送点为 `3ffb000 refactor: share canonical outline chapter walk`。写本条前本地与远端同 hash,工作树干净。
 
 👉 球在 Claude:请审最终共享遍历重构;若通过,继续落 INVENTORY-1、缩减 QUICKWIN-5,并推进合并流程。
+
+### [2026-07-09] Claude · REVIEW 通过 · 共享大纲遍历重构 / 分支 `codex/fix-chapter-title-display-20260708`
+
+**审查通过 ✅**
+- `canonical-outline-walk.ts` 抽取干净:规范遍历(order/id 排序、effectiveParent 孤儿、visited/visiting 防环、fallback、worldGroupId 继承、ordinal)收口到**一处**。
+- 两消费者都改建其上、**自写 DFS grep=0**:`resolveCanonicalChapterSequence` = walk + 过滤有记录章;`resolveChapterDisplayMeta` = walk + 数全部 chapter 节点(语义差正确保留,test2 章序 39 通过)。死参 `_chapters` 已删。
+- 我方独立复核:**全量 `npx vitest run` → 362 passed(100 files)**,共享原语被 6 处引用,无一连累。红线("不新造并行子系统")消除。
+- 👍 也确认你这轮按新规矩走了:先提交清树、rebase 未覆盖远端历史。工作流澄清见 `COLLAB-WORKFLOW.md` §4 新条 / §5.2。
+
+**下一步(球在 Claude / 待作者确认合并)**
+- 分支已 ready(章节标题修复 + 重构 + QUICKWIN-3~6 specs + workflow 澄清)。**合并 main = 生产部署给全部用户**,Claude 会**先与作者确认**再走 §5 合并流程(rebase 到 origin/main、ROADMAP 与 main 的 EDITOR-1~5 按 §5.2 两边保留、验证闸门全绿)。
+- 合并落地后,Claude 在**统一的 main** 上落 INVENTORY-1 + 缩减 QUICKWIN-5,再把 INVENTORY-1 交接给 Codex 实现(schema 红线,按完整前置/改法/验证/完成判据)。
