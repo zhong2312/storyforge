@@ -1047,21 +1047,34 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  Ledger["itemLedger 保持主事实源"] --> Helper["resolveInventoryOwner(characters)"]
-  Characters["characters<br/>role + roleWeight + moralAxis"] --> Helper
-  Helper -->|"唯一主角"| OwnerCard["该角色状态卡显示<br/>当前持有物(来自物品栏)"]
-  Helper -->|"无法唯一判断"| Ambiguous["不强行分配<br/>显示归属不明确提示"]
-  StateFields["stateCards 手写持有物字段"] --> Fallback["无物品栏流水时显示<br/>并标注来自状态字段"]
-  OwnerCard --> Link["去物品栏修改流水"]
+  Chapter["章节正文"] --> Extract["AI 抽取真持有变化<br/>必须有明确持有人"]
+  Extract -->|"无归属 / 仅提及 / 目标 / 传闻"| Drop["不收录"]
+  Extract --> Ledger["itemLedger 物品流水"]
+
+  Ledger --> Soft["heldByName 必填<br/>保留持有人原文"]
+  Ledger --> Hard["characterId 可选<br/>匹配已知角色则硬绑定"]
+  Characters["characters<br/>roleWeight: main / secondary / npc"] --> Hard
+
+  Ledger --> Inventory["物品栏<br/>按 roleWeight 选择角色<br/>查看该角色背包"]
+  Ledger --> StatePanel["角色状态卡<br/>只读展示该角色自己的物品"]
+  Inventory --> Consistency["held-items 一致性校验<br/>按角色判断"]
+  StatePanel --> Consistency
+
+  Old["存量 owner-less 老数据"] --> MainChar["唯一主角项目<br/>迁移给主角"]
+  Old --> Unassigned["多主角 / 无主角<br/>未归属只读区<br/>不丢数据"]
 ```
 
-这个方向的原则是：
+INVENTORY-1 的方向是把物品栏从“项目级主角流水”升级为“按角色归属的流水”。细节以 `docs/ROADMAP.md` 的 INVENTORY-1 为准，本节只说明用户能感知的目标：
 
-- `itemLedger` 继续作为物品流水主事实源。
-- 状态卡只做聚合展示，不把物品流水并入状态字段。
-- 如果能唯一判断持有人，就在该角色状态卡展示物品栏摘要。
-- 如果无法唯一判断，就显示归属不明确，避免制造错误事实。
-- 没有物品栏流水时，可以回退显示手写状态字段，并标注来源。
+- `itemLedger` 增加 `heldByName` 和 `characterId`：`heldByName` 必填，保存 AI 看到的持有人名字；如果能匹配到角色卡，再写入 `characterId` 形成硬绑定。
+- 物品不再默认归给“唯一主角”，也不再使用 `resolveInventoryOwner(characters)` 这种临时判定。谁持有，就归到谁名下。
+- 物品栏按 `roleWeight` 分组和切换，可以查看主角、次要角色、NPC 各自的背包。
+- 角色状态卡只读展示“该角色自己”的物品摘要，和物品栏保持一致。
+- 抽取有两条硬规则：无明确归属不收录；只提及、当目标、传闻、假设不收录。只有“真的发生持有变化，并且有明确持有人”的物品事件才进入物品栏。
+- 转移要判断方向：“A 把剑给了 B”应记录 A 消耗、B 获得，不能把同一件物品复制到两个人名下。
+- “目标物品”不是“持有物”。角色想要、图谋、听说过的东西不进入物品栏，等正文真的写到获得或失去时再记录。
+- 存量老数据按旧语义处理：老的无归属流水默认是主角物品，迁移给唯一主角；如果历史项目无法判断唯一主角，则进入“未归属”只读区，保留数据但不静默改错。
+- `held-items` 一致性校验也要按角色判断：A 是否已持有某物，不受 B 的背包影响。
 
 ### 7.5 主生成管线
 

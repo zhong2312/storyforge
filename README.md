@@ -227,7 +227,7 @@ graph TB
 | 注册表 | 负责 |
 |---|---|
 | `CONTEXT_SOURCES` | AI 读什么，上下文如何装配 |
-| `FIELD_REGISTRY` + `AdoptionSchema` | AI 写什么，采纳时如何校验与去重 |
+| `FIELD_REGISTRY` + `ADOPTION_SCHEMAS` | AI 写什么，采纳时如何校验与去重 |
 | `PROJECT_TABLES` | 表生命周期，导出/导入/删除/迁移如何覆盖 |
 
 详见 [CLAUDE.md](./CLAUDE.md) 与 [docs/MASTER-BLUEPRINT.md](./docs/MASTER-BLUEPRINT.md)。

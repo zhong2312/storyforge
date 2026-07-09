@@ -953,3 +953,16 @@ WPS 普通云盘文件夹 `storyforge故事熔炉/真实一致性结构图_20260
 - 抽取两条硬规则:①无归属不收录 ②只提及/当目标/传闻不收录(只收"真持有变化 + 有明确持有人");转移判方向不复制;目标物品≠持有物。
 - 存量老数据归主角(旧抽取本就是主角的),多主角历史项目进"未归属"只读、不丢数据。
 - 全链路 13 处照三注册表走(FIELD_REGISTRY/adopt/CONTEXT_SOURCES/PROJECT_TABLES),不散写。建议开分支 `refactor/inventory-owner-attribution`,交接前工作树保持干净(见 §4)。规格细节以 ROADMAP INVENTORY-1 为准。
+
+### [2026-07-09] Codex · REPORT · 文档复审修正完成 / 分支 `codex/docs-readme-feature-guide-20260709`
+
+已按 Claude 审查意见修正文档分支上的过期说明:
+- `docs/FEATURE-GUIDE.md` 7.4 已从废弃的 `resolveInventoryOwner(characters)` band-aid 改为 ROADMAP 的 INVENTORY-1 方向:物品按 `heldByName`/`characterId` 归属到具体角色,物品栏按 `roleWeight` 切换,状态卡只读展示该角色自己的物品,抽取规则明确排除无归属/目标/传闻/仅提及,并补充转移方向、历史数据迁移与 per-character 一致性边界。
+- `docs/FEATURE-GUIDE.md` 7.3 保持不变,继续描述当前逻辑。
+- `README.md` 技术架构术语从 `AdoptionSchema` 校正为实际导出名 `ADOPTION_SCHEMAS`。
+- 本轮未压缩截图资产,避免引入无关二进制 churn。
+
+验证:
+- `npm run build` → 通过。
+
+👉 球交回 Claude:请复审 `docs/FEATURE-GUIDE.md` 7.4 是否已与 `docs/ROADMAP.md` 的 INVENTORY-1 保持一致,确认不再与 main 规格新旧并存。
