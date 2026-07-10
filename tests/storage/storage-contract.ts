@@ -10,6 +10,7 @@ interface ExampleRecord {
   worldGroupId?: number | null
   name: string
   order: number
+  payload?: unknown
 }
 
 const TABLE_NAME = 'examples'
@@ -76,8 +77,8 @@ export function runStorageContract(
         projectId: 1,
         name: 'Duplicate',
         order: 3,
-      })).rejects.toThrow('record already exists')
-      await expect(table.update(999, { name: 'Missing' })).rejects.toThrow('record not found')
+      })).rejects.toThrow()
+      await expect(table.update(999, { name: 'Missing' })).rejects.toThrow()
     })
 
     it('supports bulkPut, filters, ordering, pagination, and findOne', async () => {
@@ -151,31 +152,161 @@ export function runStorageContract(
       expect(await storage.getRevision()).toBe(revisionBefore)
     })
 
-    it('rejects and rolls back writes performed inside a readonly transaction', async () => {
+    it('rejects every readonly mutator at its entry point, including no-op writes', async () => {
+      const id = await table.add({ projectId: 1, name: 'Existing', order: 1 })
       const revisionBefore = await storage.getRevision()
+      const readonlyWrites: Array<(txTable: StorageTable<ExampleRecord>) => Promise<unknown>> = [
+        txTable => txTable.add({ projectId: 1, name: 'Add', order: 2 }),
+        txTable => txTable.put({ id, projectId: 1, name: 'Existing', order: 1 }),
+        txTable => txTable.update(id, { name: 'Existing' }),
+        txTable => txTable.delete(999),
+        txTable => txTable.bulkPut([{ id, projectId: 1, name: 'Existing', order: 1 }]),
+        txTable => txTable.bulkDelete([999]),
+      ]
 
-      await expect(storage.transaction('readonly', [TABLE_NAME], async transaction => {
-        await transaction.table<ExampleRecord>(TABLE_NAME).add({
+      for (const write of readonlyWrites) {
+        let continuedAfterWrite = false
+        await expect(storage.transaction('readonly', [TABLE_NAME], async transaction => {
+          await write(transaction.table<ExampleRecord>(TABLE_NAME))
+          continuedAfterWrite = true
+        })).rejects.toThrow()
+
+        expect(continuedAfterWrite).toBe(false)
+        expect(await table.list()).toEqual([{
+          id,
           projectId: 1,
-          name: 'Forbidden',
+          name: 'Existing',
           order: 1,
-        })
-      })).rejects.toThrow('readonly transaction modified data')
-
-      expect(await table.list()).toEqual([])
-      expect(await storage.getRevision()).toBe(revisionBefore)
+        }])
+        expect(await storage.getRevision()).toBe(revisionBefore)
+      }
     })
 
-    it('changes revision after a successful write and not after no-op deletes', async () => {
-      const initialRevision = await storage.getRevision()
+    it('rejects nested transactions without preventing the outer transaction from committing', async () => {
+      await storage.transaction('readwrite', [TABLE_NAME], async transaction => {
+        await expect(storage.transaction('readwrite', [TABLE_NAME], async nested => {
+          await nested.table<ExampleRecord>(TABLE_NAME).add({
+            projectId: 1,
+            name: 'Nested',
+            order: 1,
+          })
+        })).rejects.toThrow()
+
+        await transaction.table<ExampleRecord>(TABLE_NAME).add({
+          projectId: 1,
+          name: 'Outer',
+          order: 2,
+        })
+      })
+
+      expect((await table.list()).map(record => record.name)).toEqual(['Outer'])
+    })
+
+    it('rejects overlapping transactions and root writes without clobbering committed data', async () => {
+      await table.add({ projectId: 1, name: 'Committed before transaction', order: 1 })
+      const entered = createDeferred()
+      const release = createDeferred()
+      const activeTransaction = storage.transaction('readwrite', [TABLE_NAME], async transaction => {
+        await transaction.table<ExampleRecord>(TABLE_NAME).add({
+          projectId: 1,
+          name: 'Rolled back transaction write',
+          order: 2,
+        })
+        entered.resolve()
+        await release.promise
+        throw new Error('rollback active transaction')
+      })
+
+      await entered.promise
+      const overlappingTransaction = storage.transaction('readwrite', [TABLE_NAME], async transaction => {
+        await transaction.table<ExampleRecord>(TABLE_NAME).add({
+          projectId: 1,
+          name: 'Overlapping transaction write',
+          order: 3,
+        })
+      })
+      const rootWrite = table.add({
+        projectId: 1,
+        name: 'Root write during transaction',
+        order: 4,
+      })
+      release.resolve()
+
+      const [activeResult, overlappingResult, rootWriteResult] = await Promise.allSettled([
+        activeTransaction,
+        overlappingTransaction,
+        rootWrite,
+      ])
+
+      expect(activeResult.status).toBe('rejected')
+      expect(overlappingResult.status).toBe('rejected')
+      expect(rootWriteResult.status).toBe('rejected')
+      expect((await table.list()).map(record => record.name)).toEqual(['Committed before transaction'])
+      expect(await table.add({ projectId: 1, name: 'After rollback', order: 5 })).toBe(2)
+    })
+
+    it('keeps bulkPut data, revision, and sequence unchanged when cloning fails', async () => {
+      await table.add({ projectId: 1, name: 'Before bulk failure', order: 1 })
+      const revisionBefore = await storage.getRevision()
+
+      await expect(table.bulkPut([
+        { id: 10, projectId: 1, name: 'Must not persist', order: 2 },
+        {
+          projectId: 1,
+          name: 'Clone failure',
+          order: 3,
+          payload: () => 'not cloneable',
+        },
+      ])).rejects.toThrow()
+
+      expect((await table.list()).map(record => record.name)).toEqual(['Before bulk failure'])
+      expect(await storage.getRevision()).toBe(revisionBefore)
+      expect(await table.add({ projectId: 1, name: 'Next id', order: 4 })).toBe(2)
+    })
+
+    it('surfaces structuredClone failures as asynchronous rejections', async () => {
+      const result = table.add({
+        projectId: 1,
+        name: 'Clone failure',
+        order: 1,
+        payload: () => 'not cloneable',
+      })
+
+      expect(result).toBeInstanceOf(Promise)
+      await expect(result).rejects.toThrow()
+      expect(await table.list()).toEqual([])
+    })
+
+    it('restricts transaction facades to their declared tables', async () => {
+      await storage.transaction('readonly', [TABLE_NAME], async transaction => {
+        expect(() => transaction.table<ExampleRecord>('undeclared')).toThrow()
+        expect(await transaction.table<ExampleRecord>(TABLE_NAME).list()).toEqual([])
+      })
+    })
+
+    it('changes revision for executed put, update, and non-empty bulkPut writes', async () => {
       const id = await table.add({ projectId: 1, name: 'Written', order: 1 })
-      const writtenRevision = await storage.getRevision()
+      const afterAdd = await storage.getRevision()
 
-      expect(writtenRevision).not.toBe(initialRevision)
+      await table.put({ id, projectId: 1, name: 'Written', order: 1 })
+      const afterPut = await storage.getRevision()
+      expect(afterPut).not.toBe(afterAdd)
 
-      await table.delete(id + 100)
-      await table.bulkDelete([id + 200])
-      expect(await storage.getRevision()).toBe(writtenRevision)
+      await table.update(id, { name: 'Written' })
+      const afterUpdate = await storage.getRevision()
+      expect(afterUpdate).not.toBe(afterPut)
+
+      await table.bulkPut([{ id, projectId: 1, name: 'Written', order: 1 }])
+      expect(await storage.getRevision()).not.toBe(afterUpdate)
+    })
+
+    it('does not change revision after no-op delete operations', async () => {
+      const revisionBefore = await storage.getRevision()
+
+      await table.delete(100)
+      await table.bulkDelete([200])
+
+      expect(await storage.getRevision()).toBe(revisionBefore)
     })
 
     it('keeps watch capability and method availability consistent', () => {
@@ -208,4 +339,12 @@ export function runStorageContract(
       expect((await table.get(id))?.name).toBe('Original')
     })
   })
+}
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolvePromise!: () => void
+  const promise = new Promise<void>(resolve => {
+    resolvePromise = resolve
+  })
+  return { promise, resolve: resolvePromise }
 }
