@@ -29,6 +29,7 @@ describe('Agent architecture boundaries', () => {
     ["static store import", "import { useProjectStore } from '../../stores/project-store'"],
     ['side-effect schema import', "import '../../db/schema'"],
     ['re-exported schema import', "export { db } from '../../db/schema'"],
+    ['TypeScript import-equals schema import', "import schema = require('../../db/schema')"],
     ['literal dynamic store import', "const store = import('../../stores/project-store')"],
     ['literal schema require', "const schema = require('../../db/schema')"],
     ['template interpolation dynamic schema import', "const template = `${import('../../db/schema')}`"],
