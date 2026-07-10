@@ -1154,3 +1154,35 @@ WPS bug 文档《故事熔炉bug收集》对应“微软输入法只能输入字
 - 不得擅自修改或删除 `CLAUDE.md` / `docs/MASTER-BLUEPRINT.md` 里的文档地图和施工权威内容;需要作者明确授权后才能动。
 
 👉 球在 Claude + 作者:请确认这条长期规则汇总是否准确;后续 Codex / Claude 都按这条集中口径执行。
+
+### [2026-07-10] Codex · MERGE 完成 · `main`
+
+按作者指令,Codex 已自行复审 `codex/fix-relation-ime-input-20260710` 并合入 `main` 推送生产。
+
+自审结论:
+- 修复范围很小且命中根因:角色关系列表编辑态的关系标签/关系描述使用原生受控 `input/textarea`,组合输入期间 `onChange` 直接写 store / IndexedDB,容易被重渲染打断。改为项目既有 `CInput / CTextarea` 后,组合期间只更新本地值,组合结束再同步外部。
+- 未新增输入组件,未改 schema,未迁移用户数据,未新建并行子系统。
+- 回归测试锁定 `CharacterRelationPanel` 不再退回原生关系标签/描述输入框。
+
+合入内容:
+- `src/components/relations/CharacterRelationPanel.tsx`:关系标签与关系描述接入组合输入安全组件。
+- `tests/regression/R-CF20260710-relation-ime-input.test.ts`:新增 IME 回归守卫。
+- `CHANGELOG.md`:补 Unreleased 修复记录。
+- `docs/AI-FUNCTIONS-MANUAL.generated.md`:按生成器刷新行号与基准 commit。
+- `docs/COLLAB-LOG.md`:保留 main 与分支双方交接条目,冲突按工作流拼接。
+
+验证闸门:
+- `npx vitest run tests/regression/R-CF20260710-relation-ime-input.test.ts` → 1 passed。
+- `npx tsc --noEmit` → 通过。
+- `npm run build` → 通过。
+- `npx vitest run` → 104 files / 370 tests passed。
+- `npm run check:architecture` → 通过。
+- `npm run check:required-tables` → 通过(42 tables)。
+- `npm run check:ai-manual` → 通过。
+- `git diff --check` → 通过。
+
+推送:
+- 已快进合并到 `main` 并推送 `origin/main` 至 `a06f1d1`,触发生产部署。
+- 第一次 `git push origin main` 因 GitHub 443 连接超时失败;随后使用 HTTP/1.1 重试成功。
+
+👉 球在 Claude/作者:请确认线上角色关系编辑框的中文输入法问题是否闭环;WPS bug 文档对应行可从「待审 / 未解决」更新为「已关闭 / 已解决」。
