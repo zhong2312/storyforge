@@ -46,13 +46,22 @@ function createTool(
 }
 
 describe('ToolRegistry', () => {
-  it('注册工具、保留原始对象身份并拒绝重复名称', () => {
+  it('注册工具、暴露不可变 descriptor 并拒绝重复名称', () => {
     const registry = new ToolRegistry()
     const tool = createTool()
 
     registry.register(tool)
 
-    expect(registry.get(tool.name)).toBe(tool)
+    const descriptor = registry.get(tool.name)
+    expect(descriptor).toMatchObject({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description,
+      risk: tool.risk,
+      availability: tool.availability,
+    })
+    expect(descriptor).not.toBe(tool)
+    expect(registry.listAvailable(createContext())).toEqual([descriptor])
     expect(() => registry.register(tool)).toThrow('duplicate tool storyforge.test.read')
   })
 
@@ -228,32 +237,78 @@ describe('ToolRegistry', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 
-  it('注册后篡改策略与 executor 仍无法绕过注册时快照', async () => {
+  it('注册后篡改原工具不会改变不可变 descriptor、授权或 executor', async () => {
     const registry = new ToolRegistry()
     const originalExecute = vi.fn(async () => 'original')
     const replacementExecute = vi.fn(async () => 'replacement')
+    const originalSummarizeInput = vi.fn((input: { value: string }) => `input:${input.value}`)
+    const replacementSummarizeInput = vi.fn((input: { value: string }) => `replacement:${input.value}`)
+    const originalSummarizeOutput = vi.fn((output: string) => `output:${output}`)
+    const replacementSummarizeOutput = vi.fn((output: string) => `replacement:${output}`)
     const requiredScopes: ToolScope[] = ['project:write', 'manuscript:write']
+    const inputSchema = {
+      type: 'object',
+      properties: {
+        value: { type: 'string', description: '注册时描述' },
+      },
+    }
     const tool = createTool({
       name: 'storyforge.snapshot.write',
       risk: 'write',
       availability: 'desktop',
       requiredScopes,
+      inputSchema,
       execute: originalExecute,
+      summarizeInput: originalSummarizeInput,
+      summarizeOutput: originalSummarizeOutput,
     })
     registry.register(tool)
 
+    const descriptor = registry.get('storyforge.snapshot.write')
+    if (!descriptor) throw new Error('注册后的 descriptor 不存在')
+    const descriptorSchema = descriptor.inputSchema as {
+      properties: { value: { description: string } }
+    }
+
     Reflect.set(requiredScopes, 'length', 0)
+    Reflect.set(tool, 'name', 'storyforge.mutated.name')
     Reflect.set(tool, 'availability', 'web')
     Reflect.set(tool, 'requiredScopes', [])
     Reflect.set(tool, 'risk', 'read')
     Reflect.set(tool, 'execute', replacementExecute)
+    Reflect.set(tool, 'summarizeInput', replacementSummarizeInput)
+    Reflect.set(tool, 'summarizeOutput', replacementSummarizeOutput)
+    Reflect.set(inputSchema.properties.value, 'description', '篡改后的描述')
+
+    expect(descriptor).toMatchObject({
+      name: 'storyforge.snapshot.write',
+      risk: 'write',
+      availability: 'desktop',
+      requiredScopes: ['project:write', 'manuscript:write'],
+    })
+    expect(descriptorSchema.properties.value.description).toBe('注册时描述')
+    expect(Object.isFrozen(descriptor)).toBe(true)
+    expect(Object.isFrozen(descriptor.requiredScopes)).toBe(true)
+    expect(Object.isFrozen(descriptor.inputSchema)).toBe(true)
+    expect(Object.isFrozen(descriptorSchema.properties)).toBe(true)
+    expect(Object.isFrozen(descriptorSchema.properties.value)).toBe(true)
+    expect(Reflect.set(descriptor, 'risk', 'read')).toBe(false)
+    expect(Reflect.set(descriptor.requiredScopes, 0, 'project:read')).toBe(false)
+    expect(Reflect.set(descriptorSchema.properties.value, 'description', '再次篡改')).toBe(false)
+    expect(descriptor.risk).toBe('write')
+    expect(descriptor.requiredScopes).toEqual(['project:write', 'manuscript:write'])
+    expect(descriptorSchema.properties.value.description).toBe('注册时描述')
+    expect(descriptor.summarizeInput?.({ value: 'allowed' })).toBe('input:allowed')
+    expect(descriptor.summarizeOutput?.('original')).toBe('output:original')
+    expect(replacementSummarizeInput).not.toHaveBeenCalled()
+    expect(replacementSummarizeOutput).not.toHaveBeenCalled()
 
     const bypassContext = createContext({
       platform: 'web',
       scopes: new Set<ToolScope>(),
     })
     expect(registry.listAvailable(bypassContext)).toEqual([])
-    await expect(registry.execute(tool.name, bypassContext, { value: 'blocked' }))
+    await expect(registry.execute(descriptor.name, bypassContext, { value: 'blocked' }))
       .rejects.toThrow('tool storyforge.snapshot.write is not available')
     expect(originalExecute).not.toHaveBeenCalled()
     expect(replacementExecute).not.toHaveBeenCalled()
@@ -262,11 +317,27 @@ describe('ToolRegistry', () => {
       platform: 'desktop',
       scopes: new Set<ToolScope>(['project:write', 'manuscript:write']),
     })
-    expect(registry.listAvailable(authorizedContext)).toEqual([tool])
-    await expect(registry.execute(tool.name, authorizedContext, { value: 'allowed' }))
+    expect(registry.listAvailable(authorizedContext)).toEqual([descriptor])
+    await expect(registry.execute(descriptor.name, authorizedContext, { value: 'allowed' }))
       .resolves.toBe('original')
     expect(originalExecute).toHaveBeenCalledOnce()
     expect(replacementExecute).not.toHaveBeenCalled()
+  })
+
+  it('通过普通函数调用执行注册时捕获的 executor，使 this 为 undefined', async () => {
+    const registry = new ToolRegistry()
+    const execute: StoryForgeTool<{ value: string }, string>['execute'] = function (
+      this: void,
+      _context,
+      input,
+    ) {
+      return Promise.resolve(`${input.value}:${this === undefined ? 'undefined' : 'bound'}`)
+    }
+    const tool = createTool({ execute })
+    registry.register(tool)
+
+    await expect(registry.execute(tool.name, createContext(), { value: 'ok' }))
+      .resolves.toBe('ok:undefined')
   })
 
   it('锁定只读工具元数据与动态 execute 的 unknown 返回契约', () => {
@@ -304,7 +375,7 @@ describe('ToolRegistry', () => {
     >()
     expectTypeOf<Actor['kind']>().toEqualTypeOf<'user' | 'background-agent' | 'system'>()
     expectTypeOf<StoryForgeTool<{ value: string }, string>['execute']>().toEqualTypeOf<
-      (context: ToolExecutionContext, input: { value: string }) => Promise<string>
+      (this: void, context: ToolExecutionContext, input: { value: string }) => Promise<string>
     >()
     expect(context.sessionId).toBe('session-1')
     expect(context.approval).toEqual(approval)
