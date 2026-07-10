@@ -32,6 +32,7 @@ describe('Agent architecture boundaries', () => {
     ['TypeScript import-equals schema import', "import schema = require('../../db/schema')"],
     ['literal dynamic store import', "const store = import('../../stores/project-store')"],
     ['literal schema require', "const schema = require('../../db/schema')"],
+    ['normalized schema traversal import', "import '../../db/schema/../schema'"],
     ['template interpolation dynamic schema import', "const template = `${import('../../db/schema')}`"],
     ['template interpolation store require', "const template = `${require('../../stores/project-store')}`"],
     ['no-substitution template literal dynamic store import', 'const store = import(`../../stores/project-store`)'],
@@ -50,6 +51,7 @@ describe('Agent architecture boundaries', () => {
       const documentation = "export { db } from '../../db/schema'"
       const dynamicSpecifier = '../../stores/project-store'
       import { createToolDefinition } from './tool-types'
+      import { createToolDefinition as createAgentToolDefinition } from '../../stores/../lib/agent/tool-types'
       import { create } from 'zustand'
       import(dynamicSpecifier)
     `)

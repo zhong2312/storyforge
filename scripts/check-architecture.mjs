@@ -68,9 +68,11 @@ function moduleSpecifiers(source) {
 }
 
 function isForbiddenAgentImport(specifier) {
-  const normalized = specifier
-    .replace(/\\/g, '/')
-    .replace(/[?#].*$/, '')
+  const normalized = path.posix.normalize(
+    specifier
+      .replace(/\\/g, '/')
+      .replace(/[?#].*$/, ''),
+  )
     .replace(/\.(?:[cm]?[jt]sx?)$/, '')
     .replace(/\/index$/, '')
   return /(^|\/)stores(\/|$)/.test(normalized)
