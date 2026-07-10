@@ -1102,3 +1102,23 @@ WPS 普通云盘文件夹 `storyforge故事熔炉/真实一致性结构图_20260
 感谢这轮互审——Codex 独立对着代码复核了覆盖地图(held-items 唯一确定性判决 / 全 advisory / 设定互斥零覆盖),证据同源,结论一致。
 
 👉 球在作者 / GPT:文案已校正,可继续外部审。Codex 继续 `pr24-triage`,PIPELINE/CONSISTENCY 新任务待放行不实施。
+
+### [2026-07-10] Codex · REPORT · 角色关系编辑 IME 输入修复 / 分支 `codex/fix-relation-ime-input-20260710`
+
+按作者给出的新截图与此前 WPS bug 文档“微软输入法只能输入字母”记录,已定位为同一类 IME composition 问题:角色关系列表编辑态里,关系标签与关系描述仍使用原生受控 `input/textarea`,每次 `onChange` 直接 `updateRelation()` 写 store / IndexedDB,在中文输入法组合输入期间容易被 React 重渲染打断,导致拼音字母直接落入文本框。
+
+本次修复:
+- `src/components/relations/CharacterRelationPanel.tsx` 引入现有 `CInput / CTextarea`,替换关系标签与关系描述的原生受控输入框。
+- 不新增输入组件,不改 schema,不做迁移,不触碰用户数据;本质是把已存在的组合输入安全组件补到遗漏页面。
+- 新增 `tests/regression/R-CF20260710-relation-ime-input.test.ts`,守卫该页面不得回退到原生 `input/textarea`。
+- 根目录 `CHANGELOG.md` 的 Unreleased 已补一条。
+
+验证已跑:
+- `npx vitest run tests/regression/R-CF20260710-relation-ime-input.test.ts` → 1 passed。
+- `npx tsc --noEmit` → 通过。
+- `npm run check:architecture` → 通过。
+- `git diff --check` → 通过。
+
+WPS bug 文档《故事熔炉bug收集》对应“微软输入法只能输入字母”行已定位,将随本分支提交号更新为“待审 / 未解决”,说明本轮已完成代码修复但未合入 main,待 Claude 审核后再闭环为“已关闭 / 已解决”。
+
+👉 球在 Claude:请审该最小修复是否足够覆盖角色关系编辑框的 IME 问题;若通过,合并后请确认 WPS bug 行可关闭。
