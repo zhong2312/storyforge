@@ -990,3 +990,22 @@ WPS 普通云盘文件夹 `storyforge故事熔炉/真实一致性结构图_20260
 **⑤ `tests/canon/` 反例脚手架**:是写真·测试代码(不是文档)——已覆盖类(held-items)写真绿灯断言,未覆盖类写 `.skip`/`.todo`。**作者决定:先让 GPT 审文档,审后再决定搭。**
 
 **👉 球在作者 / GPT**:请外部审查本批一致性 + 管线设计(重点 `CONSISTENCY-COVERAGE-MAP.md` 的现状底片与反例基线是否与代码相符)。**审查放行前,Codex 不实施这批(继续手上 pr24-triage);放行后再按 Wave 0 起交接。**
+
+### [2026-07-10] Codex · REPORT · PR/Issue 清理 + #24 等价重写 / 分支 `codex/pr24-triage-fixes-20260710`
+
+按作者要求查看当前/历史 PR 与 issues。结论:作者自己的公告 issue #11「问题可以在群里反馈」明确保留,不关闭、不改。历史已回复/已处理的 PR 不再扰动。
+
+本分支处理:
+- **PR #24**:不直接 merge。它指出的两个问题属实,但实现里新增 `buildChapterNarrativeOrder()` 会和当前 `walkOutlineChaptersInCanonicalOrder()` / `resolveCanonicalChapterSequence()` 分叉。本轮按现有 canonical 章序等价重写:新增 `findPreviousCanonicalChapter` / `findNextCanonicalChapter`,替换 `ChapterEditor` 中审校摘要与情感节拍卡的旧 `chapter.order` 判断。
+- **PR #24 场景部分**:细纲页与正文页内嵌 `ScenePanel` 的“一键拆场景”采纳都改为 `parseEnhancedDetailSmart()` + `normalizeParsedScenes()`,结构化落 `DetailedScene[]`,不再把 AI 原文塞进第一个场景 notes。`detail.scene` 内置 prompt 改为严格 JSON。
+- **Issue #23**:关闭但无回复的“本地 Ollama / 硅基 embedding 上传解析报未提供 API KEY”暴露出同类根因:多处 AI 入口用 `!apiKey` 提前拦截,误伤 Ollama / LM Studio / 无鉴权 custom OpenAI-compatible 服务。本轮新增 `isAIConfigReady()` / `aiProviderAllowsEmptyKey()`,统一放开 `ollama` 与 `custom` 的空 key 前置拦截;云端服务若需要 key,交给真实接口返回 401/403。
+- **Issue #19**:有些中转站 CORS 限制。代码层面本轮不做通用服务端代理(涉及部署/安全边界),准备在 issue 里回复说明:现有固定 provider 有本地代理,自定义中转的浏览器 CORS 需中转站允许或走本地代理/后续方案。
+- **Issue #21**:网络搜索 + 自定义 Skill。准备回复:需求合理,已与 Phase 27 Agent / Tool Registry 远期方向一致,短期不直接打开任意联网/任意工具执行能力,需权限、安全和来源记录设计。
+
+新增测试:
+- `R-PR24-chapter-neighbor-and-scenes`:锁 canonical 相邻章查找与结构化场景归一化。
+- `R-issue23-ai-config-readiness`:锁 Ollama/custom 可空 key、云端 provider 仍需 key。
+
+当前未合 main;待验证与 GitHub 回复完成后推送交 Claude 审。
+
+👉 球在 Claude:请审本轮是否同意“#24 参考重写而非直接 merge”以及 #19/#21/#23 的回复口径。
