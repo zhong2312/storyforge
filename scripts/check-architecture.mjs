@@ -22,13 +22,13 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-function walk(dir, acc = []) {
+function walk(dir, acc = [], includeTests = false) {
   // 累加用于匹配的相对路径必须强制 POSIX 分隔符，否则 Windows 上得到 'src\\hooks\\...'，
   // 与下方 AI_META_FORWARDERS / 字面 prefix 比较失败，导致守卫误报。
   for (const ent of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
     const rel = `${dir}/${ent.name}`
-    if (ent.isDirectory()) walk(rel, acc)
-    else if (/\.(ts|tsx)$/.test(ent.name) && !/\.test\./.test(ent.name)) acc.push(rel)
+    if (ent.isDirectory()) walk(rel, acc, includeTests)
+    else if (/\.(ts|tsx)$/.test(ent.name) && (includeTests || !/\.test\./.test(ent.name))) acc.push(rel)
   }
   return acc
 }
@@ -181,6 +181,15 @@ function isForbiddenAgentImport(specifier) {
     .replace(/\/index$/, '')
   return /(^|\/)stores(\/|$)/.test(normalized)
     || /(^|\/)db\/schema$/.test(normalized)
+}
+
+if (process.argv.includes('--agent-import-probe')) {
+  const source = fs.readFileSync(0, 'utf8')
+  const forbiddenSpecifiers = moduleSpecifiers(source).filter(isForbiddenAgentImport)
+  for (const specifier of forbiddenSpecifiers) {
+    console.error(`[⑧Agent越层] Agent 层不得导入 ${specifier},应通过 Tool/Storage/Registry port`)
+  }
+  process.exit(forbiddenSpecifiers.length ? 1 : 0)
 }
 
 const violations = []
@@ -359,7 +368,7 @@ for (const dir of UI_DIRS) {
 // ── ⑧ Agent 层禁止绕过端口和三注册表 ──
 const agentDir = path.join(root, 'src/lib/agent')
 if (fs.existsSync(agentDir)) {
-  for (const file of walk('src/lib/agent')) {
+  for (const file of walk('src/lib/agent', [], true)) {
     const src = read(file)
     for (const specifier of moduleSpecifiers(src)) {
       if (isForbiddenAgentImport(specifier)) {
