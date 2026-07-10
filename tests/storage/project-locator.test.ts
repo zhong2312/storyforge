@@ -33,6 +33,28 @@ describe('project locator', () => {
     expect(sameProjectLocator(left, right)).toBe(true)
   })
 
+  it('不会将 projectId 不同的 Dexie 定位器视为同一项目', () => {
+    const first: ProjectLocator = { backend: 'dexie', projectId: 1 }
+    const second: ProjectLocator = { backend: 'dexie', projectId: 2 }
+
+    expect(sameProjectLocator(first, second)).toBe(false)
+  })
+
+  it('本地目录使用 projectUuid 而不是 projectPath 区分逻辑项目', () => {
+    const first: ProjectLocator = {
+      backend: 'local-folder',
+      projectUuid: 'project-a',
+      projectPath: 'F:/books/shared-path',
+    }
+    const second: ProjectLocator = {
+      backend: 'local-folder',
+      projectUuid: 'project-b',
+      projectPath: 'F:/books/shared-path',
+    }
+
+    expect(sameProjectLocator(first, second)).toBe(false)
+  })
+
   it('不会将 local-folder 与 dexie 定位器视为同一项目', () => {
     const localFolder: ProjectLocator = {
       backend: 'local-folder',
