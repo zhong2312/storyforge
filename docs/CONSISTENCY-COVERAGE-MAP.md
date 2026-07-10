@@ -21,7 +21,7 @@
 | 矛盾类别 | 现状机制 | 代码依据 | 检测等级 | 处置 |
 |---|---|---|---|---|
 | 物品重复获得(已持有又写成首次获得) | 从 itemLedger 投影持有物,确定性比对 | `consistency/held-items.ts` `checkHeldItemAcquisition` | 🟢硬 | advisory |
-| 章序 / 时序顺序错乱 | 规范大纲遍历得唯一章序 | `chapter-memory/canonical-chapter-sequence.ts` | 🟢硬(顺序,非语义) | 用于装配 |
+| 规范章序 / 输入排序 | 规范大纲遍历得唯一章序(**不判剧情时间线**:如"第3章死者第5章出场"不归它,见 R-CANON-timeline-1) | `chapter-memory/canonical-chapter-sequence.ts` | 🟢硬(顺序基础,非剧情时间线语义) | 用于装配 |
 | 检索期未来泄漏 / 跨世界串台 | 只召回当前章之前 + 同 worldGroupId | `retrieval/retrieval.ts` 硬过滤 | 🟢硬(降风险,**不保证输出**) | 影响输入 |
 | 单基数状态漂移(如"所在地点") | 新事实 supersede 旧(最新覆盖) | `fact-ledger/fact-ledger.ts` `conflictPolicy:'supersede'` | 🟡(覆盖旧值,**不"检测"冲突**) | 覆盖 |
 | 写回字段合法性(类型/枚举/FK/去重) | 采纳校验 | `adopt()` + `FIELD_REGISTRY` + `ADOPTION_SCHEMAS` | 🟢硬(结构,**非内容语义**) | 阻断非法写回 |
