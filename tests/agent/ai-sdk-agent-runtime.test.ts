@@ -249,7 +249,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(events.some(event => event.type === 'run.completed')).toBe(false)
   })
 
-  it('counts only context sources actually included by the read tool', async () => {
+  it('does not count context sources absent from the read result', async () => {
     const registry = chapterProposalRegistry({ included: [] })
     const streamer: AgentLoopStreamer = async function* (request) {
       const readInput = { sourceKeys: ['chapterOutline'] }
@@ -271,6 +271,31 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       type: 'run.failed', payload: { error: expect.stringContaining('先读取上下文源 chapterOutline') },
     })
     expect(events.some(event => event.type === 'approval.requested')).toBe(false)
+  })
+
+  it('accepts required context sources that were checked but contain no data', async () => {
+    const registry = chapterProposalRegistry({
+      included: [], omitted: ['chapterOutline'], trimmed: [],
+    })
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const proposal = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: { content: '正文'.repeat(30) },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: proposal }
+      const proposalOutput = await request.execute('storyforge.change.propose', proposal)
+      yield { type: 'tool-result', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', output: proposalOutput }
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput()))
+
+    expect(events.some(event => event.type === 'run.failed')).toBe(false)
+    expect(events.some(event => event.type === 'approval.requested')).toBe(true)
   })
 
   it('rejects a chapter proposal targeting a different record', async () => {

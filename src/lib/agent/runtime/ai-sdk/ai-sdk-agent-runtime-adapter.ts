@@ -119,7 +119,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           }
           const output = await registry.execute(toolName, context, toolInput)
           if (toolName === CONTEXT_READ_TOOL) {
-            for (const source of stringArrayField(asRecord(output), 'included')) {
+            for (const source of acknowledgedContextSources(toolInput, output)) {
               readContextSources.add(source)
             }
           }
@@ -542,6 +542,14 @@ function isRecordArray(value: unknown): value is Record<string, unknown>[] {
 function stringArrayField(record: Record<string, unknown>, key: string): string[] {
   const value = record[key]
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function acknowledgedContextSources(input: unknown, output: unknown): string[] {
+  const requested = new Set(stringArrayField(asRecord(input), 'sourceKeys'))
+  const result = asRecord(output)
+  return ['included', 'omitted', 'trimmed']
+    .flatMap(field => stringArrayField(result, field))
+    .filter(source => requested.has(source))
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {
