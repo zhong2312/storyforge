@@ -9,8 +9,24 @@ const STORAGE_KEY = 'storyforge-ai-config'
 const PRESETS_KEY = 'storyforge-ai-presets'
 const SESSION_API_KEY = 'storyforge-ai-api-key-session'
 const REMEMBER_API_KEY = 'storyforge-ai-api-key-remember'
+const PORTABLE_KEY_MIGRATION = 'storyforge-ai-portable-key-migration-v1'
 const EMBEDDING_KEY = 'storyforge-embedding-config'
 const EMBEDDING_SESSION_KEY = 'storyforge-embedding-key-session'
+
+interface RuntimeLocation {
+  hostname?: string
+  port?: string
+  pathname?: string
+}
+
+export function isStoryForgePortableLocation(
+  runtimeLocation: RuntimeLocation | undefined = globalThis.location,
+): boolean {
+  if (!runtimeLocation) return false
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(runtimeLocation.hostname || '')
+    && runtimeLocation.port === '17831'
+    && (runtimeLocation.pathname || '').startsWith('/storyforge')
+}
 
 const DEFAULT_CONFIG: AIConfig = {
   provider: 'deepseek',
@@ -121,15 +137,27 @@ function loadInitialConfig(): { config: AIConfig; rememberApiKey: boolean } {
 
   const rememberRaw = localStorage.getItem(REMEMBER_API_KEY)
   const legacyHasLocalKey = typeof savedConfig.apiKey === 'string' && savedConfig.apiKey.length > 0
-  const rememberApiKey = rememberRaw == null ? legacyHasLocalKey : rememberRaw === 'true'
   const sessionKey = sessionStorage.getItem(SESSION_API_KEY) || ''
+  const migratePortableKey = isStoryForgePortableLocation()
+    && localStorage.getItem(PORTABLE_KEY_MIGRATION) !== 'done'
+  const rememberApiKey = migratePortableKey
+    ? true
+    : rememberRaw == null ? legacyHasLocalKey : rememberRaw === 'true'
+  const config: AIConfig = {
+    ...DEFAULT_CONFIG,
+    ...savedConfig,
+    apiKey: rememberApiKey ? (savedConfig.apiKey || sessionKey) : sessionKey,
+  }
+
+  if (migratePortableKey) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+    localStorage.setItem(REMEMBER_API_KEY, 'true')
+    localStorage.setItem(PORTABLE_KEY_MIGRATION, 'done')
+    sessionStorage.removeItem(SESSION_API_KEY)
+  }
 
   return {
-    config: {
-      ...DEFAULT_CONFIG,
-      ...savedConfig,
-      apiKey: rememberApiKey ? (savedConfig.apiKey || '') : sessionKey,
-    },
+    config,
     rememberApiKey,
   }
 }
@@ -276,7 +304,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       persistConfig(newConfig, get().rememberApiKey)
       set({ config: newConfig, activePresetId: null })
     }
-    const url = buildOpenAIEndpoint(normalized.baseUrl, 'chat/completions')
+    const url = buildOpenAIEndpoint(normalized.baseUrl, 'chat/completions', { provider: config.provider })
     const startTime = Date.now()
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 15_000)
@@ -296,7 +324,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
+          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         },
         body: JSON.stringify({
           model: config.model,
@@ -352,7 +380,9 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       let errorMsg: string
 
       if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-        errorMsg = '网络错误 — 可能原因：1) 网络不通 2) 该平台不支持浏览器直接调用(CORS) 3) Base URL 错误'
+        errorMsg = url.startsWith('/openai-compatible-proxy/')
+          ? '本地 AI 代理请求失败 — 请确认当前页面由 StoryForge Portable 启动，且 17831 端口未被旧进程占用'
+          : '网络错误 — 可能原因：1) 网络不通 2) 该平台不支持浏览器直接调用(CORS) 3) Base URL 错误'
       } else if (error.name === 'AbortError') {
         errorMsg = '请求超时'
       } else {

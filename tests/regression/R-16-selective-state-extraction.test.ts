@@ -23,7 +23,7 @@ describe('R-16: selective state extraction wiring', () => {
     const source = readFileSync(sourcePath, 'utf8')
     const body = source.slice(
       source.indexOf('const handleAutoPostGenerate = async (task: {'),
-      source.indexOf('const handleAcceptAI = async (text: string) => {'),
+      source.indexOf('useEffect(() => subscribeAgentProjectCommits'),
     )
 
     expect(body).toContain('buildSelectiveStateContext(task.chapterPlainText, extraStateIds).text')

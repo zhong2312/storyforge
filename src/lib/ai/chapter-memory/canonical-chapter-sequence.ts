@@ -1,5 +1,6 @@
 import type { Chapter, OutlineNode } from '../../types'
 import { walkOutlineChaptersInCanonicalOrder } from '../../outline/canonical-outline-walk'
+import { pickBestChapterForOutline } from '../../chapters/selectors'
 
 export interface ChapterSequenceAnomaly {
   kind:
@@ -46,11 +47,10 @@ export function resolveCanonicalChapterSequence(
     chaptersByOutline.set(chapter.outlineNodeId, list)
   }
   for (const [outlineNodeId, mapped] of chaptersByOutline) {
-    mapped.sort((a, b) => (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER))
     if (mapped.length > 1) {
       anomalies.push({
         kind: 'duplicate-chapter-mapping',
-        detail: `outline ${outlineNodeId} maps ${mapped.length} chapters; lowest id wins`,
+        detail: `outline ${outlineNodeId} maps ${mapped.length} chapters; best content row wins`,
       })
     }
   }
@@ -59,7 +59,8 @@ export function resolveCanonicalChapterSequence(
   for (const item of walk.chapters) {
     const id = item.outlineNode.id
     if (id == null) continue
-    const chapter = chaptersByOutline.get(id)?.[0]
+    const mapped = chaptersByOutline.get(id) ?? []
+    const chapter = pickBestChapterForOutline(mapped)
     if (chapter) sequence.push({ chapter, outlineNode: item.outlineNode, worldGroupId: item.worldGroupId })
   }
 
@@ -68,4 +69,35 @@ export function resolveCanonicalChapterSequence(
     .forEach(chapter => sequence.push({ chapter, outlineNode: null, worldGroupId: null }))
 
   return { sequence, anomalies }
+}
+
+export function findPreviousCanonicalChapter(
+  outlineNodes: OutlineNode[],
+  chapters: Chapter[],
+  currentChapter: Chapter | null | undefined,
+): Chapter | undefined {
+  return findAdjacentCanonicalChapter(outlineNodes, chapters, currentChapter, -1)
+}
+
+export function findNextCanonicalChapter(
+  outlineNodes: OutlineNode[],
+  chapters: Chapter[],
+  currentChapter: Chapter | null | undefined,
+): Chapter | undefined {
+  return findAdjacentCanonicalChapter(outlineNodes, chapters, currentChapter, 1)
+}
+
+function findAdjacentCanonicalChapter(
+  outlineNodes: OutlineNode[],
+  chapters: Chapter[],
+  currentChapter: Chapter | null | undefined,
+  offset: -1 | 1,
+): Chapter | undefined {
+  if (!currentChapter) return undefined
+  const { sequence } = resolveCanonicalChapterSequence(outlineNodes, chapters)
+  const index = sequence.findIndex(entry => {
+    if (currentChapter.id != null && entry.chapter.id != null) return entry.chapter.id === currentChapter.id
+    return entry.chapter.outlineNodeId === currentChapter.outlineNodeId
+  })
+  return index >= 0 ? sequence[index + offset]?.chapter : undefined
 }

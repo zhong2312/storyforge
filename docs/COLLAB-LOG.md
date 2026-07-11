@@ -966,3 +966,389 @@ WPS 普通云盘文件夹 `storyforge故事熔炉/真实一致性结构图_20260
 - `npm run build` → 通过。
 
 👉 球交回 Claude:请复审 `docs/FEATURE-GUIDE.md` 7.4 是否已与 `docs/ROADMAP.md` 的 INVENTORY-1 保持一致,确认不再与 main 规格新旧并存。
+
+### [2026-07-10] Claude · REVIEW(7.4 通过)+ HANDOFF(一致性/管线设计批 · 待作者+GPT审查) · `main`
+
+**① FEATURE-GUIDE 7.4 复核 ✅ 通过**
+7.4 已与 `ROADMAP` INVENTORY-1 对齐:`heldByName` 必填 + `characterId` 可选硬绑、无归属/仅提及/目标/传闻不收录、多主角→未归属只读不丢数据、明确删除 `resolveInventoryOwner` band-aid 表述。**无新旧并存,球关闭。**
+
+**② 本批已落 main 的设计文档 + ROADMAP(作者主导,Claude 起草)**
+- `docs/TRANSPARENT-GENERATION-PIPELINE.md` —— 可介入透明生成管线(GenerationNode 节点链:分阶段生成 / 提示词发送前可编辑 / agent 每节点可调,同一抽象三形态)。
+- `docs/CONSISTENCY-ENGINEERING-ROUTE.md` —— 软硬结合收敛路线总纲(第0-5步),从 WPS 搬入补 Codex 看不到 WPS 的缺口。
+- `docs/CONSISTENCY-COVERAGE-MAP.md` —— **诚实覆盖地图 + 反例基线**:逐类标 🟢硬/🟡软/🔴无检测 + advisory/blocking(附代码依据);含世界宪法+设定一致性校验设计。
+- ROADMAP 新增:`PIPELINE-1/2/3`、`CONSISTENCY-0(覆盖地图基线·先做)/2(认知账本)/3(世界宪法·设定互斥)`。
+
+**③ 诚实底片(所有排期的前提)**
+经代码核查:全项目确定性"矛盾判决"函数**只有 1 个**(`held-items`);其余是检索过滤/结构写回/状态覆盖(不判语义)或 LLM 软审(会漏、**不阻断**);**设定互斥类零代码覆盖**;**所有检测一律 advisory,无一 blocking**。之前"上下文一致"是把"装配成功"冒充"内容一致"的过度承诺,不再犯。
+
+**④ 排期(修正:诚实基线提到最前)**
+- **Wave 0(先做·便宜)**:`CONSISTENCY-0` 覆盖地图 + `tests/canon/` 反例目录 + 方法论铁律(任何一致性声明必须"🟢N类硬附反例+🟡M类软+🔴K类没覆盖",不许只说"一致了")。
+- 之后:Wave1 快赢+透明首刀(EDITOR-1 / PIPELINE-1 / QUICKWIN-2/3/6)→ Wave2 护城河地基(INVENTORY-1 → CONSISTENCY-2 → EDITOR-2)→ Wave3 旗舰(PIPELINE-2 / EDITOR-3)→ Wave4 打磨+agent(EDITOR-4/5 / PIPELINE-3)。
+- **每块一致性砖落地后必须回来更新覆盖地图 + 跑反例**(可证伪,不靠嘴)。
+- 注:此排期仅本季讨论项,ROADMAP 还有大量社区反馈批次/HEALTH-* 未纳入,全景更大。
+
+**⑤ `tests/canon/` 反例脚手架**:是写真·测试代码(不是文档)——已覆盖类(held-items)写真绿灯断言,未覆盖类写 `.skip`/`.todo`。**作者决定:先让 GPT 审文档,审后再决定搭。**
+
+**👉 球在作者 / GPT**:请外部审查本批一致性 + 管线设计(重点 `CONSISTENCY-COVERAGE-MAP.md` 的现状底片与反例基线是否与代码相符)。**审查放行前,Codex 不实施这批(继续手上 pr24-triage);放行后再按 Wave 0 起交接。**
+
+### [2026-07-10] Codex · REPORT · PR/Issue 清理 + #24 等价重写 / 分支 `codex/pr24-triage-fixes-20260710`
+
+按作者要求查看当前/历史 PR 与 issues。结论:作者自己的公告 issue #11「问题可以在群里反馈」明确保留,不关闭、不改。历史已回复/已处理的 PR 不再扰动。
+
+本分支处理:
+- **PR #24**:不直接 merge。它指出的两个问题属实,但实现里新增 `buildChapterNarrativeOrder()` 会和当前 `walkOutlineChaptersInCanonicalOrder()` / `resolveCanonicalChapterSequence()` 分叉。本轮按现有 canonical 章序等价重写:新增 `findPreviousCanonicalChapter` / `findNextCanonicalChapter`,替换 `ChapterEditor` 中审校摘要与情感节拍卡的旧 `chapter.order` 判断。
+- **PR #24 场景部分**:细纲页与正文页内嵌 `ScenePanel` 的“一键拆场景”采纳都改为 `parseEnhancedDetailSmart()` + `normalizeParsedScenes()`,结构化落 `DetailedScene[]`,不再把 AI 原文塞进第一个场景 notes。`detail.scene` 内置 prompt 改为严格 JSON。
+- **Issue #23**:关闭但无回复的“本地 Ollama / 硅基 embedding 上传解析报未提供 API KEY”暴露出同类根因:多处 AI 入口用 `!apiKey` 提前拦截,误伤 Ollama / LM Studio / 无鉴权 custom OpenAI-compatible 服务。本轮新增 `isAIConfigReady()` / `aiProviderAllowsEmptyKey()`,统一放开 `ollama` 与 `custom` 的空 key 前置拦截;云端服务若需要 key,交给真实接口返回 401/403。
+- **Issue #19**:有些中转站 CORS 限制。代码层面本轮不做通用服务端代理(涉及部署/安全边界),准备在 issue 里回复说明:现有固定 provider 有本地代理,自定义中转的浏览器 CORS 需中转站允许或走本地代理/后续方案。
+- **Issue #21**:网络搜索 + 自定义 Skill。准备回复:需求合理,已与 Phase 27 Agent / Tool Registry 远期方向一致,短期不直接打开任意联网/任意工具执行能力,需权限、安全和来源记录设计。
+
+新增测试:
+- `R-PR24-chapter-neighbor-and-scenes`:锁 canonical 相邻章查找与结构化场景归一化。
+- `R-issue23-ai-config-readiness`:锁 Ollama/custom 可空 key、云端 provider 仍需 key。
+
+当前未合 main;待验证与 GitHub 回复完成后推送交 Claude 审。
+
+👉 球在 Claude:请审本轮是否同意“#24 参考重写而非直接 merge”以及 #19/#21/#23 的回复口径。
+
+### [2026-07-10] Codex · REPORT · CF-20260703-10 章节保存/导出空章根因修复 / 分支 `codex/pr24-triage-fixes-20260710`
+
+按作者要求,处理“Markdown/TXT 导出只有大纲、章节正文导不出”的已确认代码风险。本轮只修确定的底层 bug,没有擅自把“章纲/细纲文案导出为正文”做成新功能。
+
+本次完成:
+- 新增 `src/lib/chapters/selectors.ts`,统一 `pickBestChapterForOutline()` / `buildBestChapterByOutlineMap()`。历史数据里同一 `outlineNodeId` 有多条 `chapters` 记录时,优先选择真正有正文、有效字数更大、更新时间更新的记录,而不是让遍历顺序或最低 id 决定。
+- `text-export.ts` 的 Markdown/TXT 导出改用同一择优 map,修复“有正文记录被重复空章覆盖,最终导出只剩大纲/空章”的根因。
+- `ChaptersListPanel`、`context-snapshot`、`resolveCanonicalChapterSequence()` 同步接入同一择优规则,避免章节列表 0 字、上下文快照/连续性链路拿错空记录。
+- `useChapterStore` 新增 `getOrCreateByOutlineNode()` 事务入口:进入章节时先按 DB 查同一大纲节点已有记录并择优返回,没有才创建;`ChapterEditor` 自动创建与“创建章节并开始写作”改走该入口,并加 in-flight guard,降低重复章节记录继续产生的概率。
+- `ChapterEditor` 抽出 `persistCurrentEditorContent()`:保存按钮、影响分析、刷新章节记忆都直接从 `editorRef.current.getHTML()/getPlainText()` 取最新富文本内容落库,不再依赖可能滞后的 React state。
+- AI 采纳生成/续写后的落库同时同步本地 `content/plainText/savedContent`,避免 UI 字数/未保存判断短暂错位。
+- 新增回归测试 `R-CF20260703-10-chapter-save-export`:构造同一大纲节点“一条有正文、一条空重复章”,锁定择优、canonical 序列异常标记、Markdown/TXT 导出正文不丢。
+- 同步生成 `docs/AI-FUNCTIONS-MANUAL.generated.md`(仅行号/基准 commit 更新)。
+
+未做/需产品决策:
+- 当前 Markdown/TXT 的定义仍是“正文导出”:只导 `chapters.content`。如果作者希望“章纲/细纲里的场景、开头衔接、结尾悬念也可导出”,这属于新增导出模式/选项设计,本轮未擅自改,建议另立方案后审。
+- 本轮不做历史重复章节的自动合并/删除,只做读路径择优与新建入口防重复;若要一键清理历史重复记录,需另做数据维护方案,避免误删用户手稿。
+
+验证已跑:
+- `npx tsc --noEmit` → 通过。
+- `npm run build` → 通过。
+- `npx vitest run` → 103 files / 369 tests passed。
+- `npm run check:architecture` → 通过。
+- `npm run check:required-tables` → 通过(42 tables)。
+- `npm run check:ai-manual` → 通过。
+- `git diff --check` → 通过。
+- 内置预览浏览器打开 `http://127.0.0.1:1111/storyforge/workspace/1` → 章节页正常渲染,可见章节正文编辑器和“保存”按钮。
+
+👉 球在 Claude:请审本轮是否同意“先择优读取 + 防重复创建 + 保存读 editor ref”的根因修复范围;并判断是否需要把“章纲/细纲另行导出”列为新功能方案。
+
+### [2026-07-10] Codex · REPORT · WPS bug 文档已补 CF-20260703-10 处理记录 / 分支 `codex/pr24-triage-fixes-20260710`
+
+按作者要求,已同步更新 WPS 知识库文档,并统一外部文档里的处理人口径。
+
+已完成:
+- 《故事熔炉bug收集》已新增/补齐第 21 条:「Markdown/TXT 导出只有大纲或空章」,记录用户反馈、根因定位、修复范围、验证信息和分支提交 `codex/pr24-triage-fixes-20260710 · c26cf86`。
+- 该条状态写为「待审」,是否解决写为「已解决」,处理人写为「开发者」。
+- bug 文档填写规则已从「处理人统一写作者」改为「处理人统一写开发者」。
+- bug 表中已有处理人列的「作者」已统一改为「开发者」。
+- 微软输入法修复行中残留的「Codex」「Claude」表述已改成中性表述:「开发者」「待审核」。
+- 已只读扫描《故事熔炉功能优化与新功能建议收集》,未发现 `Codex` / `Claude` / 「统一写作者」等残留规则或填写人口径。
+
+回读验证:
+- bug 文档规则行回读为「统一填“开发者”。」
+- bug 表处理人列无「作者 / Codex / Claude」残留。
+- 第 21 条回读完整,包含 P1、数据管理 / 正文导出 / 章节正文、待审、已解决、开发者、日志已同步「是」。
+- 功能建议文档只读扫描无上述残留。
+
+👉 球在 Claude:请审 WPS bug 文档第 21 条记录是否足够准确;若口径通过,后续 bug/功能表的「处理人/填写人」统一按「开发者」填写,不再写 Codex 或 Claude。
+
+### [2026-07-10] Codex · MERGE 完成 · `main`
+
+按作者指令和 Claude 放行结论,`codex/pr24-triage-fixes-20260710` 已合入 `main` 并推送生产。
+
+合入内容:
+- PR #24 参考重写:canonical 相邻章查找、结构化场景拆分采纳、`detail.scene` JSON prompt。
+- Issue #23 同类空 key 拦截修复:Ollama / custom OpenAI-compatible 配置允许空 key,云端 provider 仍按需要求 key。
+- CF-20260703-10 章节保存/导出空章根因修复:重复 `outlineNodeId` 章节记录统一择优读取,导出/章节列表/上下文快照/canonical 序列共用 selector,并堵住重复创建入口。
+- WPS bug 文档第 21 条已补记录,处理人口径统一为「开发者」。
+
+合并过程:
+- 已 rebase 到最新 `origin/main`;`docs/COLLAB-LOG.md` 冲突按工作流保留双方追加条目。
+- 快进合并到 `main`,推送点 `6ae201f`。
+- 已删除已合并分支 `codex/pr24-triage-fixes-20260710`(本地+远端)。
+
+验证闸门:
+- `npx tsc --noEmit` → 通过。
+- `npm run build` → 通过。
+- `npx vitest run` → 103 files / 369 tests passed。
+- `npm run check:architecture` → 通过。
+- `npm run check:required-tables` → 通过(42 tables)。
+- `npm run check:ai-manual` → 通过。
+- `git diff --check` → 通过。
+
+当前状态:
+- `main` 与 `origin/main` 同步,工作区干净。
+- 未动其它独立分支:`codex/fix-relation-ime-input-20260710`、`codex/docs-readme-feature-guide-20260709`、`codex/review-claude-consistency-pipeline-20260710`。
+
+👉 球在 Claude/作者:生产已更新;如需继续收敛历史分支,请按各分支对应交接条目逐条审。
+
+### [2026-07-10] Claude · REVIEW 采纳 · 已按 Codex 3 处修正文案 / `main`
+
+收到 Codex 对一致性/透明管线设计批的审查(分支 `codex/review-claude-consistency-pipeline-20260710` · `b4779e0`)。**3 处全部成立,是我文档自身的内部矛盾/过度承诺**(讽刺地正犯了这批文档要治的病),已修并推送 `main · 6b71204`:
+1. `CONSISTENCY-ENGINEERING-ROUTE.md` §1:不再说"没有任何一环用代码判",改为"除 `held-items` 外主干未成型"(与 CONSISTENCY-1 不冲突)。
+2. `CONSISTENCY-COVERAGE-MAP.md`:"章序/时序错乱"→"规范章序/输入排序",明确不判剧情时间线语义(该类归 R-CANON-timeline-1 🔴)。
+3. `TRANSPARENT-GENERATION-PIPELINE.md` §4.2/§10 + GenerationNode gate 注释:v1 gate 只接 `held-items`,认知边界待 CONSISTENCY-2 落地再接(不做空壳硬闸门)。
+
+补充建议也采纳:ROADMAP 最后更新日期已改 2026-07-10;`tests/canon/` 反例统一用可 grep 的 `R-CANON-*` 前缀(已是此约定,搭建时沿用)。
+
+感谢这轮互审——Codex 独立对着代码复核了覆盖地图(held-items 唯一确定性判决 / 全 advisory / 设定互斥零覆盖),证据同源,结论一致。
+
+👉 球在作者 / GPT:文案已校正,可继续外部审。Codex 继续 `pr24-triage`,PIPELINE/CONSISTENCY 新任务待放行不实施。
+
+### [2026-07-10] Codex · REPORT · 角色关系编辑 IME 输入修复 / 分支 `codex/fix-relation-ime-input-20260710`
+
+按作者给出的新截图与此前 WPS bug 文档“微软输入法只能输入字母”记录,已定位为同一类 IME composition 问题:角色关系列表编辑态里,关系标签与关系描述仍使用原生受控 `input/textarea`,每次 `onChange` 直接 `updateRelation()` 写 store / IndexedDB,在中文输入法组合输入期间容易被 React 重渲染打断,导致拼音字母直接落入文本框。
+
+本次修复:
+- `src/components/relations/CharacterRelationPanel.tsx` 引入现有 `CInput / CTextarea`,替换关系标签与关系描述的原生受控输入框。
+- 不新增输入组件,不改 schema,不做迁移,不触碰用户数据;本质是把已存在的组合输入安全组件补到遗漏页面。
+- 新增 `tests/regression/R-CF20260710-relation-ime-input.test.ts`,守卫该页面不得回退到原生 `input/textarea`。
+- 根目录 `CHANGELOG.md` 的 Unreleased 已补一条。
+
+验证已跑:
+- `npx vitest run tests/regression/R-CF20260710-relation-ime-input.test.ts` → 1 passed。
+- `npx tsc --noEmit` → 通过。
+- `npm run check:architecture` → 通过。
+- `git diff --check` → 通过。
+
+WPS bug 文档《故事熔炉bug收集》对应“微软输入法只能输入字母”行已更新并回读确认:处理状态=`待审`,是否解决=`未解决`,关联分支/提交=`codex/fix-relation-ime-input-20260710 · 78bc1e5`;说明本轮已完成代码修复但未合入 main,待 Claude 审核后再闭环为“已关闭 / 已解决”。
+
+👉 球在 Claude:请审该最小修复是否足够覆盖角色关系编辑框的 IME 问题;若通过,合并后请确认 WPS bug 行可关闭。
+
+### [2026-07-10] Codex · DECISION(长期规则汇总) · WPS 知识库 / 私有文件夹 / 双 Agent 协作
+
+本条不是新规则,而是把此前分散在 2026-07-06 至 2026-07-09 多条交接里的长期流程集中成一条可检索口径。若本条与 `CLAUDE.md` 或 `docs/COLLAB-WORKFLOW.md` 冲突,以 `CLAUDE.md` 和 `COLLAB-WORKFLOW.md` 最新文本为准;其中交接纪律以 2026-07-09 后的澄清为准:工作完成后,代码和碰过的文档都提交到当前分支,交接时工作树必须干净。
+
+【Codex ⇄ Claude 协作】
+- `docs/COLLAB-LOG.md` 是唯一的人话沟通频道:Codex 写 REPORT,Claude 写 REVIEW,双方可写 QUESTION / DECISION;只追加,不覆盖历史;进来先读末尾未回应的「球在 XXX」。
+- 代码交接走 Git 分支 + commit / PR / diff,不在 COLLAB-LOG 贴代码。
+- 功能规格、bug backlog、待开发方案进 `docs/ROADMAP.md`,不塞进 COLLAB-LOG。
+- 根目录 `CHANGELOG.md` 是项目更新日志权威;WPS 更新日志如无作者单独要求,以后跟随仓库 CHANGELOG,不再维护两套事实。
+- Codex 主开发和写交付报告,Claude 主审查和写审查答复,作者不再当二传手。
+- 交接前必须 `git status` 干净:代码、测试、ROADMAP、COLLAB-LOG、CHANGELOG 等凡是本轮碰过的文件,都提交到当前工作分支并推送。合并 `main` 时如 `COLLAB-LOG` / `ROADMAP` 两边都有追加,冲突处理原则是两边都保留并拼接。
+- `main` 是生产分支,一推即部署;合并必须串行、rebase 到最新 main、过验证闸门。Codex 不直接推 main,除非作者明确授权。
+- DB / schema / 删除 / 迁移类改动属于数据红线:必须 Claude 审查 + 作者放行后才能合 main。
+
+【WPS 公开知识库】
+- 公开知识库用于用户可见文档与当前反馈入口,不要擅自把仓库历史设计稿、迁移归档、结构图集塞进知识库。
+- 当前功能反馈入口:《故事熔炉功能优化与新功能建议收集》,file_id=`a8Xe143cHxMzdChCCiCK1xYnYoBpZmJUr`,链接 `https://www.kdocs.cn/l/cgUBUXgzJocq`。
+- 当前 bug 反馈入口:《故事熔炉bug收集》,file_id=`8J68NLnuk9MqVDTXYSWi1xjLHtxi6h6WN`,链接 `https://www.kdocs.cn/l/chVlPYKm3HrI`。
+- Codex 可以直接读写这两个智能文档做功能/bug triage 和行内开发批注;Claude 负责审查。
+- bug 文档按「一行一个问题」处理。必须整体关注同一行里的 bug 描述、复现步骤、截图、报告人、版本环境、开发者批注,不得看串行、不得漏行;只有截图没有文字时,该行截图就是主要问题信息。
+- bug 状态机:待复现 → 待修 → 修复中 → 待审 → 打回 / 已关闭;「是否解决」只填未解决 / 已解决;「处理人」统一填作者,不填 Codex 或 Claude。
+- 分支上修完但未合 main 时,bug 行标为「待审 / 未解决」并写清分支、提交、根因、验证;Claude 审过并合 main 后,才能收口为「已关闭 / 已解决」。
+- WPS 智能文档文字读写优先走 `kdocs-cli otl` 能力;截图若 CLI 无法直接拿到,使用已登录 WPS 的调试浏览器/下载导出链路获取,不要让作者反复人工转述。
+
+【WPS 私有云文件夹】
+- 作者说「文件夹」时,指普通 WPS 云文件夹,不是知识库。仓库迁移文档、历史方案、设计归档、结构图、HTML 图集等默认放私有云文件夹,不放公开知识库。
+- 当前仓库文档迁移位置:`我的云文档 / AAAAAAA自研项目产品 / storyforge故事熔炉 / 仓库文档迁移_20260708`。若作者截图或文字指定新文件夹,以作者指定为准。
+- 迁移顺序必须是:先上传到 WPS 文件夹并回读确认 → 再更新仓库引用/指针 → 最后删除仓库副本。不能先删后补。
+- 不得擅自修改或删除 `CLAUDE.md` / `docs/MASTER-BLUEPRINT.md` 里的文档地图和施工权威内容;需要作者明确授权后才能动。
+
+👉 球在 Claude + 作者:请确认这条长期规则汇总是否准确;后续 Codex / Claude 都按这条集中口径执行。
+
+### [2026-07-10] Codex · MERGE 完成 · `main`
+
+按作者指令,Codex 已自行复审 `codex/fix-relation-ime-input-20260710` 并合入 `main` 推送生产。
+
+自审结论:
+- 修复范围很小且命中根因:角色关系列表编辑态的关系标签/关系描述使用原生受控 `input/textarea`,组合输入期间 `onChange` 直接写 store / IndexedDB,容易被重渲染打断。改为项目既有 `CInput / CTextarea` 后,组合期间只更新本地值,组合结束再同步外部。
+- 未新增输入组件,未改 schema,未迁移用户数据,未新建并行子系统。
+- 回归测试锁定 `CharacterRelationPanel` 不再退回原生关系标签/描述输入框。
+
+合入内容:
+- `src/components/relations/CharacterRelationPanel.tsx`:关系标签与关系描述接入组合输入安全组件。
+- `tests/regression/R-CF20260710-relation-ime-input.test.ts`:新增 IME 回归守卫。
+- `CHANGELOG.md`:补 Unreleased 修复记录。
+- `docs/AI-FUNCTIONS-MANUAL.generated.md`:按生成器刷新行号与基准 commit。
+- `docs/COLLAB-LOG.md`:保留 main 与分支双方交接条目,冲突按工作流拼接。
+
+验证闸门:
+- `npx vitest run tests/regression/R-CF20260710-relation-ime-input.test.ts` → 1 passed。
+- `npx tsc --noEmit` → 通过。
+- `npm run build` → 通过。
+- `npx vitest run` → 104 files / 370 tests passed。
+- `npm run check:architecture` → 通过。
+- `npm run check:required-tables` → 通过(42 tables)。
+- `npm run check:ai-manual` → 通过。
+- `git diff --check` → 通过。
+
+推送:
+- 已快进合并到 `main` 并推送 `origin/main` 至 `a06f1d1`,触发生产部署。
+- 第一次 `git push origin main` 因 GitHub 443 连接超时失败;随后使用 HTTP/1.1 重试成功。
+
+👉 球在 Claude/作者:请确认线上角色关系编辑框的中文输入法问题是否闭环;WPS bug 文档对应行可从「待审 / 未解决」更新为「已关闭 / 已解决」。
+
+### [2026-07-10] Claude · HANDOFF · 施工顺序已定,Codex 按 ① 档接续开发 / `main`
+
+作者拍板优先级原则:**功能能根治一类 bug 就先做功能;孤立不影响后续的 bug 先修;同子系统一起收口避免返工。先看联系,再定优先级。** 已写进 `docs/ROADMAP.md` 顶部「施工顺序」节(权威依据,含联系图 + 4 档顺序),`cc06ba1`。
+
+**👉 球在 Codex —— 现在做 ① 档(不等 GPT):**
+- 继续手上的 `CF-20260703-4/5` 角色关系 + 输入法(`codex/fix-relation-ime-input`)。
+- 清**孤立 bug**(按此序):`CF-20260630-2` 细纲采纳崩溃 → `CF-20260703-3` JSON 导入卡 → `CF-20260703-2` 卷纲参数区消失 → `CF-20260703-6` 角色维度重复 → `CF-20260703-1` 版本号。
+- **核实并关闭**作废的启动器类 `CF-20260630-1` / `CF-20260702-13`(.bat/.exe 已改 npm-only)。
+- 并行起 **`EDITOR-1` 全书查找替换**(孤立、高价值、作者点名,规格在 ROADMAP)。
+
+**别做的(关键·避免返工/band-aid):**
+- **别单独 band-aid 会被功能根治的 bug**:`CF-8`(设定互斥)等 `CONSISTENCY-3` 世界宪法;`CF-20260702-3/7`(大纲透明/质量)等 `PIPELINE-1/2`。这些 bug 是那些功能的反例,留着。
+- `QUICKWIN-2/3`(物品栏编辑/提取)**别单独做**,② 档随 `INVENTORY-1` 一起收口(否则 per-character 改造会重写)。
+
+**② 档**(`INVENTORY-1` 收口 + `CONSISTENCY-0` 覆盖地图)**等作者确认**;**③ 档**(`CONSISTENCY-2/3`、`PIPELINE-1/2/3`、`EDITOR-2`)**等 GPT 设计审放行**,当前不实施。
+
+CF-10(0字导出)已由 `61bf441` 修复并在 ROADMAP 标完成。
+
+### [2026-07-11] Codex · REPORT · Phase 27 Agent 首个可用纵向切片 / 分支 `refactor/phase-27-task-2`
+
+作者指出“当前 Agent 没有真实工具调用、项目设定也没有包装为工具”。核查确认属实：`main` 无 Agent，前置分支 `refactor/phase-27-task-1` 只有端口、事件、空 ToolRegistry 和内存存储地基。本分支在该地基上完成 27.1-a，并交付 27.1-b / 27.1-c 的首个可用切片。
+
+本次实现：
+- AI SDK `ToolLoopAgent` 经 `AiSdkAgentRuntimeAdapter` 实现 `AgentRuntimePort`：多步 tool loop、步数/token 预算、取消、阶段/推理摘要/消息/工具事件归一化。
+- 设定统一包装为四个注册表驱动工具：`storyforge.settings.catalog`、`storyforge.context.read`、`storyforge.change.propose`、`storyforge.change.commit`。读委托 `CONTEXT_SOURCES + assembleContext()`；写使用“提案 → approvalId/planHash/revision 校验 → 用户批准 → adopt() 提交”，Agent 不导入 store 或 Dexie schema。
+- 新增 `DexieProjectStorage` 生产适配器，表元信息从 `PROJECT_TABLES` 派生并按项目隔离；补齐事务、revision、只读保护、跨项目拒绝和存储契约语义。
+- MCP Streamable HTTP / SSE 工具映射进同一个 `ToolRegistry`；只读与写入按 `external:read` / `external:write` scope 隔离，未明确授权的外部写工具不注册。
+- Workspace 右侧默认显示 Agent Dock，包含对话、阶段性推理摘要、工具时间线、错误/停止、审批卡片、批准后面板刷新，以及 MCP 连接管理；属性面板仍可从标题栏切换。
+- AI SDK 请求复用已验证的 OpenAI-compatible 通用开发代理，避免 Portable 中普通 AI 请求可用但 Agent 直连再次触发 CORS；界面版本单源同步为 `v3.7.5`。
+- 未改 IndexedDB schema，未新增项目表，未迁移或清理用户数据。
+
+验证证据：
+- `npx vitest run` → 113 files / 464 tests passed；其中真实 `ToolLoopAgent` + 模拟 OpenAI SSE 两步工具调用集成测试通过。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- Playwright 实测 `1280×720` 与 `390×844`：右侧栏默认出现，Agent / MCP 视图无溢出；修复了最初截图中切换按钮遮挡主面板“保存”的问题。
+
+当前明确边界：
+- 对话和事件目前只保留当前页面会话，尚未加入持久化表。
+- 不支持 tool calling 的 provider 降级、Tauri stdio MCP、审批方案行内编辑、27.1-d 全流程扩展、27.1-e 多 Agent 与后台 Agent 尚未实施。
+- 本分支只推 feature branch，不直接合并 `main`；Portable EXE 应在 Claude 审查、合入和真实模型回归后再覆盖测试目录。
+
+👉 球在 Claude：请重点审查工具权限/审批恢复、MCP 外部写入默认关闭、`DexieProjectStorage` 项目隔离，以及 Agent Dock 在写入后刷新 store 的边界。审查通过后再决定是否 rebase/合入 `main` 和更新测试 Portable。
+
+### [2026-07-11] Codex · REPORT · Agent 分组会话历史与阶段时间线 / 分支 `refactor/phase-27-task-2`
+
+作者要求右侧 Agent 进一步对齐桌面端交互：对话按原功能来源分组、允许自定义分组、保留历史，并让每个执行阶段同时呈现可展开的工具详情和阶段性输出。
+
+本次实现：
+- 默认按项目、设定、角色、大纲、正文、其他分组；原 AI 功能入口根据 `AgentIntent.scope.module` 自动归组并建立独立会话，自由追问继续当前会话。
+- 支持新建/重命名/删除自定义分组，以及对话重命名、移动、删除；当前设备按项目保存最近 60 个会话、每会话 30 轮和每轮 200 个事件。
+- 持久化时压缩逐 token 的 `message.delta`；页面重载后的待审批运行明确失效，避免使用旧 `approvalId` 误提交。
+- 将原工具平铺列表改为阶段时间线：显示阶段状态、耗时、推理摘要、完整工具结果和阶段消息输出，运行中与最后阶段默认展开。
+- 会话历史仅是本机 UI 缓存，不进入项目导出或跨设备同步；未改 IndexedDB schema、项目表或用户数据迁移。
+
+验证证据：
+- `npx tsc --noEmit`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`npm run build`、`git diff --check` 全部通过。
+- `npm run test`：117 files / 480 tests passed；`npm run lint`：0 error，仅仓库既有 33 warnings。
+- Portable 实测 `1280x720` 与 `390x844`：分组历史无横向溢出；自定义分组创建、内联重命名、重载持久化和删除通过；运行时控制台无错误。
+
+👉 球在 Claude：请重点审查本机会话裁剪策略、重载后审批失效逻辑、功能入口自动归组，以及阶段输出与最终回答的展示边界。
+
+### [2026-07-11] Codex · REPORT · Agent 正文完成契约与最终版本审批 / 分支 `refactor/phase-27-task-2`
+
+作者反馈正文 Agent 的阶段描述与工具顺序相反、只读一轮就停止，并要求生成后可调整、放弃或采纳最终版本。本轮在既有 Agent 工具架构内补齐完整闭环，没有新增并行写入路径。
+
+本次实现：
+- 章节入口声明结构化完成契约：限定 `chapters/replace/current chapterId`、必含 `content`、首次正文不少于 500 字，并要求读取入口声明的上下文源；无合法提案时发送 `run.failed`，不再假完成。
+- 时间线按 `AgentEvent.sequence` 在阶段内依次渲染描述、推理摘要、消息和工具，历史压缩仍保留原事件位置。
+- 审批卡直接预览待提交计划中的完整候选正文和实际字数，提供“采纳最终版本 / 调整 / 放弃”。调整先作废旧计划，再带上一版候选与用户要求生成新方案；只有采纳后才执行 `change.commit → adopt()`。
+- `storyforge.change.propose` 从候选 `content` 确定性派生 `wordCount`，审批预览使用工具返回的实际计划输入，避免模型估值与正文不一致。
+- DeepSeek Chat Completions 仅接受 `tool_choice=auto`，因此按阶段只开放 `context.read` 或 `change.propose`；GLM、MiniMax、豆包继续使用 `required/指定工具`。
+- 未改 IndexedDB schema、注册表字段或项目表，未迁移、删除或清理用户数据。
+
+真实验收：
+- GLM-5.2：从空白第一章读取上下文并生成 2003 字候选；编辑器在审批前保持 0 字；输入调整要求后旧方案失效，新候选生成；采纳后正文和“初稿”状态写入。
+- DeepSeek-V4-Pro：兼容修复后完成 `context.read → change.propose`，生成 777 字候选；点击“放弃”后原 1197 字正文保持不变。
+- 桌面截图确认阶段描述位于对应工具调用之前，审批正文和三个操作按钮无重叠；窄屏检查完成后已恢复默认 viewport。
+
+验证闸门：
+- `npm run test`：118 files / 489 tests passed。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`（42 tables）、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+
+Portable：
+- 只覆盖 `F:\workspace\小说项目\storyforge-test\StoryForge-Windows-Portable.exe`，保留 `data/` 与 `user-data/`。
+- 候选与安装后 EXE 均通过 `/healthz`（v3.7.5）、测试 seed、审批文案及 DeepSeek 兼容代码检查；最终 SHA-256：`1717B2F72F0CEAF7F03A07ECB758A0CD53060A55CD61CFB26BBDF1B8F8B489B2`。
+
+👉 球在 Claude：请重点审查完成契约边界、调整时旧计划失效、计划预览与提交数据同源，以及 DeepSeek `auto + activeTools` 的兼容策略。
+
+### [2026-07-11] Codex · REPORT · Agent 接入激活提示词库 / 分支 `refactor/phase-27-task-2`
+
+作者指出项目已有提示词库，但迁移到右侧 Agent 的功能只使用了面板硬编码指令。核查确认旧 AI 适配器会读取激活模板，而 `AgentIntent → AgentDock → AgentRuntime` 链路未携带提示词模块，导致用户模板、题材模板、参数、示例和模型覆盖均丢失。
+
+本次实现：
+- `AgentIntent` 增加 `promptModuleKey`；角色设计/补全、卷纲/章纲、章节正文/续写/润色/扩写/去 AI 味、灵感反推入口分别绑定提示词库中的对应模块。
+- 右侧自由对话会从“写章、续写、润色、设计角色、生成卷纲、完善世界观”等明确创作命令推断模板模块；普通查询不会误套生成模板。
+- 宿主读取当前激活模板（用户模板优先），解析运行参数与临时覆盖，并把系统提示词、用户模板、好坏示例注入 Agent 系统指令；尚待项目工具读取的 `{{变量}}` 保留给 Agent 用真实上下文填充。
+- 模板 `modelOverride.temperature/maxTokens` 应用于当轮 Agent 请求；不改变“累计生成预算默认关闭”的决策。调整候选后重跑时继续沿用同一提示词配置。
+- Agent 准备阶段显示“已加载提示词《模板名》”，用户可以确认本轮实际采用的模板。
+- 未改 IndexedDB schema、项目表、设定读写注册表或用户数据。
+
+验证证据：
+- 新增提示词解析与运行时回归测试；专项 32 tests passed，全量 `npm run test` 通过。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- 测试 Portable 的 `/healthz`、首页和主资源均返回 200；`data/` 与 `user-data/` 保留，最终 SHA-256：`4C1E163663F23C368DDEA01572EC2C23D7409C57659C24926C67BF8458AAB364`。
+
+👉 球在 Claude：请重点审查激活模板选择优先级、未解析项目变量的保留策略、面板意图到模板模块的映射，以及模板模型覆盖与完成契约的组合行为。
+
+### [2026-07-11] Codex · REPORT · 世界观与设定库 Markdown 编辑体验统一 / 分支 `refactor/phase-27-task-2`
+
+作者要求世界观二、三级设定以及设定库长文本采用统一布局：具体词条置顶，AI 操作位于正文之前，正文限高独立滚动，并支持可视化 Markdown 编辑。
+
+本次实现：
+- 新增共享 `MarkdownFieldEditor`，基于现有开源 `react-markdown + remark-gfm` 渲染 Markdown，提供预览/编辑切换与标题、粗体、斜体、列表、引用、链接工具栏。
+- 世界来源、力量体系、神明与信仰、自然环境、自然资源及人文环境统一为“具体词条 → AI 操作 → 候选输出 → Markdown 正文”的顺序。
+- 世界观正文固定为 `h-72`，设定库长文本固定为 `h-48`，均在正文区域内独立滚动；异步加载的非空内容默认进入预览态。
+- 设定库词条“详细描述”和所有 `longtext` 专属字段改用同一 Markdown 编辑器，保留 IME 组合输入保护，并在失焦、切回预览或 `Ctrl+S` 时提交。
+- 未改 IndexedDB schema、项目表、三注册表或用户数据。
+
+验证证据：
+- `npm run test`：122 files / 509 tests passed；新增世界观 Markdown 布局回归测试。
+- `npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- Portable 实测确认 Markdown 标题/表格渲染、默认预览、编辑工具栏、288px 正文独立滚动、词条优先布局，以及右侧 Agent 打开时无页面级横向溢出。
+
+👉 球在 Claude：请重点审查 Markdown 草稿同步与提交时机、世界观各面板的布局一致性，以及 Codex `longtext` 字段的回归边界。
+
+### [2026-07-11] Codex · REPORT · 世界观正文/词条页签与剩余高度填充 / 分支 `refactor/phase-27-task-2`
+
+作者要求将同一世界观方面中的正文与具体词条从纵向堆叠改成页签，并让正文编辑区占满工作区剩余高度。
+
+本次实现：
+- 新增共享 `WorldviewEditorTabs`，为有具体词条的世界观方面提供“正文 / 词条”页签，默认显示正文；无词条分类的方面直接显示正文，不增加无效页签。
+- 世界起源、自然环境、人文环境三组面板统一接入页签；词条页签保留完整 `CodexPanel` 增删改查与字段管理能力。
+- `MarkdownFieldEditor` 增加 `fill` 模式，通过 `flex-1 + min-h-0` 占满 AI 操作区以下的剩余空间，并保持正文内部独立滚动。
+- `WorkspacePage` 对三组世界观模块启用全高容器，避免主面板外层滚动截断高度传递；右侧 Agent 打开时仍无页面级横向溢出。
+- 未改 IndexedDB schema、项目表、三注册表或用户数据。
+
+验证证据：
+- `npm run test`：122 files / 510 tests passed；页签默认态与正文填充模式已加入回归测试。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- Portable 在 `1280x720` 实测：正文/词条切换正常；正文编辑器底部与主工作区底部仅保留 24px 页面内边距，内容在编辑器内部滚动；自然环境全部子项均生成对应页签。
+
+👉 球在 Claude：请重点审查页签状态在隐藏子面板间的保留、全高容器的滚动边界，以及神明信仰多正文块在窄高视口下的可用性。
+
+### [2026-07-11] Codex · REPORT · Portable 模型配置持久化与代理错误诊断 / 分支 `refactor/phase-27-task-2`
+
+作者反馈更新 Portable 后模型配置消失，测试连接重新出现浏览器网络/CORS 错误。核查确认代码未回退，`14baa64` 的生产代理修复仍在；实际缺口是 API Key 默认只存 `sessionStorage`，Portable 关闭独立浏览器后会丢失，表现为配置失效。
+
+本次实现：
+- Portable 固定地址 `127.0.0.1:17831/storyforge` 首次升级时自动开启本机 Key 持久化；若旧会话 Key 尚在，则迁移到独立 Profile 的 localStorage，并清理 session 副本。
+- Web/PWA 继续保持默认仅会话存储；Portable 用户仍可在设置中手动关闭“在本机记住 API Key”。
+- 测试连接发生 `Failed to fetch` 时按请求路径区分：同源 `/openai-compatible-proxy` 失败提示检查 Portable/17831，只有直连请求才提示网络/CORS/Base URL。
+- 未读取、打印或写入用户真实 API Key；已清空的旧 session Key 无法恢复，用户需重新输入一次，之后覆盖 EXE 不再丢失。
+- 未改 IndexedDB schema、项目表、三注册表或小说测试数据。
+
+验证证据：
+- 新增 Portable 会话 Key 迁移回归；`npm run test`：122 files / 511 tests passed。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- 真实 Portable：记住 Key 默认勾选；使用非敏感测试 Key 请求 DeepSeek，经本地代理返回明确 `401 API Key 无效`（233ms），不再误报 CORS；页面重载后测试按钮仍可用，证明配置已持久保留。
+
+👉 球在 Claude：请重点审查 Portable 地址识别范围、一次性迁移标记、用户主动关闭持久化后的行为，以及代理/直连错误文案分流。

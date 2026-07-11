@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useWorldGroupStore } from '../../stores/world-group'
@@ -15,6 +15,9 @@ import PromptRunPanel from '../shared/PromptRunPanel'
 import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import type { Project, NaturalResources } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
+import WorldviewCodexSection from '../shared/WorldviewCodexSection'
+import WorldviewEditorTabs from '../shared/WorldviewEditorTabs'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -161,9 +164,9 @@ export default function WorldviewNaturalPanel({ project }: Props) {
         </nav>
 
         {/* ── 右侧：所有字段同时渲染，hidden 控制显示 ── */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-hidden p-6">
           {FIELDS.map(f => (
-            <div key={f.key} className={activeKey === f.key ? '' : 'hidden'}>
+            <div key={f.key} className={activeKey === f.key ? 'h-full' : 'hidden'}>
               <SimpleFieldEditor
                 field={f}
                 value={values[f.key] || ''}
@@ -174,23 +177,23 @@ export default function WorldviewNaturalPanel({ project }: Props) {
                 project={project}
                 contextSummary={buildCtx(f.ctxKey)}
                 onStreamingChange={streaming => handleStreamingChange(f.key, streaming)}
+                codexContent={NATURAL_CODEX_KEYS[f.key] ? (
+                  <WorldviewCodexSection
+                    title={`${f.label} · 具体词条`}
+                    description={`把“${f.label}”逐条细化登记，可自定义字段、标记重要度，并进入 AI 生成上下文。`}
+                  >
+                    <CodexPanel
+                      project={project}
+                      fixedCategoryKeys={NATURAL_CODEX_KEYS[f.key]}
+                      extractionSourceText={values[f.key] || ''}
+                      embedded
+                    />
+                  </WorldviewCodexSection>
+                ) : undefined}
               />
-              {/* 全貌之下:本方面的专属词条(只显示对应那一类) */}
-              {NATURAL_CODEX_KEYS[f.key] && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-text-primary mb-1">📚 {f.label} · 具体词条</h3>
-                  <p className="text-xs text-text-muted mb-3">在上面写完整体「全貌」后，这里把「{f.label}」逐条细化登记，可自定义字段、打重要度星级，并进入 AI 生成上下文。</p>
-                  <CodexPanel
-                    project={project}
-                    fixedCategoryKeys={NATURAL_CODEX_KEYS[f.key]}
-                    extractionSourceText={values[f.key] || ''}
-                    embedded
-                  />
-                </div>
-              )}
             </div>
           ))}
-          <div className={activeKey === 'naturalResources' ? 'space-y-4' : 'hidden'}>
+          <div className={activeKey === 'naturalResources' ? 'h-full overflow-y-auto' : 'hidden'}>
             {/* 全貌(上):自然资源整体概述,带 AI 生成,与其它方面一致 */}
             <SimpleFieldEditor
               field={{ key: 'naturalResourceOverview', emoji: '🌿', label: '自然资源', desc: '矿产 / 灵材 / 动植物等自然产出的总体分布、丰饶程度与特点' }}
@@ -202,24 +205,26 @@ export default function WorldviewNaturalPanel({ project }: Props) {
               project={project}
               contextSummary={buildCtx('resources')}
               onStreamingChange={streaming => handleStreamingChange('naturalResources', streaming)}
+              codexContent={(
+                <WorldviewCodexSection
+                  title="自然物产 · 具体词条"
+                  description="矿物灵材、灵植草药与灵兽异兽逐条登记，可自定义字段、互相关联、标记重要度，并进入 AI 生成上下文。"
+                >
+                  <CodexPanel
+                    project={project}
+                    fixedCategoryKeys={['mineral', 'herb', 'beast']}
+                    extractionSourceText={[
+                      values.naturalResourceOverview,
+                      naturalResources.minerals,
+                      naturalResources.herbs,
+                      naturalResources.rareCreatures,
+                      naturalResources.others,
+                    ].filter(Boolean).join('\n\n')}
+                    embedded
+                  />
+                </WorldviewCodexSection>
+              )}
             />
-            {/* 自然资源:矿物/草药/异兽 三类词条 */}
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary mb-1">📚 自然物产 · 具体词条</h3>
-              <p className="text-xs text-text-muted mb-2">矿物灵材 / 灵植草药 / 灵兽异兽——逐条登记,可自定义字段、互相关联、打星,并进入 AI 生成上下文。</p>
-              <CodexPanel
-                project={project}
-                fixedCategoryKeys={['mineral', 'herb', 'beast']}
-                extractionSourceText={[
-                  values.naturalResourceOverview,
-                  naturalResources.minerals,
-                  naturalResources.herbs,
-                  naturalResources.rareCreatures,
-                  naturalResources.others,
-                ].filter(Boolean).join('\n\n')}
-                embedded
-              />
-            </div>
             {/* 旧版自然资源(纯文本)——保留兼容 */}
             <details className="border-t border-border/60 pt-3">
               <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary">旧版「自然资源」纯文本(兼容保留,可继续编辑)</summary>
@@ -240,13 +245,14 @@ export default function WorldviewNaturalPanel({ project }: Props) {
 
 // ── 单字段编辑器（各自独立的 AI 流） ──────────────────────────
 
-function SimpleFieldEditor({ field, value, onChange, project, contextSummary, onStreamingChange }: {
+function SimpleFieldEditor({ field, value, onChange, project, contextSummary, onStreamingChange, codexContent }: {
   field: { key: string; emoji: string; label: string; desc: string }
   value: string
   onChange: (v: string) => void
   project: Project
   contextSummary: string
   onStreamingChange: (streaming: boolean) => void
+  codexContent?: ReactNode
 }) {
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
@@ -282,18 +288,9 @@ function SimpleFieldEditor({ field, value, onChange, project, contextSummary, on
     ai.start(messages, undefined, { category: 'worldview.dimension', projectId: project.id! })
   }
 
-  return (
-    <div className="max-w-3xl space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary">{field.emoji} {field.label}</h3>
-        <p className="mt-1 text-sm text-text-muted">{field.desc}</p>
-      </div>
-
-      <div className="bg-bg-surface border border-border rounded-lg p-4">
-        <InlineTextarea value={value} onChange={onChange} placeholder={field.desc} />
-      </div>
-
-      <div className="flex items-center gap-2">
+  const body = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input value={hint} onChange={e => setHint(e.target.value)}
           placeholder="给 AI 的补充说明（可选）"
@@ -315,6 +312,24 @@ function SimpleFieldEditor({ field, value, onChange, project, contextSummary, on
           onAccept={(text: string) => { onChange(text); ai.reset() }}
           onRetry={handleGenerate} moduleKey="worldview.dimension" />
       )}
+
+      <MarkdownFieldEditor
+        value={value}
+        onChange={onChange}
+        placeholder={field.desc}
+        label={`${field.label}正文`}
+        fill
+      />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
+        <h3 className="text-lg font-semibold text-text-primary">{field.emoji} {field.label}</h3>
+        <p className="mt-1 text-sm text-text-muted">{field.desc}</p>
+      </div>
+      <WorldviewEditorTabs label={field.label} body={body} codex={codexContent} />
     </div>
   )
 }

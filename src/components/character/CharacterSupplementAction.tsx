@@ -1,14 +1,5 @@
 import { useState } from 'react'
-import { Wand2, Loader2, X } from 'lucide-react'
-import { useAIConfigStore } from '../../stores/ai-config'
-import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
-import { assembleContext } from '../../lib/registry/assemble-context'
-import { adopt } from '../../lib/registry/adopt'
-import {
-  buildCharacterSupplementPrompt,
-  parseCharacterSupplement,
-} from '../../lib/ai/adapters/character-supplement-adapter'
+import { Wand2, X } from 'lucide-react'
 import {
   CHARACTER_DIMENSIONS,
   filledDimensions,
@@ -16,6 +7,7 @@ import {
 } from '../../lib/character/character-dimensions'
 import type { Character } from '../../lib/types'
 import CharacterDimensionPicker from './CharacterDimensionPicker'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 interface Props {
   character: Character
@@ -32,11 +24,8 @@ interface Props {
  * 读 = assembleContext(世界观等)；写 = adopt({ target:'characters', recordId }) 定点更新,只动选中字段。
  * 与「AI 设计角色」(从零造新角色)区别:此处不新建,只补全缺口。
  */
-export default function CharacterSupplementAction({ character, projectId, worldGroupId, onDone, compact }: Props) {
-  const { config: aiConfig } = useAIConfigStore()
-  const ai = useAIStream(createAISessionKey(projectId, 'character.supplement', String(character.id)))
+export default function CharacterSupplementAction({ character, projectId, worldGroupId, compact }: Props) {
   const [open, setOpen] = useState(false)
-  const [done, setDone] = useState<number | null>(null)
   // C2 反向哺喂：结合剧情已写内容（事实账本 + 正文召回）做补全
   const [useEvidence, setUseEvidence] = useState(false)
   // 默认勾选「当前为空」的维度（缺什么补什么）；若全填满则默认全选让用户自行决定重写哪些
@@ -46,46 +35,40 @@ export default function CharacterSupplementAction({ character, projectId, worldG
     return new Set(empty.length ? empty : CHARACTER_DIMENSIONS.map(d => d.key))
   })
 
-  const run = async () => {
+  const run = () => {
     const dims = [...selected]
-    if (!dims.length || ai.isStreaming) return
-    setDone(null)
-    // 读：世界观/设定上下文（角色自身已有设定由 prompt 直接带，不重复注入 characters 源）
-    const assembled = await assembleContext({
-      projectId,
-      worldGroupId: worldGroupId ?? null,
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      sourceKeys: ['worldview', 'storyCore', 'powerSystem', 'codex', 'creativeRules', 'worldRules', 'locations'],
-    })
-    // C2：反向哺喂——以该角色为主体，召回剧情里已确认的事实 + 正文真实表现作为硬约束
-    let evidenceContext: string | undefined
-    if (useEvidence) {
-      const evidence = await assembleContext({
-        projectId,
+    if (!dims.length || character.id == null) return
+    dispatchAgentIntent({
+      type: 'character.supplement',
+      title: `Agent 补全角色 · ${character.name || '未命名'}`,
+      promptModuleKey: 'character.dimension',
+      source: {
+        project: { backend: 'dexie', projectId },
+        module: 'characters',
         worldGroupId: worldGroupId ?? null,
-        provider: aiConfig.provider,
-        model: aiConfig.model,
-        subjectCharacterName: character.name,
-        sourceKeys: ['characterFacts', 'characterPassages'],
-      })
-      evidenceContext = evidence.text.trim() || undefined
-    }
-    const messages = buildCharacterSupplementPrompt({
-      character,
-      dimensions: dims,
-      worldContext: assembled.text,
-      evidenceContext,
+        entityId: character.id,
+      },
+      instruction: `只补全角色“${character.name}”所选维度。读取世界观、故事核心、角色现有设定${useEvidence ? '、该角色剧情事实和正文表现' : ''}，然后调用变更提案，以 recordId=${character.id}、target=characters、mode=merge-diffs 定点更新；不得新建角色，不得改动未选择字段。`,
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'characters',
+        mode: 'merge-diffs',
+        recordId: character.id,
+        requiredFields: dims,
+        requiredContextSources: [
+          'storyCore', 'creativeRules', 'worldview', 'powerSystem', 'codex',
+          'characters', 'worldRules',
+          ...(useEvidence ? ['characterFacts', 'characterPassages'] : []),
+        ],
+      },
+      payload: {
+        character,
+        dimensions: dims,
+        dimensionLabels: CHARACTER_DIMENSIONS.filter(item => selected.has(item.key)).map(item => item.label),
+        useStoryEvidence: useEvidence,
+      },
     })
-    const text = await ai.start(messages, undefined, { category: 'character.supplement', projectId })
-    if (!text) return
-    const patch = parseCharacterSupplement(text, dims)
-    if (Object.keys(patch).length === 0) return
-    // 写：定点更新该角色，只动补全字段
-    await adopt({ projectId, worldGroupId: worldGroupId ?? null, target: 'characters', recordId: character.id!, mode: 'merge-diffs', data: patch })
-    // 真正补全的维度数 = 解析出的补丁字段数（adopt 结果含 role/轴等派生字段，不能用来计数）
-    setDone(Object.keys(patch).length)
-    onDone?.()
+    setOpen(false)
   }
 
   const empties = CHARACTER_DIMENSIONS.map(d => d.key).filter(k => !new Set(filledDimensions(character)).has(k)).length
@@ -131,22 +114,12 @@ export default function CharacterSupplementAction({ character, projectId, worldG
               </span>
             </label>
 
-            {ai.error && <div className="mt-2 text-xs text-error">{ai.error}</div>}
-            {ai.isStreaming && (
-              <div className="mt-2 max-h-32 overflow-y-auto text-[11px] text-text-muted whitespace-pre-wrap bg-bg-base border border-border rounded p-2">
-                {ai.output || '正在生成…'}
-              </div>
-            )}
-            {done != null && !ai.isStreaming && (
-              <div className="mt-2 text-xs text-success">✅ 已补全 {done} 个维度，已写入该角色。</div>
-            )}
-
             <button
               onClick={run}
-              disabled={ai.isStreaming || selected.size === 0}
+              disabled={selected.size === 0}
               className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-accent text-white text-sm rounded disabled:opacity-40 hover:bg-accent-hover"
             >
-              {ai.isStreaming ? <><Loader2 className="w-4 h-4 animate-spin" /> 补全中…</> : <><Wand2 className="w-4 h-4" /> 补全选中的 {selected.size} 个维度</>}
+              <Wand2 className="w-4 h-4" /> 交给 Agent 补全 {selected.size} 个维度
             </button>
           </div>
         </>

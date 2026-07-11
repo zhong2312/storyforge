@@ -16,7 +16,7 @@ import { useWorldRulesStore } from '../stores/world-rules'
 import { useAutoBackup } from '../hooks/useAutoBackup'
 import { useGistAutoBackup } from '../hooks/useGistAutoBackup'
 import { useFolderAutoBackup } from '../hooks/useFolderAutoBackup'
-import { PanelRight } from 'lucide-react'
+import { Bot, PanelRight } from 'lucide-react'
 import Sidebar, { type SidebarModule } from '../components/layout/Sidebar'
 import PropertiesPanel from '../components/layout/PropertiesPanel'
 import ProjectInfoPanel from '../components/project/ProjectInfoPanel'
@@ -59,8 +59,14 @@ const FactLibraryPanel = lazy(() => import('../components/facts/FactLibraryPanel
 const StoryTimelinePanel = lazy(() => import('../components/timeline/StoryTimelinePanel'))
 const SceneVerifyPanel = lazy(() => import('../components/scene/SceneVerifyPanel'))
 const WorldGroupOverview = lazy(() => import('../components/world-group/WorldGroupOverview'))
+const AgentDock = lazy(() => import('../components/agent/AgentDock'))
 import { useLocationStore } from '../stores/location'
 import { useWorldGroupStore } from '../stores/world-group'
+import {
+  isIntentForDexieProject,
+  subscribeAgentIntents,
+  type AgentIntent,
+} from '../lib/agent/intents'
 
 export default function WorkspacePage() {
   const { projectId } = useParams()
@@ -70,7 +76,16 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [editorNodeId, setEditorNodeId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showProperties, setShowProperties] = useState(false)
+  const [rightPanel, setRightPanel] = useState<'agent' | 'properties' | null>('agent')
+  const [pendingAgentIntent, setPendingAgentIntent] = useState<AgentIntent | null>(null)
+  const activeWorldGroupId = useWorldGroupStore(state => state.activeGroupId)
+
+  useEffect(() => subscribeAgentIntents(intent => {
+    const currentId = Number(projectId)
+    if (!Number.isFinite(currentId) || !isIntentForDexieProject(intent, currentId)) return
+    setPendingAgentIntent(intent)
+    setRightPanel('agent')
+  }), [projectId])
 
   // 从 Zustand Store 中动态获取当前项目，实现全局响应式更新
   const project = useMemo(() => {
@@ -162,8 +177,35 @@ export default function WorkspacePage() {
     setActiveModule('chapters-list')
   }
 
+  const reloadProjectData = async () => {
+    const pid = project.id!
+    await Promise.allSettled([
+      useProjectStore.getState().loadProjects(),
+      useWorldviewStore.getState().loadAll(pid),
+      useCharacterStore.getState().loadAll(pid),
+      useOutlineStore.getState().loadAll(pid),
+      useChapterStore.getState().loadAll(pid),
+      useForeshadowStore.getState().loadAll(pid),
+      useGeographyStore.getState().loadAll(pid),
+      useHistoryStore.getState().loadAll(pid),
+      useCreativeRulesStore.getState().loadAll(pid),
+      useCharacterRelationStore.getState().loadAll(pid),
+      useReferenceStore.getState().loadAll(pid),
+      useEmotionBeatStore.getState().loadAll(pid),
+      useLocationStore.getState().loadAll(pid),
+      useWorldRulesStore.getState().loadProfile(pid),
+      useWorldGroupStore.getState().loadAll(pid),
+    ])
+  }
+
   const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow'])
   const isImmersiveModule = immersiveModules.has(activeModule)
+  const fullHeightModules = new Set<SidebarModule>([
+    'worldview-origin',
+    'worldview-natural',
+    'worldview-humanity',
+  ])
+  const isFullHeightModule = fullHeightModules.has(activeModule)
 
   /** 根据当前模块渲染主面板内容 */
   const renderMainPanel = () => {
@@ -295,31 +337,60 @@ export default function WorkspacePage() {
 
       {/* 主面板 */}
       <main
-        className={`relative flex-1 overflow-y-auto ${
+        className={`relative min-h-0 flex-1 ${
           isImmersiveModule
-            ? 'bg-[radial-gradient(circle_at_top_left,var(--border-subtle)_1px,transparent_1px)] [background-size:32px_32px]'
-            : 'p-6'
+            ? 'overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--border-subtle)_1px,transparent_1px)] [background-size:32px_32px]'
+            : isFullHeightModule
+              ? 'overflow-hidden p-6'
+              : 'overflow-y-auto p-6'
         }`}
       >
-        {/* 属性面板切换按钮 */}
-        <button
-          onClick={() => setShowProperties(v => !v)}
-          title={showProperties ? '关闭属性面板' : '打开属性面板'}
-          className={`absolute top-4 right-4 z-30 rounded p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary ${showProperties ? 'text-accent' : ''}`}
-        >
-          <PanelRight className="w-4 h-4" />
-        </button>
+        {/* 右侧工作区完全关闭时显示恢复入口，避免遮挡各面板自己的操作按钮。 */}
+        {rightPanel === null && <div className="absolute right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col rounded-l border border-r-0 border-border bg-bg-elevated p-0.5 shadow-sm">
+          <button
+            onClick={() => setRightPanel('agent')}
+            title="打开 Agent"
+            className="rounded-sm p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          >
+            <Bot className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setRightPanel('properties')}
+            title="打开属性面板"
+            className="rounded-sm p-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+          >
+            <PanelRight className="h-4 w-4" />
+          </button>
+        </div>}
         {/* Phase 3.5: 懒加载面板(地图类)加载时显示 fallback */}
         <Suspense fallback={<div className="flex items-center justify-center h-64 text-text-muted text-sm">面板加载中…</div>}>
           {renderMainPanel()}
         </Suspense>
       </main>
 
-      {/* 右侧属性面板 */}
-      {showProperties && (
+      {/* 右侧 Agent / 属性工作区 */}
+      {rightPanel === 'agent' && (
+        <Suspense fallback={<aside className="w-[380px] border-l border-border bg-bg-surface" />}>
+          <AgentDock
+            projectId={project.id!}
+            activeModule={activeModule}
+            worldGroupId={activeWorldGroupId}
+            intent={pendingAgentIntent}
+            onIntentConsumed={intentId => {
+              setPendingAgentIntent(current => current?.id === intentId ? null : current)
+            }}
+            onClose={() => setRightPanel(null)}
+            onOpenProperties={() => setRightPanel('properties')}
+            onOpenSettings={() => { setActiveModule('settings'); setRightPanel(null) }}
+            onProjectChanged={reloadProjectData}
+          />
+        </Suspense>
+      )}
+      {rightPanel === 'properties' && (
         <PropertiesPanel
           activeModule={activeModule}
-          onClose={() => setShowProperties(false)}
+          onClose={() => setRightPanel(null)}
+          onOpenAgent={() => setRightPanel('agent')}
         />
       )}
     </div>

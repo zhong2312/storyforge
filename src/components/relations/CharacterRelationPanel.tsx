@@ -6,6 +6,7 @@ import { useAIStream } from '../../hooks/useAIStream'
 import { createAISessionKey } from '../../stores/ai-generation-session'
 import { buildRelationExtractPrompt, parseRelationOutput, matchRelations, type MatchedRelation } from '../../lib/ai/relation-extractor'
 import type { Project, RelationType } from '../../lib/types'
+import { CInput, CTextarea } from '../shared/CompositionInput'
 import RelationGraph from './RelationGraph'
 
 const RELATION_TYPES: { value: RelationType; label: string }[] = [
@@ -391,7 +392,7 @@ export default function CharacterRelationPanel({ project }: Props) {
                 <span className="font-medium text-text-primary">{getCharacterName(rel.toCharacterId)}</span>
                 <span className="text-text-muted">：</span>
                 {isEditing ? (
-                  <input
+                  <CInput
                     value={rel.label}
                     onChange={(e) => updateRelation(rel.id!, { label: e.target.value })}
                     className="bg-bg-base border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
@@ -406,7 +407,7 @@ export default function CharacterRelationPanel({ project }: Props) {
               {isEditing && (
                 <div className="mt-3 pt-3 border-t border-border">
                   <label className="block text-xs text-text-muted mb-1">关系描述</label>
-                  <textarea
+                  <CTextarea
                     value={rel.description}
                     onChange={(e) => updateRelation(rel.id!, { description: e.target.value })}
                     rows={3}

@@ -7,6 +7,7 @@ import {
   hashChapterText,
 } from '../../src/lib/ai/chapter-memory/text-normalization'
 import { assembleContext } from '../../src/lib/registry/assemble-context'
+import { CHAPTER_WRITING_CONTEXT_SOURCES } from '../../src/lib/agent/intents'
 import type { Chapter, OutlineNode } from '../../src/lib/types'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -54,12 +55,15 @@ describe('NS-1 T4/T5 · canonical sequence and continuity sources', () => {
   it('routes generation and continuation through registered continuity sources', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/editor/ChapterEditor.tsx'), 'utf8')
     const generationFlow = source.slice(
-      source.indexOf('const buildFullWorldCtx = async'),
+      source.indexOf('const buildAgentChapterContextPlan = async'),
       source.indexOf('const handlePolish = () => {'),
     )
-    expect(generationFlow).toContain("'chapterContinuityHandoff'")
-    expect(generationFlow).toContain("'previousChapterEnding'")
-    expect(generationFlow).toContain("'recentChapterSummaries'")
+    expect(generationFlow).toContain('CHAPTER_WRITING_CONTEXT_SOURCES')
+    expect(CHAPTER_WRITING_CONTEXT_SOURCES).toEqual(expect.arrayContaining([
+      'chapterContinuityHandoff',
+      'previousChapterEnding',
+      'recentChapterSummaries',
+    ]))
     expect(generationFlow).not.toContain('chapters.filter(c => c.order <')
   })
 

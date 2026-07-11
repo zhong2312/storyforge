@@ -9,7 +9,7 @@ import {
   Plus, Trash2, EyeOff, Eye, FolderPlus, Boxes, ChevronRight, Settings2, X, ChevronUp, ChevronDown, Star,
   Sparkles, Loader2,
 } from 'lucide-react'
-import { CInput, CTextarea } from '../shared/CompositionInput'
+import { CInput } from '../shared/CompositionInput'
 import { useCodexStore } from '../../stores/codex'
 import {
   CODEX_DOMAIN_LABELS, parseFieldSchema, stringifyFieldSchema, parseEntryFields, stringifyEntryFields,
@@ -21,6 +21,7 @@ import { useDialog } from '../shared/Dialog'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { useWorldGroupStore } from '../../stores/world-group'
 import { chat } from '../../lib/ai/client'
+import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
 import {
   buildCodexExtractPrompt, parseCodexEntries, splitExtractionText,
 } from '../../lib/ai/adapters/structured-extract-adapter'
@@ -28,6 +29,7 @@ import { adopt } from '../../lib/registry/adopt'
 import { useToast } from '../shared/Toast'
 import { uniqueBy } from '../../lib/ai/structured-extraction'
 import { assembleContext } from '../../lib/registry/assemble-context'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 
 interface Props {
   project: Project
@@ -190,7 +192,7 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
 
   const handleExtractEntries = async () => {
     if (!activeCat || !extractText.trim()) return
-    if (!aiConfig.apiKey) { toast.error('请先在设置中配置 API Key。'); return }
+    if (!isAIConfigReady(aiConfig)) { toast.error(getAIConfigRequiredMessage(aiConfig)); return }
     setExtracting(true)
     try {
       const schema = parseFieldSchema(activeCat.fieldSchema)
@@ -252,7 +254,7 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
 
   return (
     <div className={embedded
-      ? `flex flex-col ${lockedSingle ? 'h-80' : 'h-[30rem]'} border border-border rounded-xl overflow-hidden`
+      ? `flex flex-col ${lockedSingle ? 'h-[26rem]' : 'h-[30rem]'} border border-border rounded-lg overflow-hidden`
       : 'h-full flex flex-col'}>
       {/* 顶部：领域切换(嵌入且锁定领域时隐藏;单分类锁定时整条隐藏) */}
       {!lockedSingle && (
@@ -681,12 +683,11 @@ function EntryDetail({
         placeholder="标签（用顿号或逗号分隔）"
         className="w-full px-3 py-2 rounded-lg bg-bg-elevated border border-border text-sm"
       />
-      <CTextarea
+      <MarkdownFieldEditor
         value={entry.description}
-        onChange={(e) => onChange({ description: e.target.value })}
+        onChange={value => onChange({ description: value })}
         placeholder="详细描述"
-        rows={3}
-        className="w-full px-3 py-2 rounded-lg bg-bg-elevated border border-border text-sm resize-y"
+        label="详细描述"
       />
 
       {schema.length > 0 && <div className="border-t border-border pt-3 text-xs text-text-muted">专属属性</div>}
@@ -724,10 +725,12 @@ function FieldRow({
       <label className="text-xs text-text-muted pt-2 text-right">{def.label}</label>
       <div className="min-w-0">
         {def.type === 'longtext' && (
-          <CTextarea
-            value={value} onChange={(e) => onValue(e.target.value)}
-            placeholder={def.placeholder} rows={2}
-            className="w-full px-3 py-1.5 rounded-lg bg-bg-elevated border border-border text-sm resize-y"
+          <MarkdownFieldEditor
+            value={value}
+            onChange={onValue}
+            placeholder={def.placeholder}
+            label="Markdown 内容"
+            compact
           />
         )}
         {def.type === 'select' && (

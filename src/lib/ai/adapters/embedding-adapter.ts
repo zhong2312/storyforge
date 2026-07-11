@@ -7,6 +7,7 @@
  */
 import type { EmbeddingConfig } from '../../types'
 import { recordUsage } from '../usage-log'
+import { buildOpenAIEndpoint } from '../openai-endpoint'
 import { estimateTokens } from '../context-budget'
 
 /** 当前向量所属模型标识（换 provider/model 即视为失效，绝不跨模型混算余弦）。 */
@@ -32,13 +33,13 @@ export async function embedTexts(
   signal?: AbortSignal,
 ): Promise<number[][]> {
   if (!texts.length) return []
-  const baseUrl = cfg.baseUrl.replace(/\/+$/, '')
+  const url = buildOpenAIEndpoint(cfg.baseUrl, 'embeddings', { provider: cfg.provider })
   const controller = new AbortController()
   const onAbort = () => controller.abort()
   if (signal) signal.addEventListener('abort', onAbort, { once: true })
   const timer = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS)
   try {
-    const res = await fetch(`${baseUrl}/embeddings`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

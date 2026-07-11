@@ -237,6 +237,8 @@ export interface AssembleContextInput {
   worldGroupId?: number | null
   outlineNodeId?: number | null
   chapterId?: number | null
+  /** Agent 自由对话按全书规范章序定位章节；1 表示第一章。 */
+  chapterOrdinal?: number
   currentChapterOrder?: number
   sourceKeys?: string[]
   provider?: AIProvider

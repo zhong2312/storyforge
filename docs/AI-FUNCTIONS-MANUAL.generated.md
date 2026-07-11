@@ -55,10 +55,11 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 33 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 34 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
+| `chapterIndex` | 章节索引（规范章序与真实记录 ID） | project | L0 | 4000 |
 | `manualText` | 用户指定内容 | manual | L0 | 100 |
 | `chapterContent` | 章节正文 | chapter | L0 | 100 |
 | `contextMemo` | 上下文快照 | project | L3 | 1500 |
@@ -119,62 +120,52 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 44 个 category。
+共 34 个 category。
 未分类调用: 0 个。动态 category 调用: 3 个。
 
 | category | 触发文件 |
 |---|---|
-| `ai.restructure` | `src/lib/ai/restructure.ts:52` |
-| `chapter.content` | `src/components/editor/ChapterEditor.tsx:430` |
+| `ai.restructure` | `src/lib/ai/restructure.ts:53` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
-| `chapter.continue` | `src/components/editor/ChapterEditor.tsx:448` |
-| `chapter.deai` | `src/components/editor/ChapterEditor.tsx:485` |
-| `chapter.expand` | `src/components/editor/ChapterEditor.tsx:465` |
-| `chapter.memory` | `src/components/editor/ChapterEditor.tsx:262` |
-| `chapter.polish` | `src/components/editor/ChapterEditor.tsx:457` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
-| `character.generate` | `src/components/character/CharacterPanel.tsx:163` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
-| `character.supplement` | `src/components/character/CharacterSupplementAction.tsx:80` |
-| `codex.extract` | `src/components/codex/CodexPanel.tsx:204` |
-| `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:111`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
+| `codex.extract` | `src/components/codex/CodexPanel.tsx:206` |
+| `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:115`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
-| `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:66` |
-| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:215` |
+| `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:67` |
+| `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:216` |
 | `geography.concept-map` | `src/components/geography/GeographyPanel.tsx:127` |
 | `geography.world-map` | `src/components/geography/WorldMapPanel.tsx:103` |
-| `inspiration.reverse` | `src/components/project/InspirationPanel.tsx:107` |
-| `inventory.extract` | `src/components/items/InventoryPanel.tsx:84` |
-| `location.extract` | `src/components/location/LocationPanel.tsx:104` |
-| `outline.chapter` | `src/components/outline/OutlinePanel.tsx:378`<br/>`src/lib/ai/batch-outline-runner.ts:123` |
+| `inventory.extract` | `src/components/items/InventoryPanel.tsx:85` |
+| `location.extract` | `src/components/location/LocationPanel.tsx:105` |
+| `outline.chapter` | `src/components/outline/OutlinePanel.tsx:423`<br/>`src/lib/ai/batch-outline-runner.ts:123` |
 | `outline.character-driven` | `src/components/outline/CharacterDrivenPlotPanel.tsx:113` |
-| `outline.volume` | `src/components/outline/OutlinePanel.tsx:330` |
-| `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:105` |
-| `reference.characters` | `src/components/project/AnalysisReportViewer.tsx:138` |
-| `reference.summary` | `src/components/project/AnalysisReportViewer.tsx:109` |
-| `relation.extract` | `src/components/relations/CharacterRelationPanel.tsx:73` |
+| `outline.volume` | `src/components/outline/OutlinePanel.tsx:375` |
+| `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:106` |
+| `reference.characters` | `src/components/project/AnalysisReportViewer.tsx:139` |
+| `reference.summary` | `src/components/project/AnalysisReportViewer.tsx:110` |
+| `relation.extract` | `src/components/relations/CharacterRelationPanel.tsx:74` |
 | `review.anti-ai` | `src/components/editor/ReviewPanel.tsx:87` |
 | `review.quality` | `src/components/editor/ReviewPanel.tsx:79` |
 | `review.readability` | `src/components/editor/ReviewPanel.tsx:96` |
-| `review.revise` | `src/components/editor/ChapterEditor.tsx:500` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
 | `story.generate` | `src/components/worldview/StoryCorePanel.tsx:193` |
-| `story.timeline` | `src/components/timeline/StoryTimelinePanel.tsx:83` |
-| `style.learn` | `src/components/style/StyleLearningPanel.tsx:76` |
+| `story.timeline` | `src/components/timeline/StoryTimelinePanel.tsx:84` |
+| `style.learn` | `src/components/style/StyleLearningPanel.tsx:77` |
 | `world-group.expand` | `src/components/world-group/WorldGroupDetail.tsx:98` |
 | `world-group.suggest` | `src/components/world-group/WorldGroupOverview.tsx:57` |
-| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:252`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:282`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:287` |
-| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:386` |
-| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:410` |
+| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:255`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:288`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:296` |
+| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:405` |
+| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:429` |
 
 ### 动态 category 调用
 
 - `src/components/editor/ReviewPanel.tsx:130 · ai.start`
-- `src/components/settings/NS0EvalPanel.tsx:49 · chat`
+- `src/components/settings/NS0EvalPanel.tsx:50 · chat`
 - `src/components/settings/prompt/WorkflowRunner.tsx:273 · ai.start`
 
 ---
 
-生成时间基准:commit `640a912`
+生成时间基准:commit `90daa1d`

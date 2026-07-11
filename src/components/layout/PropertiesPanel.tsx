@@ -1,4 +1,4 @@
-import { X, BookOpen, PenTool, Globe, Users, Heart, MapPin, Eye, FileText, Info } from 'lucide-react'
+import { Bot, X, BookOpen, PenTool, Globe, Users, Heart, MapPin, Eye, FileText, Info } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useChapterStore } from '../../stores/chapter'
 import { useCharacterStore } from '../../stores/character'
@@ -10,6 +10,7 @@ import type { SidebarModule } from './Sidebar'
 interface Props {
   activeModule: SidebarModule
   onClose: () => void
+  onOpenAgent?: () => void
 }
 
 function formatDate(ts: number) {
@@ -228,7 +229,7 @@ function GenericProps({ module }: { module: SidebarModule }) {
 }
 
 /** 属性面板主体 */
-export default function PropertiesPanel({ activeModule, onClose }: Props) {
+export default function PropertiesPanel({ activeModule, onClose, onOpenAgent }: Props) {
   const renderContent = () => {
     switch (activeModule) {
       case 'outline':
@@ -252,12 +253,26 @@ export default function PropertiesPanel({ activeModule, onClose }: Props) {
       {/* 标题栏 */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
         <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">属性</span>
-        <button
-          onClick={onClose}
-          className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onOpenAgent && (
+            <button
+              onClick={onOpenAgent}
+              className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+              title="打开 Agent"
+              aria-label="打开 Agent"
+            >
+              <Bot className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+            title="关闭属性面板"
+            aria-label="关闭属性面板"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* 内容 */}

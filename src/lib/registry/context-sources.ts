@@ -5,6 +5,8 @@
  */
 import { db } from '../db/schema'
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
+import { walkOutlineChaptersInCanonicalOrder } from '../outline/canonical-outline-walk'
+import { pickBestChapterForOutline } from '../chapters/selectors'
 import { getFactPredicate } from './fact-predicate-registry'
 import { retrieveChunks, embedQuery, readNarrativeSummaryContext } from '../retrieval/retrieval'
 import { isEmbeddingReady, embeddingModelTag } from '../ai/adapters/embedding-adapter'
@@ -27,8 +29,8 @@ import { parseFields } from '../types/state-card'
 import { parseBeats } from '../types/emotion-beat'
 import { buildForeshadowTaskContext } from '../foreshadow/context'
 import { formatHeldItemsContext, readProjectHeldItems } from '../consistency/held-items'
-import type { Character, PowerSystem, Worldview } from '../types'
-import type { ContextSource } from './types'
+import type { Chapter, Character, OutlineNode, PowerSystem, Worldview } from '../types'
+import type { AssembleContextInput, ContextSource } from './types'
 import { htmlToPlainText } from '../utils/html'
 
 async function readWorldview(projectId: number, worldGroupId?: number | null): Promise<Worldview | null> {
@@ -45,6 +47,71 @@ async function readPowerSystem(projectId: number, worldGroupId?: number | null):
     return rows.find(p => p.worldGroupId === worldGroupId) ?? null
   }
   return rows.find(p => (p.worldGroupId ?? null) === null) ?? rows[0] ?? null
+}
+
+async function readChapterIndex(
+  projectId: number,
+  input: Pick<AssembleContextInput, 'chapterOrdinal' | 'chapterId' | 'outlineNodeId'>,
+): Promise<string> {
+  const [outlineNodes, chapters] = await Promise.all([
+    db.outlineNodes.where('projectId').equals(projectId).toArray(),
+    db.chapters.where('projectId').equals(projectId).toArray(),
+  ]) as [OutlineNode[], Chapter[]]
+  const walk = walkOutlineChaptersInCanonicalOrder(outlineNodes)
+  const chaptersByOutline = new Map<number, Chapter[]>()
+  for (const chapter of chapters) {
+    const mapped = chaptersByOutline.get(chapter.outlineNodeId) ?? []
+    mapped.push(chapter)
+    chaptersByOutline.set(chapter.outlineNodeId, mapped)
+  }
+  const entries = walk.chapters.map(item => ({
+    ...item,
+    chapter: item.outlineNode.id == null
+      ? undefined
+      : pickBestChapterForOutline(chaptersByOutline.get(item.outlineNode.id) ?? []),
+  }))
+  let targetIndex = input.chapterOrdinal != null
+    ? entries.findIndex(entry => entry.ordinal === input.chapterOrdinal)
+    : -1
+  if (targetIndex < 0 && input.outlineNodeId != null) {
+    targetIndex = entries.findIndex(entry => entry.outlineNode.id === input.outlineNodeId)
+  }
+  if (targetIndex < 0 && input.chapterId != null) {
+    targetIndex = entries.findIndex(entry => entry.chapter?.id === input.chapterId)
+  }
+  if (targetIndex < 0 && input.chapterOrdinal != null) {
+    return `【章节索引（规范章序）】\n未找到第${input.chapterOrdinal}章；当前共 ${entries.length} 个章节大纲节点。`
+  }
+  if (targetIndex < 0 && (input.outlineNodeId != null || input.chapterId != null)) {
+    return '【章节索引（规范章序）】\n未找到指定章节记录。'
+  }
+  const selected = targetIndex >= 0
+    ? entries.slice(Math.max(0, targetIndex - 1), Math.min(entries.length, targetIndex + 2))
+    : entries.slice(0, 100)
+  if (selected.length === 0) return ''
+
+  const lines = selected.map(entry => {
+    const chapter = entry.chapter
+    const marker = (input.chapterOrdinal != null && entry.ordinal === input.chapterOrdinal)
+      || (input.outlineNodeId != null && entry.outlineNode.id === input.outlineNodeId)
+      || (input.chapterId != null && chapter?.id === input.chapterId)
+      ? '目标'
+      : '相邻'
+    return [
+      `${marker === '目标' ? '→ ' : ''}第${entry.ordinal}章`,
+      `outlineNodeId=${entry.outlineNode.id ?? '缺失'}`,
+      `chapterId=${chapter?.id ?? '未创建'}`,
+      `worldGroupId=${entry.worldGroupId ?? 'null'}`,
+      `标题=${entry.outlineNode.title || chapter?.title || '未命名'}`,
+      `状态=${chapter?.status ?? '仅大纲'}`,
+      `正文=${chapter?.content?.trim() ? `已写${chapter.wordCount}字` : '未写'}`,
+      `章纲=${entry.outlineNode.summary || '未填写'}`,
+    ].join(' | ')
+  })
+  const anomaly = walk.anomalies.length > 0
+    ? `\n结构告警：${walk.anomalies.map(item => item.detail).join('；')}`
+    : ''
+  return `【章节索引（规范章序）】\n${lines.join('\n')}${anomaly}`
 }
 
 async function readCharacters(projectId: number, worldGroupId?: number | null): Promise<Character[]> {
@@ -326,6 +393,15 @@ async function readCharacterPassages(projectId: number, name?: string, worldGrou
 }
 
 export const CONTEXT_SOURCES: ContextSource[] = [
+  {
+    key: 'chapterIndex',
+    label: '章节索引（规范章序与真实记录 ID）',
+    scope: 'project',
+    layer: 'L0',
+    budgetTokens: 4000,
+    protectedFromTrim: true,
+    read: input => readChapterIndex(input.projectId, input),
+  },
   {
     key: 'manualText',
     label: '用户指定内容',

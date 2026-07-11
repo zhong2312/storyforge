@@ -4,6 +4,7 @@ import { useAIConfigStore, type TestResult } from '../../stores/ai-config'
 import EmbeddingConfigCard from './EmbeddingConfigCard'
 import type { AIProvider } from '../../lib/types'
 import { PROVIDER_MODELS } from '../../lib/types'
+import { isAIConfigReady } from '../../lib/ai/config-readiness'
 import { getLogs, subscribeLogs, clearLogs, formatLog } from '../../lib/ai/logger'
 import { applyStoryForgeTheme, resolveStoryForgeTheme, THEME_OPTIONS, type StoryForgeTheme } from '../../lib/theme'
 import { useDialog } from '../shared/Dialog'
@@ -105,7 +106,7 @@ export default function AIConfigPanel() {
       <div className="bg-bg-surface border border-border rounded-xl p-5 mb-6">
         <h3 className="text-base font-semibold text-text-primary mb-4">AI 模型配置</h3>
         <p className="text-[11px] text-text-muted mb-4 rounded-lg border border-border bg-bg-base px-3 py-2">
-          API Key 默认仅保存在本次浏览器会话；勾选“记住在本机”才会写入 localStorage。发起 AI 生成、测试连接或使用自定义 baseUrl 时，相关提示词和上下文会发送到你配置的模型服务。
+          Web/PWA 中 API Key 默认仅保存在本次浏览器会话；Portable 的独立本机配置默认记住 Key，仍可手动关闭。发起 AI 生成、测试连接或使用自定义 baseUrl 时，相关提示词和上下文会发送到你配置的模型服务。
         </p>
 
         {/* ── API 配置预设（多套一键切换） ── */}
@@ -429,7 +430,7 @@ export default function AIConfigPanel() {
             <div className="flex items-center gap-3">
               <button
                 onClick={handleTest}
-                disabled={testing || (!config.apiKey && !['custom', 'ollama'].includes(config.provider))}
+                disabled={testing || !isAIConfigReady(config)}
                 className="flex items-center gap-2 px-4 py-2 bg-accent/10 text-accent rounded-lg hover:bg-accent/20 disabled:opacity-40 transition-colors text-sm"
               >
                 {testing ? (

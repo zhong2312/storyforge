@@ -1,9 +1,71 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import http from 'node:http'
+import https from 'node:https'
+
+function genericOpenAICompatibleProxyPlugin() {
+  return {
+    name: 'storyforge-generic-openai-compatible-proxy',
+    configureServer(server: {
+      middlewares: { use(handler: (req: http.IncomingMessage, res: http.ServerResponse, next: () => void) => void): void }
+    }) {
+      server.middlewares.use((req, res, next) => {
+        const rawUrl = req.url || ''
+        if (!rawUrl.startsWith('/openai-compatible-proxy/')) return next()
+
+        const requestUrl = new URL(rawUrl, 'http://localhost')
+        const rawBaseUrl = (requestUrl.searchParams.get('baseUrl') || '').trim().replace(/\/+$/, '')
+        if (!/^https?:\/\//i.test(rawBaseUrl)) {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ error: { message: 'Missing or invalid baseUrl' } }))
+          return
+        }
+
+        const upstream = new URL(rawBaseUrl)
+        const suffix = requestUrl.pathname.replace(/^\/openai-compatible-proxy/, '')
+        const query = new URLSearchParams(requestUrl.searchParams)
+        query.delete('baseUrl')
+        const upstreamPath = `${upstream.pathname.replace(/\/+$/, '')}${suffix}${query.toString() ? `?${query.toString()}` : ''}`
+        const transport = upstream.protocol === 'https:' ? https : http
+
+        const headers: http.OutgoingHttpHeaders = { ...req.headers, host: upstream.host }
+        delete headers.origin
+        delete headers.referer
+
+        const proxyReq = transport.request({
+          protocol: upstream.protocol,
+          hostname: upstream.hostname,
+          port: upstream.port || (upstream.protocol === 'https:' ? 443 : 80),
+          method: req.method,
+          path: upstreamPath,
+          headers,
+        }, (proxyRes) => {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers)
+          proxyRes.pipe(res)
+        })
+
+        proxyReq.on('error', (err) => {
+          if (res.headersSent) {
+            res.end()
+            return
+          }
+          res.statusCode = 502
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ error: { message: `Proxy error: ${err.message}` } }))
+        })
+
+        req.on('aborted', () => proxyReq.destroy())
+        req.pipe(proxyReq)
+      })
+    },
+  }
+}
 
 export default defineConfig({
   plugins: [
+    genericOpenAICompatibleProxyPlugin(),
     react(),
     VitePWA({
       injectRegister: null,

@@ -12,27 +12,85 @@
  *   ⑤ PROJECT_TABLES exportable 表必须接入 JSON 导出/导入
  *   ⑥ components/hooks/pages 不得使用浏览器原生 alert/confirm/prompt
  *   ⑦ 正式 UI 不得出现"正在开发/即将推出/敬请期待"式死入口文案
+ *   ⑧ Agent 层不得导入 Zustand stores 或 Dexie schema
  *
  * 用法:node scripts/check-architecture.mjs
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-function walk(dir, acc = []) {
+function walk(dir, acc = [], includeTests = false) {
   // 累加用于匹配的相对路径必须强制 POSIX 分隔符，否则 Windows 上得到 'src\\hooks\\...'，
   // 与下方 AI_META_FORWARDERS / 字面 prefix 比较失败，导致守卫误报。
   for (const ent of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
     const rel = `${dir}/${ent.name}`
-    if (ent.isDirectory()) walk(rel, acc)
-    else if (/\.(ts|tsx)$/.test(ent.name) && !/\.test\./.test(ent.name)) acc.push(rel)
+    if (ent.isDirectory()) walk(rel, acc, includeTests)
+    else if (/\.(ts|tsx)$/.test(ent.name) && (includeTests || !/\.test\./.test(ent.name))) acc.push(rel)
   }
   return acc
 }
 
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8')
+
+function literalModuleSpecifier(expression) {
+  return expression && (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression))
+    ? expression.text
+    : null
+}
+
+function moduleSpecifiers(source, fileName = 'agent.ts') {
+  const specifiers = []
+  const scriptKind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, scriptKind)
+
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const specifier = node.moduleSpecifier && literalModuleSpecifier(node.moduleSpecifier)
+      if (specifier) specifiers.push(specifier)
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      const specifier = node.moduleReference.expression && literalModuleSpecifier(node.moduleReference.expression)
+      if (specifier) specifiers.push(specifier)
+    } else if (ts.isCallExpression(node)) {
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
+      const specifier = (isDynamicImport || isRequire) && literalModuleSpecifier(node.arguments[0])
+      if (specifier) specifiers.push(specifier)
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+
+  return specifiers
+}
+
+function isForbiddenAgentImport(specifier) {
+  const normalized = path.posix.normalize(
+    specifier
+      .replace(/\\/g, '/')
+      .replace(/[?#].*$/, ''),
+  )
+    .replace(/\.(?:[cm]?[jt]sx?)$/, '')
+    .replace(/\/index$/, '')
+  return /(^|\/)stores(\/|$)/.test(normalized)
+    || /(^|\/)db\/schema$/.test(normalized)
+}
+
+if (process.argv.includes('--agent-import-probe')) {
+  const probeIndex = process.argv.indexOf('--agent-import-probe')
+  const fileName = process.argv[probeIndex + 1] ?? 'agent.ts'
+  const source = fs.readFileSync(0, 'utf8')
+  const forbiddenSpecifiers = moduleSpecifiers(source, fileName).filter(isForbiddenAgentImport)
+  for (const specifier of forbiddenSpecifiers) {
+    console.error(`[⑧Agent越层] Agent 层不得导入 ${specifier},应通过 Tool/Storage/Registry port`)
+  }
+  process.exit(forbiddenSpecifiers.length ? 1 : 0)
+}
+
 const violations = []
 
 // ── ① stores 手写事务表清单 ──
@@ -203,6 +261,19 @@ for (const dir of UI_DIRS) {
     if (!m) continue
     const line = src.slice(0, m.index).split('\n').length
     violations.push(`[⑦半成品文案] ${file}:${line}: 正式 UI 不得出现"${m[0]}"式死入口承诺;请隐藏入口、标记 Labs 禁用态,或指向已上线流程`)
+  }
+}
+
+// ── ⑧ Agent 层禁止绕过端口和三注册表 ──
+const agentDir = path.join(root, 'src/lib/agent')
+if (fs.existsSync(agentDir)) {
+  for (const file of walk('src/lib/agent', [], true)) {
+    const src = read(file)
+    for (const specifier of moduleSpecifiers(src, file)) {
+      if (isForbiddenAgentImport(specifier)) {
+        violations.push(`[⑧Agent越层] ${file}: Agent 层不得导入 ${specifier},应通过 Tool/Storage/Registry port`)
+      }
+    }
   }
 }
 

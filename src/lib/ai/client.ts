@@ -74,10 +74,10 @@ function buildRequest(config: AIConfig, messages: ChatMessage[], stream: boolean
   }
 
   return {
-    url: buildOpenAIEndpoint(config.baseUrl, 'chat/completions'),
+    url: buildOpenAIEndpoint(config.baseUrl, 'chat/completions', { provider: config.provider }),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
     },
     body: JSON.stringify(body),
   }
