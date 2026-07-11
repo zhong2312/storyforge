@@ -93,7 +93,9 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
 
     expect(design).toContain("target: 'characters'")
     expect(design).toContain("mode: 'add'")
-    expect(design).toContain("requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis']")
+    expect(design).toContain("requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis', 'relationships', ...genDims]")
+    expect(design).toContain('requestedDimensionFields: [...genDims]')
+    expect(design).toContain('subscribeAgentProjectCommits')
     expect(supplement).toContain("mode: 'merge-diffs'")
     expect(supplement).toContain('recordId: character.id')
     expect(supplement).toContain('requiredFields: dims')

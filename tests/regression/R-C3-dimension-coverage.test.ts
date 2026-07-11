@@ -33,4 +33,44 @@ describe('R-C3-dimension-coverage', () => {
       expect((row as any)[d.key]).toBe(`V-${d.key}`) // 每个维度都真落库
     }
   })
+
+  it('中文展示名路径：角色方案中的中文字段可规范化并完整落库', async () => {
+    const now = Date.now()
+    const projectId = await db.projects.add({ name: 'P', genre: 'x', createdAt: now, updatedAt: now } as any) as number
+    const result = await adopt({
+      projectId,
+      target: 'characters',
+      mode: 'add',
+      data: {
+        name: '别名角色',
+        roleWeight: 'secondary',
+        moralAxis: 'good',
+        orderAxis: 'lawful',
+        人物关系: '与主角互为镜像',
+        '年龄·性别·种族': '二十岁，女，人族',
+        '动机/欲望': '摆脱家族控制',
+        '目标(短/长期)': '短期离城，长期重建秩序',
+        '核心矛盾/内心冲突': '自由与责任冲突',
+        '关键经历/转折': '目睹旧城覆灭',
+        '标志性物品/符号': '断弦古琴',
+        在故事中的作用: '推动旧案真相浮出水面',
+        结局走向: '主动放弃权位，远行求道',
+      },
+    })
+
+    expect(result.unknown).toEqual([])
+    expect(result.aliasMapped).toContainEqual({ from: '结局走向', to: 'ending' })
+    const row = await db.characters.where('projectId').equals(projectId).first()
+    expect(row).toMatchObject({
+      relationships: '与主角互为镜像',
+      profile: '二十岁，女，人族',
+      motivation: '摆脱家族控制',
+      goals: '短期离城，长期重建秩序',
+      innerConflict: '自由与责任冲突',
+      keyEvents: '目睹旧城覆灭',
+      signatureItem: '断弦古琴',
+      storyRole: '推动旧案真相浮出水面',
+      ending: '主动放弃权位，远行求道',
+    })
+  })
 })

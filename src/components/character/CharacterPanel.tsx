@@ -21,7 +21,7 @@ import {
   ROLE_WEIGHT_LABELS,
   filterCharactersByRoleWeight,
 } from '../../lib/character/character-axes'
-import { dispatchAgentIntent } from '../../lib/agent/intents'
+import { dispatchAgentIntent, subscribeAgentProjectCommits } from '../../lib/agent/intents'
 
 // ── 常量 ───────────────────────────────────────────────────────
 
@@ -59,6 +59,12 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
   // 多世界：角色世界过滤器（'all' | 'cross' | 世界组 id）
   const [worldFilter, setWorldFilter] = useState<'all' | 'cross' | number>('all')
   useEffect(() => { loadAll(project.id!) }, [project.id, loadAll])
+  useEffect(() => subscribeAgentProjectCommits(commit => {
+    if (commit.project.backend !== 'dexie'
+      || commit.project.projectId !== project.id
+      || commit.scope.module !== 'characters') return
+    void loadAll(project.id!)
+  }), [project.id, loadAll])
 
   // 多世界过滤：跨世界角色在任意世界都显示
   const worldFilteredChars = !project.enableMultiWorld || worldFilter === 'all'
@@ -116,7 +122,7 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
       ? ''
       : genDims.size < allKeys.length
         ? `本次只需设计以下维度，其余维度一律留空：${selectedLabels}`
-        : `请尽量完整设计以下全部维度（有内容才写，没有的留空，不要编造硬凑）：${selectedLabels}`
+        : `请完整设计以下全部维度，每项都要给出可直接采用的具体内容，不要留空：${selectedLabels}`
     const targetWorld = project.enableMultiWorld
       ? (typeof worldFilter === 'number' ? worldFilter : activeGroupId)
       : null
@@ -129,12 +135,12 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
         module: 'characters',
         worldGroupId: targetWorld,
       },
-      instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。提案必须使用 target=characters、mode=add，data 直接放角色对象；roleWeight 取 main/secondary/npc/extra，moralAxis 取 good/neutral/evil，orderAxis 取 lawful/neutral/chaotic。',
+      instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。提案必须使用 target=characters、mode=add，data 直接放角色对象；所有字段使用 payload.requestedDimensionFields 给出的英文键名，不要使用中文标题作为键名；roleWeight 取 main/secondary/npc/extra，moralAxis 取 good/neutral/evil，orderAxis 取 lawful/neutral/chaotic。',
       completionRequirement: {
         kind: 'change-proposal',
         target: 'characters',
         mode: 'add',
-        requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis'],
+        requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis', 'relationships', ...genDims],
         requiredContextSources: [
           'storyCore', 'creativeRules', 'storyArcs', 'worldview', 'powerSystem',
           'codex', 'characters', 'worldRules', 'locations',
@@ -144,6 +150,7 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
         userHint: hint.trim() || undefined,
         rosterGap,
         requestedDimensions: selectedLabels,
+        requestedDimensionFields: [...genDims],
         dimensionInstruction: dimInstruction,
         homeWorldGroupId: targetWorld,
         crossWorld: project.enableMultiWorld && worldFilter === 'cross',
