@@ -41,6 +41,7 @@ export default function CharacterSupplementAction({ character, projectId, worldG
     dispatchAgentIntent({
       type: 'character.supplement',
       title: `Agent 补全角色 · ${character.name || '未命名'}`,
+      promptModuleKey: 'character.dimension',
       source: {
         project: { backend: 'dexie', projectId },
         module: 'characters',

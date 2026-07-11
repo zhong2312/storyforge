@@ -55,6 +55,37 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(preparation.payload.summary).toContain('storyforge.settings.catalog')
   })
 
+  it('injects the active prompt-library profile and applies its model overrides', async () => {
+    const registry = registryWithCatalog(vi.fn(async () => ({})))
+    const streamer: AgentLoopStreamer = async function* (request) {
+      expect(request.instructions).toContain('【本轮激活提示词】我的角色模板（character.generate）')
+      expect(request.instructions).toContain('塑造有矛盾感的人物')
+      expect(request.instructions).toContain('姓名：{{name}}')
+      expect(request.instructions).toContain('认可示例')
+      expect(request.config.temperature).toBe(0.85)
+      expect(request.config.maxTokens).toBe(6000)
+      yield { type: 'text', text: '已使用角色模板。' }
+    }
+    const runtime = createRuntime(registry, streamer)
+
+    const events = await collect(runtime.run({
+      ...runInput(),
+      promptProfile: {
+        moduleKey: 'character.generate',
+        name: '我的角色模板',
+        systemPrompt: '塑造有矛盾感的人物',
+        userPromptTemplate: '姓名：{{name}}',
+        parameterValues: { detailLevel: '详尽' },
+        goodExamples: ['人物选择体现性格'],
+        modelOverride: { temperature: 0.85, maxTokens: 6000 },
+      },
+    }))
+
+    expect(events.some(event => event.type === 'run.completed')).toBe(true)
+    const prepared = events.find(event => event.type === 'phase.completed')
+    expect(prepared?.type === 'phase.completed' ? prepared.payload.summary : '').toContain('已加载提示词“我的角色模板”')
+  })
+
   it('pauses after a change proposal and commits only after matching approval', async () => {
     let committed = false
     const registry = new ToolRegistry()

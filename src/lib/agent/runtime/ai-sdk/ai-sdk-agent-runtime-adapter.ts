@@ -8,6 +8,7 @@ import type {
 import type {
   AgentChangeProposalCompletionRequirement,
   AgentCompletionRequirement,
+  AgentPromptProfile,
   AgentRunInput,
   AgentRuntimePort,
   ApprovalDecision,
@@ -93,11 +94,16 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
       const descriptors = registry.listAvailable(context)
       yield this.append(runId, input.conversationId, 'phase.completed', {
         phase: 'prepare',
-        summary: toolPreparationSummary(descriptors),
+        summary: input.promptProfile
+          ? `${toolPreparationSummary(descriptors)}；已加载提示词“${input.promptProfile.name}”`
+          : toolPreparationSummary(descriptors),
       })
 
       const parts = this.#streamer({
-        config: this.dependencies.getModelConfig(input.modelProfile),
+        config: applyPromptModelOverride(
+          this.dependencies.getModelConfig(input.modelProfile),
+          input.promptProfile,
+        ),
         instructions: buildInstructions(descriptors, input),
         prompt: input.userMessage,
         descriptors,
@@ -449,6 +455,7 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
         '在提案工具调用前完成正式内容生成，把完整候选版本放进 data；流程说明、方案询问、权限请求、占位内容和“下一步将生成”都不是可采纳交付物。',
       ].filter(Boolean).join('\n')
     : ''
+  const promptProfile = formatPromptProfile(input.promptProfile)
   return [
     '你是 StoryForge 项目副驾。优先使用工具获取事实，不得猜测项目设定。',
     '每轮最多调用一次 storyforge.settings.catalog；目录返回后立即执行下一工具，不要重复复述“先查看”或再次查询目录。',
@@ -459,11 +466,45 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
     '如果任务来自项目面板，宿主消息中给出的记录 ID、世界、章节、字段和选区是权威目标；不得改写为其它记录，也不得自行切换作用域。',
     '任何修改必须调用 storyforge.change.propose 生成方案；提案后立即停止并等待用户批准，不得声称已经写入。',
     '回答使用中文，清楚说明已读取的事实、当前阶段和下一步。只输出简短的阶段性推理摘要。',
+    promptProfile,
     completion,
     `当前界面模块：${input.scope.module || '未知'}。`,
     `当前宿主作用域：${scope || '项目级'}。`,
     `可用工具：${descriptors.map(tool => tool.name).join(', ') || '无'}。`,
   ].join('\n')
+}
+
+function formatPromptProfile(profile: AgentPromptProfile | undefined): string {
+  if (!profile) return ''
+  const sections = [
+    `【本轮激活提示词】${profile.name}（${profile.moduleKey}）`,
+    '以下内容来自用户提示词库，是本轮创作方法、文风和质量要求。必须实际遵循；其中 {{变量}} 应使用面板输入或项目读取工具返回的事实填充，不得因尚未读取而忽略整段模板。',
+    `【系统提示词】\n${profile.systemPrompt}`,
+    `【用户提示词模板】\n${profile.userPromptTemplate}`,
+  ]
+  if (profile.parameterValues && Object.keys(profile.parameterValues).length > 0) {
+    sections.push(`【模板参数】\n${JSON.stringify(profile.parameterValues, null, 2)}`)
+  }
+  if (profile.goodExamples?.length) {
+    sections.push(`【认可示例】\n${profile.goodExamples.map((example, index) => `[${index + 1}] ${example}`).join('\n\n')}`)
+  }
+  if (profile.badExamples?.length) {
+    sections.push(`【反例，必须避免】\n${profile.badExamples.map((example, index) => `[${index + 1}] ${example}`).join('\n\n')}`)
+  }
+  sections.push('提示词模板若要求直接输出正文或 JSON，必须把该正式结果放入 storyforge.change.propose 的 data 中，不能绕过审批，也不能把工具参数说明写入小说正文。')
+  return sections.join('\n\n')
+}
+
+function applyPromptModelOverride(
+  config: AgentModelConfig,
+  profile: AgentPromptProfile | undefined,
+): AgentModelConfig {
+  if (!profile?.modelOverride) return config
+  return {
+    ...config,
+    temperature: profile.modelOverride.temperature ?? config.temperature,
+    maxTokens: profile.modelOverride.maxTokens ?? config.maxTokens,
+  }
 }
 
 function assertCompletionProposalInput(

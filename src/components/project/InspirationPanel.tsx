@@ -76,6 +76,7 @@ export default function InspirationPanel({ project }: Props) {
     dispatchAgentIntent({
       type: isMW ? 'inspiration.reverse.multiworld' : 'inspiration.reverse',
       title: isMW ? 'Agent 多世界灵感反推' : 'Agent 灵感反推',
+      promptModuleKey: isMW ? 'inspiration.reverse.multiworld' : 'inspiration.reverse',
       source: {
         project: { backend: 'dexie', projectId: project.id! },
         module: 'inspiration',

@@ -4,6 +4,7 @@ import type {
   AgentScope,
 } from '../runtime/agent-runtime-port'
 import type { ProjectLocator } from '../../storage/ports'
+import type { PromptModuleKey } from '../../types/prompt'
 
 const AGENT_INTENT_EVENT = 'storyforge:agent-intent'
 const AGENT_PROJECT_COMMIT_EVENT = 'storyforge:agent-project-commit'
@@ -48,6 +49,7 @@ export interface AgentIntent {
   readonly title: string
   readonly source: AgentIntentSource
   readonly instruction: string
+  readonly promptModuleKey?: PromptModuleKey
   readonly payload?: Readonly<Record<string, unknown>>
   readonly completionRequirement?: AgentCompletionRequirement
 }
@@ -133,6 +135,26 @@ export function inferChapterChatCompletionRequirement(
   }
 }
 
+export function inferAgentPromptModuleKey(message: string): PromptModuleKey | undefined {
+  if (inferChapterChatCompletionRequirement(message)) {
+    if (/(?:去\s*AI|去AI|去除.*AI|消除.*AI)/i.test(message)) return 'chapter.de-ai'
+    if (/(?:续写|补写)/.test(message)) return 'chapter.continue'
+    if (/(?:扩写)/.test(message)) return 'chapter.expand'
+    if (/(?:润色|精修|优化)/.test(message)) return 'chapter.polish'
+    return 'chapter.content'
+  }
+  const create = /(?:设计|生成|创建|新增|补全|完善|反推)/
+  if (!create.test(message)) return undefined
+  if (/(?:角色|人物)/.test(message)) return 'character.generate'
+  if (/(?:卷纲|卷级大纲)/.test(message)) return 'outline.volume'
+  if (/(?:章纲|章节大纲)/.test(message)) return 'outline.chapter'
+  if (/(?:世界观|世界设定)/.test(message)) return 'worldview.dimension'
+  if (/(?:故事核心|故事主线)/.test(message)) return 'story.generate'
+  if (/(?:伏笔)/.test(message)) return 'foreshadow.generate'
+  if (/(?:灵感)/.test(message)) return 'inspiration.reverse'
+  return undefined
+}
+
 export function buildAgentIntentPrompt(intent: AgentIntent): string {
   const scope = [
     intent.source.module ? `模块=${intent.source.module}` : '',
@@ -158,6 +180,7 @@ export function buildAgentIntentPrompt(intent: AgentIntent): string {
   return [
     `用户从 StoryForge 的“${intent.title}”功能发起任务。`,
     `任务类型：${intent.type}。${scope ? `当前作用域：${scope}。` : ''}`,
+    intent.promptModuleKey ? `本任务使用提示词库模块：${intent.promptModuleKey}。` : '',
     intent.instruction,
     '请复用当前项目工具完成：先读取与该功能相关的项目事实，再生成结果。',
     '如果结果应写入项目，必须调用 storyforge.change.propose 生成审批方案；不得只给一段无法采纳的泛泛建议，也不得声称已经写入。',

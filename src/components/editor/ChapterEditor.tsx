@@ -268,6 +268,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     dispatchAgentIntent({
       type,
       title,
+      promptModuleKey: chapterPromptModuleKey(type),
       source: {
         project: { backend: 'dexie', projectId: project.id! },
         module: 'editor',
@@ -1093,4 +1094,12 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       )}
     </div>
   )
+}
+
+function chapterPromptModuleKey(type: string): 'chapter.content' | 'chapter.continue' | 'chapter.polish' | 'chapter.expand' | 'chapter.de-ai' {
+  if (type === 'chapter.continue') return 'chapter.continue'
+  if (type === 'chapter.expand') return 'chapter.expand'
+  if (type.startsWith('chapter.deai')) return 'chapter.de-ai'
+  if (type === 'chapter.polish' || type === 'review.revise') return 'chapter.polish'
+  return 'chapter.content'
 }

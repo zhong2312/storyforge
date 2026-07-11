@@ -25,6 +25,20 @@ export interface AgentChangeProposalCompletionRequirement {
 
 export type AgentCompletionRequirement = AgentChangeProposalCompletionRequirement
 
+export interface AgentPromptProfile {
+  readonly moduleKey: string
+  readonly name: string
+  readonly systemPrompt: string
+  readonly userPromptTemplate: string
+  readonly parameterValues?: Readonly<Record<string, string | number | boolean>>
+  readonly goodExamples?: readonly string[]
+  readonly badExamples?: readonly string[]
+  readonly modelOverride?: {
+    readonly temperature?: number
+    readonly maxTokens?: number
+  }
+}
+
 export interface AgentRunInput {
   conversationId: string
   project: ProjectLocator
@@ -35,6 +49,7 @@ export interface AgentRunInput {
   maxSteps?: number
   tokenBudget?: number
   completionRequirement?: AgentCompletionRequirement
+  promptProfile?: AgentPromptProfile
 }
 
 export interface ApprovalDecision {

@@ -282,6 +282,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     dispatchAgentIntent({
       type: moduleKey,
       title,
+      promptModuleKey: moduleKey,
       source: {
         project: { backend: 'dexie', projectId: project.id! },
         module: 'outline',
@@ -431,6 +432,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     dispatchAgentIntent({
       type: 'outline.chapter.batch',
       title: 'Agent 生成全部卷章纲',
+      promptModuleKey: 'outline.chapter',
       source: {
         project: { backend: 'dexie', projectId: project.id! },
         module: 'outline',

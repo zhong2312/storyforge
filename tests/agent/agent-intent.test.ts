@@ -4,6 +4,7 @@ import {
   buildAgentIntentPrompt,
   dispatchAgentProjectCommit,
   dispatchAgentIntent,
+  inferAgentPromptModuleKey,
   inferChapterChatCompletionRequirement,
   isIntentForDexieProject,
   subscribeAgentIntents,
@@ -31,6 +32,7 @@ describe('AgentIntent panel bridge', () => {
         chapterId: 12,
       },
       instruction: '生成正文并提案写入。',
+      promptModuleKey: 'chapter.content',
       payload: { customInstruction: '节奏紧凑' },
     })
 
@@ -39,6 +41,7 @@ describe('AgentIntent panel bridge', () => {
     expect(Object.isFrozen(intent)).toBe(true)
     expect(Object.isFrozen(intent.source)).toBe(true)
     expect(Object.isFrozen(intent.payload)).toBe(true)
+    expect(intent.promptModuleKey).toBe('chapter.content')
   })
 
   it('preserves host scope and writes it into the agent prompt', () => {
@@ -111,5 +114,12 @@ describe('AgentIntent panel bridge', () => {
     expect(inferChapterChatCompletionRequirement('把本章润色一下')).toBeDefined()
     expect(inferChapterChatCompletionRequirement('第一章讲了什么？')).toBeUndefined()
     expect(inferChapterChatCompletionRequirement('梳理世界观')).toBeUndefined()
+    expect(inferAgentPromptModuleKey('写第一章')).toBe('chapter.content')
+    expect(inferAgentPromptModuleKey('续写本章')).toBe('chapter.continue')
+    expect(inferAgentPromptModuleKey('润色当前章')).toBe('chapter.polish')
+    expect(inferAgentPromptModuleKey('帮我设计一个新角色')).toBe('character.generate')
+    expect(inferAgentPromptModuleKey('生成全书卷纲')).toBe('outline.volume')
+    expect(inferAgentPromptModuleKey('完善世界观')).toBe('worldview.dimension')
+    expect(inferAgentPromptModuleKey('给我介绍第一章')).toBeUndefined()
   })
 })

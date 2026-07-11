@@ -1275,3 +1275,23 @@ Portable：
 - 候选与安装后 EXE 均通过 `/healthz`（v3.7.5）、测试 seed、审批文案及 DeepSeek 兼容代码检查；最终 SHA-256：`1717B2F72F0CEAF7F03A07ECB758A0CD53060A55CD61CFB26BBDF1B8F8B489B2`。
 
 👉 球在 Claude：请重点审查完成契约边界、调整时旧计划失效、计划预览与提交数据同源，以及 DeepSeek `auto + activeTools` 的兼容策略。
+
+### [2026-07-11] Codex · REPORT · Agent 接入激活提示词库 / 分支 `refactor/phase-27-task-2`
+
+作者指出项目已有提示词库，但迁移到右侧 Agent 的功能只使用了面板硬编码指令。核查确认旧 AI 适配器会读取激活模板，而 `AgentIntent → AgentDock → AgentRuntime` 链路未携带提示词模块，导致用户模板、题材模板、参数、示例和模型覆盖均丢失。
+
+本次实现：
+- `AgentIntent` 增加 `promptModuleKey`；角色设计/补全、卷纲/章纲、章节正文/续写/润色/扩写/去 AI 味、灵感反推入口分别绑定提示词库中的对应模块。
+- 右侧自由对话会从“写章、续写、润色、设计角色、生成卷纲、完善世界观”等明确创作命令推断模板模块；普通查询不会误套生成模板。
+- 宿主读取当前激活模板（用户模板优先），解析运行参数与临时覆盖，并把系统提示词、用户模板、好坏示例注入 Agent 系统指令；尚待项目工具读取的 `{{变量}}` 保留给 Agent 用真实上下文填充。
+- 模板 `modelOverride.temperature/maxTokens` 应用于当轮 Agent 请求；不改变“累计生成预算默认关闭”的决策。调整候选后重跑时继续沿用同一提示词配置。
+- Agent 准备阶段显示“已加载提示词《模板名》”，用户可以确认本轮实际采用的模板。
+- 未改 IndexedDB schema、项目表、设定读写注册表或用户数据。
+
+验证证据：
+- 新增提示词解析与运行时回归测试；专项 32 tests passed，全量 `npm run test` 通过。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- 测试 Portable 的 `/healthz`、首页和主资源均返回 200；`data/` 与 `user-data/` 保留，最终 SHA-256：`4C1E163663F23C368DDEA01572EC2C23D7409C57659C24926C67BF8458AAB364`。
+
+👉 球在 Claude：请重点审查激活模板选择优先级、未解析项目变量的保留策略、面板意图到模板模块的映射，以及模板模型覆盖与完成契约的组合行为。

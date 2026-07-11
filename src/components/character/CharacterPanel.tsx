@@ -123,6 +123,7 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
     dispatchAgentIntent({
       type: 'character.generate',
       title: 'Agent 设计角色',
+      promptModuleKey: 'character.generate',
       source: {
         project: { backend: 'dexie', projectId: project.id! },
         module: 'characters',

@@ -17,6 +17,9 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     }
     expect(supplement).toContain('mode=merge-diffs')
     expect(supplement).toContain('recordId=${character.id}')
+    expect(inspiration).toContain("promptModuleKey: isMW ? 'inspiration.reverse.multiworld' : 'inspiration.reverse'")
+    expect(character).toContain("promptModuleKey: 'character.generate'")
+    expect(supplement).toContain("promptModuleKey: 'character.dimension'")
   })
 
   it('大纲和章节主操作携带实体作用域进入 Agent', () => {
@@ -31,6 +34,9 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(chapter).toContain("'chapter.content'")
     expect(chapter).toContain("'chapter.continue'")
     expect(chapter).not.toContain('AIStreamOutput')
+    expect(outline).toContain('promptModuleKey: moduleKey')
+    expect(outline).toContain("promptModuleKey: 'outline.chapter'")
+    expect(chapter).toContain('promptModuleKey: chapterPromptModuleKey(type)')
   })
 
   it('Workspace 只接收当前项目意图并交给 AgentDock 自动消费', () => {

@@ -43,17 +43,21 @@ import {
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
 import { useAIConfigStore } from '../../stores/ai-config'
+import { usePromptStore } from '../../stores/prompt'
 import type {
   AgentCompletionRequirement,
+  AgentPromptProfile,
   AgentScope,
 } from '../../lib/agent/runtime/agent-runtime-port'
 import {
   agentScopeFromIntent,
   buildAgentIntentPrompt,
   dispatchAgentProjectCommit,
+  inferAgentPromptModuleKey,
   inferChapterChatCompletionRequirement,
   type AgentIntent,
 } from '../../lib/agent/intents'
+import { createAgentPromptProfile } from '../../lib/agent/prompts'
 import {
   conversationTitle,
   createAgentConversation,
@@ -97,6 +101,7 @@ interface AgentRunContext {
   readonly scope: AgentScope
   readonly intentType?: string
   readonly completionRequirement?: AgentCompletionRequirement
+  readonly promptProfile?: AgentPromptProfile
   readonly originalPrompt: string
 }
 
@@ -105,6 +110,7 @@ interface RunMessageOptions {
   readonly displayMessage?: string
   readonly intentType?: string
   readonly completionRequirement?: AgentCompletionRequirement
+  readonly promptProfile?: AgentPromptProfile
   readonly forceNewConversation?: boolean
   readonly conversationId?: string
   readonly ignoreBlock?: boolean
@@ -255,6 +261,7 @@ export default function AgentDock({
       scope,
       intentType: options.intentType,
       completionRequirement: options.completionRequirement,
+      promptProfile: options.promptProfile,
       originalPrompt: message,
     })
     const turn: AgentConversationTurn = {
@@ -290,6 +297,7 @@ export default function AgentDock({
         scope,
         userMessage: message,
         completionRequirement: options.completionRequirement,
+        promptProfile: options.promptProfile,
       })
       await consumeEvents(conversationId, turnId, stream)
     } finally {
@@ -300,10 +308,16 @@ export default function AgentDock({
 
   const send = async () => {
     const completionRequirement = inferChapterChatCompletionRequirement(input)
+    const promptModuleKey = inferAgentPromptModuleKey(input)
     await runMessage(input, {
       scope: { module: activeModule, worldGroupId },
       intentType: completionRequirement ? 'chapter.chat' : undefined,
       completionRequirement,
+      promptProfile: promptModuleKey
+        ? createAgentPromptProfile(usePromptStore.getState().getActive(promptModuleKey), {
+            variables: { userHint: input },
+          })
+        : undefined,
     })
   }
 
@@ -319,6 +333,7 @@ export default function AgentDock({
         displayMessage: intent.title,
         intentType: intent.type,
         completionRequirement: intent.completionRequirement,
+        promptProfile: promptProfileFromIntent(intent),
         forceNewConversation: true,
       },
     )
@@ -361,6 +376,7 @@ export default function AgentDock({
         displayMessage: `调整：${normalized}`,
         intentType: context.intentType,
         completionRequirement: context.completionRequirement,
+        promptProfile: context.promptProfile,
         conversationId,
         ignoreBlock: true,
       })
@@ -1365,6 +1381,55 @@ function createResources(
     },
   })
   return { runtime, mcp, storage }
+}
+
+function promptProfileFromIntent(intent: AgentIntent): AgentPromptProfile | undefined {
+  if (!intent.promptModuleKey) return undefined
+  const template = usePromptStore.getState().getActive(intent.promptModuleKey)
+  const payload = intent.payload ?? {}
+  const parameterValues = asUnknownRecord(payload.generationParameters)
+  const promptOverrides = asUnknownRecord(payload.promptOverrides)
+  return createAgentPromptProfile(template, {
+    variables: promptVariablesFromIntent(intent),
+    parameterValues,
+    overrides: promptOverrides
+      ? {
+          systemPrompt: stringValue(promptOverrides.systemPrompt) ?? stringValue(promptOverrides.system),
+          userPromptTemplate: stringValue(promptOverrides.userPromptTemplate) ?? stringValue(promptOverrides.user),
+        }
+      : undefined,
+  })
+}
+
+function promptVariablesFromIntent(intent: AgentIntent): Readonly<Record<string, unknown>> {
+  const payload = intent.payload ?? {}
+  const character = asUnknownRecord(payload.character)
+  const dimensionLabels = Array.isArray(payload.dimensionLabels)
+    ? payload.dimensionLabels.filter((value): value is string => typeof value === 'string')
+    : []
+  const genres = Array.isArray(payload.genres)
+    ? payload.genres.filter((value): value is string => typeof value === 'string').join('、')
+    : payload.genres
+  return {
+    ...payload,
+    genres,
+    instruction: intent.instruction,
+    userHint: payload.userHint ?? payload.customInstruction ?? '',
+    text: intent.source.selection?.text ?? '',
+    characterName: character?.name ?? '',
+    characterInfo: character ? JSON.stringify(character, null, 2) : '',
+    dimension: dimensionLabels.join('、'),
+  }
+}
+
+function asUnknownRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
 }
 
 function reduceTurn(turn: AgentConversationTurn, event: AgentEvent): AgentConversationTurn {
