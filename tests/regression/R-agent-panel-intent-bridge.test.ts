@@ -55,4 +55,20 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(conversations).toContain("{ id: 'chapters', label: '正文'")
     expect(conversations).toContain('saveAgentConversationState')
   })
+
+  it('章节正文必须完成提案，并支持预览、调整和最终采纳', () => {
+    const chapter = source('src/components/editor/ChapterEditor.tsx')
+    const dock = source('src/components/agent/AgentDock.tsx')
+    const runtime = source('src/lib/agent/runtime/ai-sdk/ai-sdk-agent-runtime-adapter.ts')
+
+    expect(chapter).toContain("kind: 'change-proposal'")
+    expect(chapter).toContain("target: 'chapters'")
+    expect(chapter).toContain("requiredFields: ['content']")
+    expect(runtime).toContain('assertCompletionProposalInput')
+    expect(runtime).toContain('requiredCompletionTool: input.completionRequirement ? PROPOSE_TOOL')
+    expect(dock).toContain('正文已生成，是否采纳？')
+    expect(dock).toContain('希望如何调整？')
+    expect(dock).toContain('采纳最终版本')
+    expect(dock).toContain("decision: 'edited'")
+  })
 })

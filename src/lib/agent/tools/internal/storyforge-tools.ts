@@ -4,6 +4,7 @@ import { CONTEXT_SOURCES } from '../../../registry/context-sources'
 import { FIELD_BY_TARGET, FIELD_REGISTRY } from '../../../registry/field-registry'
 import { projectLocatorKey, type ProjectStoragePort } from '../../../storage/ports'
 import type { AdoptInput, FieldSpec } from '../../../registry/types'
+import { countWords, htmlToPlainText } from '../../../utils/html'
 import type { StoryForgeTool, ToolExecutionContext } from '../tool-types'
 import { AdoptionPlanStore, type AdoptionPlanPreview } from './adoption-plan-store'
 
@@ -131,16 +132,16 @@ function createChangeProposeTool(
     risk: 'write',
     availability: 'both',
     requiredScopes: ['project:read'],
-    summarizeInput: input => `计划修改 ${input.target}`,
+    summarizeInput: input => input.target ? `计划修改 ${input.target}` : '校验变更提案',
     summarizeOutput: output => `已生成变更计划 ${(output as { planId?: string }).planId ?? ''}`,
     async execute(context, input) {
       assertStorageBinding(storage, context)
       const projectId = requireDexieProject(context)
-      const adoptionInput: AdoptInput = {
+      const adoptionInput = normalizeDerivedFields({
         ...structuredClone(input),
         projectId,
         worldGroupId: context.worldGroupId,
-      }
+      })
       const preview = previewAdoption(adoptionInput)
       if (!FIELD_BY_TARGET.has(adoptionInput.target)) {
         throw new Error(`[storyforge.change.propose] target is not registered: ${adoptionInput.target}`)
@@ -152,6 +153,25 @@ function createChangeProposeTool(
         preview,
       })
     },
+  }
+}
+
+function normalizeDerivedFields(input: AdoptInput): AdoptInput {
+  if (input.target !== 'chapters' || input.mode === 'append') return input
+
+  const normalizeItem = (item: Record<string, unknown>): Record<string, unknown> => {
+    if (typeof item.content !== 'string') return item
+    return {
+      ...item,
+      wordCount: countWords(htmlToPlainText(item.content)),
+    }
+  }
+
+  return {
+    ...input,
+    data: Array.isArray(input.data)
+      ? input.data.map(normalizeItem)
+      : normalizeItem(input.data),
   }
 }
 

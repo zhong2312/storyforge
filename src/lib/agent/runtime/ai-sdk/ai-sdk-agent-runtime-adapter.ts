@@ -1,7 +1,12 @@
 import { nanoid } from 'nanoid'
 import { InMemoryAgentEventLog } from '../../events/in-memory-agent-event-log'
-import type { AgentEvent, NewAgentEvent } from '../../events/agent-events'
 import type {
+  AgentChangePreview,
+  AgentEvent,
+  NewAgentEvent,
+} from '../../events/agent-events'
+import type {
+  AgentChangeProposalCompletionRequirement,
   AgentRunInput,
   AgentRuntimePort,
   ApprovalDecision,
@@ -21,9 +26,12 @@ import {
 } from './agent-loop'
 
 const DEFAULT_MAX_STEPS = 8
+const DEFAULT_REQUIRED_MAX_STEPS = 16
 const MAX_STEPS = 20
 const DEFAULT_TOKEN_BUDGET = 12_000
+const DEFAULT_REQUIRED_TOKEN_BUDGET = 48_000
 const MAX_TOKEN_BUDGET = 64_000
+const CONTEXT_READ_TOOL = 'storyforge.context.read'
 const PROPOSE_TOOL = 'storyforge.change.propose'
 const COMMIT_TOOL = 'storyforge.change.commit'
 
@@ -34,6 +42,7 @@ interface PendingApproval {
   readonly approvalId: string
   readonly planId: string
   readonly summary: string
+  readonly preview?: AgentChangePreview
 }
 
 interface ActiveRun {
@@ -48,6 +57,7 @@ export interface AiSdkAgentRuntimeDependencies {
   readonly grantedScopes?: readonly ToolScope[] | (() => readonly ToolScope[])
   readonly streamer?: AgentLoopStreamer
   readonly eventLog?: InMemoryAgentEventLog
+  readonly discardPlan?: (planId: string) => void
 }
 
 export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
@@ -68,6 +78,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     let message = ''
     let reasoning = ''
     let proposal: PendingApproval | undefined
+    const readContextSources = new Set<string>()
 
     yield this.append(runId, input.conversationId, 'run.started', { userMessage: input.userMessage })
     yield this.append(runId, input.conversationId, 'phase.started', {
@@ -89,17 +100,43 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         instructions: buildInstructions(descriptors, input),
         prompt: input.userMessage,
         descriptors,
-        maxSteps: clampInteger(input.maxSteps, DEFAULT_MAX_STEPS, 1, MAX_STEPS),
-        tokenBudget: clampInteger(input.tokenBudget, DEFAULT_TOKEN_BUDGET, 256, MAX_TOKEN_BUDGET),
+        maxSteps: clampInteger(
+          input.maxSteps,
+          input.completionRequirement ? DEFAULT_REQUIRED_MAX_STEPS : DEFAULT_MAX_STEPS,
+          1,
+          MAX_STEPS,
+        ),
+        tokenBudget: clampInteger(
+          input.tokenBudget,
+          input.completionRequirement ? DEFAULT_REQUIRED_TOKEN_BUDGET : DEFAULT_TOKEN_BUDGET,
+          256,
+          MAX_TOKEN_BUDGET,
+        ),
         signal: controller.signal,
         execute: async (toolName, toolInput) => {
+          if (toolName === PROPOSE_TOOL && input.completionRequirement) {
+            assertCompletionProposalInput(input.completionRequirement, toolInput, readContextSources)
+          }
           const output = await registry.execute(toolName, context, toolInput)
+          if (toolName === CONTEXT_READ_TOOL) {
+            for (const source of stringArrayField(asRecord(toolInput), 'sourceKeys')) {
+              readContextSources.add(source)
+            }
+          }
           if (toolName === PROPOSE_TOOL) {
-            proposal = createPendingApproval(input, registry, output)
+            proposal = createPendingApproval(input, registry, output, toolInput)
           }
           return output
         },
         shouldStop: () => proposal !== undefined,
+        requiredContextTool: input.completionRequirement?.requiredContextSources?.length
+          ? CONTEXT_READ_TOOL
+          : undefined,
+        requiredCompletionTool: input.completionRequirement ? PROPOSE_TOOL : undefined,
+        shouldForceCompletion: () => requiredContextIsReady(
+          input.completionRequirement,
+          readContextSources,
+        ),
       })
 
       for await (const part of parts) {
@@ -113,6 +150,9 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
       if (reasoning) {
         yield this.append(runId, input.conversationId, 'reasoning.summary.completed', { text: reasoning })
       }
+      if (input.completionRequirement && !proposal) {
+        throw new Error(completionFailureMessage(input.completionRequirement, readContextSources))
+      }
       if (message) {
         yield this.append(runId, input.conversationId, 'message.completed', { text: message })
       }
@@ -122,6 +162,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           approvalId: proposal.approvalId,
           planId: proposal.planId,
           summary: proposal.summary,
+          preview: proposal.preview,
         })
         return
       }
@@ -154,8 +195,9 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     })
 
     if (decision.decision !== 'approved') {
+      this.dependencies.discardPlan?.(pending.planId)
       const text = decision.decision === 'edited'
-        ? '已取消原方案。请在新消息中说明调整内容，我会重新生成变更方案。'
+        ? '上一版候选已作废，项目数据未修改。正在按你的调整要求重新生成。'
         : '已取消本次变更，项目数据未修改。'
       yield this.append(runId, input.conversationId, 'message.completed', { text })
       yield this.append(runId, input.conversationId, 'run.completed', { summary: text })
@@ -189,7 +231,9 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         phase: 'commit',
         summary: pending.summary,
       })
-      const text = '已按批准方案更新项目设定。'
+      const text = pending.preview?.target === 'chapters'
+        ? '已采纳最终版本并写入当前章节。'
+        : '已采纳最终方案并更新项目。'
       yield this.append(runId, input.conversationId, 'message.completed', { text })
       yield this.append(runId, input.conversationId, 'run.completed', { summary: text })
     } catch (error) {
@@ -304,6 +348,7 @@ function createPendingApproval(
   input: AgentRunInput,
   registry: ToolRegistry,
   output: unknown,
+  toolInput: unknown,
 ): PendingApproval {
   const record = asRecord(output)
   const planId = stringField(record, 'planId')
@@ -319,7 +364,22 @@ function createPendingApproval(
     approvalId,
     approval: { approvalId, planHash },
     summary: proposalSummary(record),
+    preview: createProposalPreview(isRecord(record.input) ? record.input : toolInput),
   }
+}
+
+function createProposalPreview(input: unknown): AgentChangePreview | undefined {
+  const record = asRecord(input)
+  const data = record.data
+  if (!isRecord(data) && !isRecordArray(data)) {
+    return undefined
+  }
+  return structuredClone({
+    target: stringField(record, 'target'),
+    mode: stringField(record, 'mode'),
+    recordId: typeof record.recordId === 'number' ? record.recordId : undefined,
+    data,
+  })
 }
 
 function proposalSummary(output: Record<string, unknown>): string {
@@ -339,6 +399,15 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
     input.scope.chapterId != null ? `章节ID=${input.scope.chapterId}` : '',
     input.scope.entityId != null ? `实体ID=${input.scope.entityId}` : '',
   ].filter(Boolean).join('；')
+  const completion = input.completionRequirement
+    ? [
+        `本轮受完成契约约束：必须调用 ${PROPOSE_TOOL}，目标 ${input.completionRequirement.target}/${input.completionRequirement.mode}${input.completionRequirement.recordId != null ? `/recordId=${input.completionRequirement.recordId}` : ''}。`,
+        input.completionRequirement.requiredContextSources?.length
+          ? `直接用 ${CONTEXT_READ_TOOL} 读取宿主指定的 requiredContextSources；不要先查目录，并尽量一次读取：${input.completionRequirement.requiredContextSources.join(', ')}。`
+          : '',
+        '在提案工具调用前完成内容生成，把完整候选版本放进 data；只说明“下一步将生成”不算完成。',
+      ].filter(Boolean).join('\n')
+    : ''
   return [
     '你是 StoryForge 项目副驾。优先使用工具获取事实，不得猜测项目设定。',
     '每轮最多调用一次 storyforge.settings.catalog；目录返回后立即执行下一工具，不要重复复述“先查看”或再次查询目录。',
@@ -348,10 +417,85 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
     '如果任务来自项目面板，宿主消息中给出的记录 ID、世界、章节、字段和选区是权威目标；不得改写为其它记录，也不得自行切换作用域。',
     '任何修改必须调用 storyforge.change.propose 生成方案；提案后立即停止并等待用户批准，不得声称已经写入。',
     '回答使用中文，清楚说明已读取的事实、当前阶段和下一步。只输出简短的阶段性推理摘要。',
+    completion,
     `当前界面模块：${input.scope.module || '未知'}。`,
     `当前宿主作用域：${scope || '项目级'}。`,
     `可用工具：${descriptors.map(tool => tool.name).join(', ') || '无'}。`,
   ].join('\n')
+}
+
+function assertCompletionProposalInput(
+  requirement: AgentChangeProposalCompletionRequirement,
+  value: unknown,
+  readContextSources: ReadonlySet<string>,
+): void {
+  const missingSources = missingRequiredSources(requirement, readContextSources)
+  if (missingSources.length > 0) {
+    throw new Error(`[agent-runtime] 完成条件未满足：先读取上下文源 ${missingSources.join('、')}`)
+  }
+
+  const input = asRecord(value)
+  if (input.target !== requirement.target) {
+    throw new Error(`[agent-runtime] 完成条件未满足：提案 target 必须是 ${requirement.target}`)
+  }
+  if (input.mode !== requirement.mode) {
+    throw new Error(`[agent-runtime] 完成条件未满足：提案 mode 必须是 ${requirement.mode}`)
+  }
+  if (requirement.recordId != null && input.recordId !== requirement.recordId) {
+    throw new Error(`[agent-runtime] 完成条件未满足：提案 recordId 必须是 ${requirement.recordId}`)
+  }
+
+  const dataItems = isRecordArray(input.data)
+    ? input.data
+    : isRecord(input.data) ? [input.data] : []
+  if (dataItems.length === 0) {
+    throw new Error('[agent-runtime] 完成条件未满足：提案 data 不能为空')
+  }
+  for (const field of requirement.requiredFields) {
+    for (const item of dataItems) {
+      const fieldValue = item[field]
+      if (fieldValue == null || (typeof fieldValue === 'string' && fieldValue.trim() === '')) {
+        throw new Error(`[agent-runtime] 完成条件未满足：提案缺少 ${field}`)
+      }
+      const minLength = requirement.minTextLength?.[field]
+      if (minLength != null && textContentLength(fieldValue) < minLength) {
+        throw new Error(`[agent-runtime] 完成条件未满足：${field} 正文不足 ${minLength} 字，请生成完整内容`)
+      }
+    }
+  }
+}
+
+function requiredContextIsReady(
+  requirement: AgentChangeProposalCompletionRequirement | undefined,
+  readContextSources: ReadonlySet<string>,
+): boolean {
+  return requirement != null && missingRequiredSources(requirement, readContextSources).length === 0
+}
+
+function missingRequiredSources(
+  requirement: AgentChangeProposalCompletionRequirement,
+  readContextSources: ReadonlySet<string>,
+): string[] {
+  return (requirement.requiredContextSources ?? []).filter(source => !readContextSources.has(source))
+}
+
+function completionFailureMessage(
+  requirement: AgentChangeProposalCompletionRequirement,
+  readContextSources: ReadonlySet<string>,
+): string {
+  const missing = missingRequiredSources(requirement, readContextSources)
+  return missing.length > 0
+    ? `Agent 未完成任务：尚未读取 ${missing.join('、')}，也未生成可采纳方案。`
+    : `Agent 未完成任务：没有生成符合 ${requirement.target}/${requirement.mode} 完成条件的可采纳方案。`
+}
+
+function textContentLength(value: unknown): number {
+  if (typeof value !== 'string') return 0
+  return value
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/gi, ' ')
+    .replace(/\s/g, '')
+    .length
 }
 
 function summarizeInput(descriptor: ToolDescriptor | undefined, input: unknown): string {
@@ -377,6 +521,19 @@ function clampInteger(value: number | undefined, fallback: number, min: number, 
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isRecordArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.every(isRecord)
+}
+
+function stringArrayField(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {

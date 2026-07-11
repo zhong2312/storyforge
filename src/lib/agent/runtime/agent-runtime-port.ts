@@ -10,6 +10,18 @@ export interface AgentScope {
   selection?: { text: string; from?: number; to?: number }
 }
 
+export interface AgentChangeProposalCompletionRequirement {
+  readonly kind: 'change-proposal'
+  readonly target: string
+  readonly mode: 'replace' | 'append' | 'add' | 'add-many' | 'merge-diffs'
+  readonly recordId?: number
+  readonly requiredFields: readonly string[]
+  readonly minTextLength?: Readonly<Record<string, number>>
+  readonly requiredContextSources?: readonly string[]
+}
+
+export type AgentCompletionRequirement = AgentChangeProposalCompletionRequirement
+
 export interface AgentRunInput {
   conversationId: string
   project: ProjectLocator
@@ -19,6 +31,7 @@ export interface AgentRunInput {
   modelProfile?: string
   maxSteps?: number
   tokenBudget?: number
+  completionRequirement?: AgentCompletionRequirement
 }
 
 export interface ApprovalDecision {

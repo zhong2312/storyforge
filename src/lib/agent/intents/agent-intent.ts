@@ -1,5 +1,8 @@
 import { nanoid } from 'nanoid'
-import type { AgentScope } from '../runtime/agent-runtime-port'
+import type {
+  AgentCompletionRequirement,
+  AgentScope,
+} from '../runtime/agent-runtime-port'
 import type { ProjectLocator } from '../../storage/ports'
 
 const AGENT_INTENT_EVENT = 'storyforge:agent-intent'
@@ -17,6 +20,7 @@ export interface AgentIntent {
   readonly source: AgentIntentSource
   readonly instruction: string
   readonly payload?: Readonly<Record<string, unknown>>
+  readonly completionRequirement?: AgentCompletionRequirement
 }
 
 export type NewAgentIntent = Omit<AgentIntent, 'id'> & { readonly id?: string }
@@ -33,6 +37,9 @@ export function dispatchAgentIntent(input: NewAgentIntent): AgentIntent {
     id: input.id ?? nanoid(),
     source: Object.freeze({ ...input.source }),
     payload: input.payload ? Object.freeze(structuredClone(input.payload)) : undefined,
+    completionRequirement: input.completionRequirement
+      ? freezeCompletionRequirement(input.completionRequirement)
+      : undefined,
   })
   if (typeof window === 'undefined') {
     throw new Error('[agent-intent] browser window is required')
@@ -94,6 +101,12 @@ export function buildAgentIntentPrompt(intent: AgentIntent): string {
   const selection = intent.source.selection?.text
     ? `\n用户选区：\n${intent.source.selection.text}`
     : ''
+  const completion = intent.completionRequirement?.kind === 'change-proposal'
+    ? [
+        '本任务只有在生成可供用户审阅的变更方案后才算完成。',
+        `方案必须使用 storyforge.change.propose：target=${intent.completionRequirement.target}，mode=${intent.completionRequirement.mode}${intent.completionRequirement.recordId != null ? `，recordId=${intent.completionRequirement.recordId}` : ''}，必填字段=${intent.completionRequirement.requiredFields.join('、')}。`,
+      ].join('\n')
+    : ''
 
   return [
     `用户从 StoryForge 的“${intent.title}”功能发起任务。`,
@@ -101,9 +114,25 @@ export function buildAgentIntentPrompt(intent: AgentIntent): string {
     intent.instruction,
     '请复用当前项目工具完成：先读取与该功能相关的项目事实，再生成结果。',
     '如果结果应写入项目，必须调用 storyforge.change.propose 生成审批方案；不得只给一段无法采纳的泛泛建议，也不得声称已经写入。',
+    completion,
     payload,
     selection,
   ].filter(Boolean).join('\n')
+}
+
+function freezeCompletionRequirement(
+  requirement: AgentCompletionRequirement,
+): AgentCompletionRequirement {
+  return Object.freeze({
+    ...structuredClone(requirement),
+    requiredFields: Object.freeze([...requirement.requiredFields]),
+    minTextLength: requirement.minTextLength
+      ? Object.freeze({ ...requirement.minTextLength })
+      : undefined,
+    requiredContextSources: requirement.requiredContextSources
+      ? Object.freeze([...requirement.requiredContextSources])
+      : undefined,
+  })
 }
 
 export function isIntentForDexieProject(intent: AgentIntent, projectId: number): boolean {

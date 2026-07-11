@@ -113,7 +113,8 @@ describe('AiSdkAgentRuntimeAdapter', () => {
 
   it('rejects or edits a plan without granting the commit tool', async () => {
     const registry = proposalRegistry()
-    const runtime = createRuntime(registry, proposalStreamer())
+    const discardPlan = vi.fn()
+    const runtime = createRuntime(registry, proposalStreamer(), discardPlan)
     const first = await collect(runtime.run(runInput()))
 
     const events = await collect(runtime.resume(first[0].runId, {
@@ -128,6 +129,98 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       'run.completed',
     ])
     expect((events[1] as Extract<AgentEvent, { type: 'message.completed' }>).payload.text).toContain('重新生成')
+    expect(discardPlan).toHaveBeenCalledWith('plan-1')
+    await expect(collect(runtime.resume(first[0].runId, {
+      approvalId: 'approval-1', decision: 'approved',
+    }))).rejects.toThrow('not awaiting approval')
+  })
+
+  it('fails instead of reporting success when a constrained chapter run only reads context', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      expect(request.requiredContextTool).toBe('storyforge.context.read')
+      expect(request.requiredCompletionTool).toBe('storyforge.change.propose')
+      expect(request.shouldForceCompletion?.()).toBe(false)
+      yield {
+        type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read',
+        input: { sourceKeys: ['chapterOutline'] },
+      }
+      const output = await request.execute('storyforge.context.read', { sourceKeys: ['chapterOutline'] })
+      yield {
+        type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output,
+      }
+      expect(request.shouldForceCompletion?.()).toBe(true)
+      yield { type: 'text', text: '接下来开始生成正文。' }
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput()))
+
+    expect(events.some(event => event.type === 'run.completed')).toBe(false)
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed',
+      payload: { error: expect.stringContaining('没有生成符合 chapters/replace') },
+    })
+  })
+
+  it('rejects an incomplete proposal, then accepts a corrected chapter proposal with preview', async () => {
+    const registry = chapterProposalRegistry()
+    const validContent = '山雨压住了山门外的灯火。'.repeat(12)
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const invalid = { target: 'chapters', mode: 'replace', recordId: 12, data: { content: '' } }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: invalid }
+      try {
+        await request.execute('storyforge.change.propose', invalid)
+        throw new Error('invalid proposal unexpectedly passed')
+      } catch (error) {
+        expect(String(error)).toContain('提案缺少 content')
+        yield { type: 'tool-error', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', error }
+      }
+
+      const valid = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: { content: validContent, wordCount: validContent.length, status: 'draft' },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-2', toolName: 'storyforge.change.propose', input: valid }
+      const proposalOutput = await request.execute('storyforge.change.propose', valid)
+      yield { type: 'tool-result', toolCallId: 'proposal-2', toolName: 'storyforge.change.propose', output: proposalOutput }
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput()))
+    const approval = events.find((event): event is Extract<AgentEvent, { type: 'approval.requested' }> => (
+      event.type === 'approval.requested'
+    ))
+
+    expect(events.some(event => event.type === 'tool.failed')).toBe(true)
+    expect(approval?.payload.preview).toMatchObject({
+      target: 'chapters', mode: 'replace', recordId: 12, data: { content: validContent },
+    })
+    expect(events.some(event => event.type === 'run.completed')).toBe(false)
+  })
+
+  it('rejects a chapter proposal targeting a different record', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const input = {
+        target: 'chapters', mode: 'replace', recordId: 99,
+        data: { content: '正文'.repeat(30) },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input }
+      await request.execute('storyforge.change.propose', input)
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput({
+      requiredContextSources: [],
+    })))
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed', payload: { error: expect.stringContaining('recordId 必须是 12') },
+    })
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
   })
 
   it('cancels an active run through AbortSignal', async () => {
@@ -195,9 +288,123 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       expect.objectContaining({ type: 'text', text: '已读取设定目录。' }),
     ]))
   })
+
+  it('keeps tools required and forces the proposal tool after required context is ready', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const responses = [
+      namedToolCallChunks('storyforge_context_read', { sourceKeys: ['chapterOutline'] }, 'read-1'),
+      namedToolCallChunks('storyforge_change_propose', {
+        target: 'chapters', mode: 'replace', recordId: 12, data: { content: '正文'.repeat(30) },
+      }, 'proposal-1'),
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+      return sseResponse(responses[requests.length - 1])
+    }))
+    const registry = chapterProposalRegistry()
+    const contextDescriptor = registry.get('storyforge.context.read')
+    const proposalDescriptor = registry.get('storyforge.change.propose')
+    if (!contextDescriptor || !proposalDescriptor) throw new Error('missing chapter tool descriptors')
+    const descriptors = [contextDescriptor, proposalDescriptor]
+    let contextReady = false
+    let proposalReady = false
+
+    for await (const _part of streamAiSdkAgentLoop({
+      config: {
+        provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'test-model',
+      },
+      instructions: 'Read context, then propose.',
+      prompt: '写第一章',
+      descriptors,
+      maxSteps: 4,
+      tokenBudget: 2_000,
+      signal: new AbortController().signal,
+      execute: async name => {
+        if (name === 'storyforge.context.read') contextReady = true
+        if (name === 'storyforge.change.propose') proposalReady = true
+        return name === 'storyforge.change.propose'
+          ? { planId: 'p', approvalId: 'a', planHash: 'h' }
+          : { included: ['chapterOutline'] }
+      },
+      shouldStop: () => proposalReady,
+      requiredContextTool: 'storyforge.context.read',
+      requiredCompletionTool: 'storyforge.change.propose',
+      shouldForceCompletion: () => contextReady,
+    })) {
+      // Consume the complete loop so the second provider request is issued.
+    }
+
+    expect(requests).toHaveLength(2)
+    expect(requests[0].tool_choice).toBe('required')
+    expect(requests[1].tool_choice).toEqual({
+      type: 'function', function: { name: 'storyforge_change_propose' },
+    })
+  })
+
+  it('uses auto with phase-limited tools for DeepSeek chat-completions compatibility', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const responses = [
+      namedToolCallChunks('storyforge_context_read', { sourceKeys: ['chapterOutline'] }, 'read-1'),
+      namedToolCallChunks('storyforge_change_propose', {
+        target: 'chapters', mode: 'replace', recordId: 12, data: { content: '正文'.repeat(30) },
+      }, 'proposal-1'),
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+      return sseResponse(responses[requests.length - 1])
+    }))
+    const registry = chapterProposalRegistry()
+    const contextDescriptor = registry.get('storyforge.context.read')
+    const proposalDescriptor = registry.get('storyforge.change.propose')
+    if (!contextDescriptor || !proposalDescriptor) throw new Error('missing chapter tool descriptors')
+    let contextReady = false
+    let proposalReady = false
+
+    for await (const _part of streamAiSdkAgentLoop({
+      config: {
+        provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'DeepSeek-V4-Pro',
+      },
+      instructions: 'Read context, then propose.',
+      prompt: '写第一章',
+      descriptors: [contextDescriptor, proposalDescriptor],
+      maxSteps: 4,
+      tokenBudget: 2_000,
+      signal: new AbortController().signal,
+      execute: async name => {
+        if (name === 'storyforge.context.read') contextReady = true
+        if (name === 'storyforge.change.propose') proposalReady = true
+        return name === 'storyforge.change.propose'
+          ? { planId: 'p', approvalId: 'a', planHash: 'h' }
+          : { included: ['chapterOutline'] }
+      },
+      shouldStop: () => proposalReady,
+      requiredContextTool: 'storyforge.context.read',
+      requiredCompletionTool: 'storyforge.change.propose',
+      shouldForceCompletion: () => contextReady,
+    })) {
+      // Consume both steps.
+    }
+
+    expect(requests).toHaveLength(2)
+    expect(requests.map(request => request.tool_choice)).toEqual(['auto', 'auto'])
+    expect(toolNamesFromRequest(requests[0])).toEqual(['storyforge_context_read'])
+    expect(toolNamesFromRequest(requests[1])).toEqual(['storyforge_change_propose'])
+  })
 })
 
-function createRuntime(registry: ToolRegistry, streamer: AgentLoopStreamer) {
+function toolNamesFromRequest(request: Record<string, unknown>): string[] {
+  const tools = Array.isArray(request.tools) ? request.tools : []
+  return tools.map(tool => {
+    const fn = Reflect.get(tool as object, 'function') as Record<string, unknown> | undefined
+    return typeof fn?.name === 'string' ? fn.name : ''
+  }).filter(Boolean)
+}
+
+function createRuntime(
+  registry: ToolRegistry,
+  streamer: AgentLoopStreamer,
+  discardPlan?: (planId: string) => void,
+) {
   return new AiSdkAgentRuntimeAdapter({
     getModelConfig: () => ({
       provider: 'test', apiKey: '', baseUrl: 'http://localhost/v1', model: 'test-model',
@@ -206,6 +413,7 @@ function createRuntime(registry: ToolRegistry, streamer: AgentLoopStreamer) {
     platform: 'web',
     grantedScopes: ['project:read'],
     streamer,
+    discardPlan,
   })
 }
 
@@ -244,6 +452,39 @@ function proposalRegistry(): ToolRegistry {
   return registry
 }
 
+function chapterProposalRegistry(): ToolRegistry {
+  const registry = new ToolRegistry()
+  registry.register({
+    name: 'storyforge.context.read',
+    title: '读取项目设定',
+    description: 'context',
+    inputSchema: { type: 'object' },
+    risk: 'read',
+    availability: 'both',
+    requiredScopes: ['project:read'],
+    async execute(_context, input) {
+      return { included: (input as { sourceKeys?: string[] }).sourceKeys ?? [] }
+    },
+  })
+  registry.register({
+    name: 'storyforge.change.propose',
+    title: '生成变更方案',
+    description: 'proposal',
+    inputSchema: { type: 'object' },
+    risk: 'write',
+    availability: 'both',
+    requiredScopes: ['project:read'],
+    async execute(_context, input) {
+      return {
+        planId: 'chapter-plan', approvalId: 'chapter-approval', planHash: 'chapter-hash',
+        input,
+        preview: { target: 'chapters', itemCount: 1, canonicalFields: ['content'] },
+      }
+    },
+  })
+  return registry
+}
+
 function proposalStreamer(): AgentLoopStreamer {
   return async function* (request) {
     yield { type: 'tool-call', toolCallId: 'call-1', toolName: 'storyforge.change.propose', input: {} }
@@ -258,6 +499,23 @@ function runInput() {
     project: { backend: 'dexie' as const, projectId: 1 },
     scope: { module: 'worldview-origin' },
     userMessage: '查看并完善世界起源',
+  }
+}
+
+function chapterRunInput(overrides: { requiredContextSources?: string[] } = {}) {
+  return {
+    ...runInput(),
+    scope: { module: 'editor', chapterId: 12, outlineNodeId: 11 },
+    userMessage: '写第一章',
+    completionRequirement: {
+      kind: 'change-proposal' as const,
+      target: 'chapters',
+      mode: 'replace' as const,
+      recordId: 12,
+      requiredFields: ['content'],
+      minTextLength: { content: 20 },
+      requiredContextSources: overrides.requiredContextSources ?? ['chapterOutline'],
+    },
   }
 }
 
@@ -284,6 +542,25 @@ function toolCallChunks(): Record<string, unknown>[] {
         id: 'call-1',
         type: 'function',
         function: { name: 'storyforge_settings_catalog', arguments: '{}' },
+      }],
+    }, null),
+    completionChunk({}, 'tool_calls'),
+  ]
+}
+
+function namedToolCallChunks(
+  name: string,
+  args: Record<string, unknown>,
+  id: string,
+): Record<string, unknown>[] {
+  return [
+    completionChunk({
+      role: 'assistant',
+      tool_calls: [{
+        index: 0,
+        id,
+        type: 'function',
+        function: { name, arguments: JSON.stringify(args) },
       }],
     }, null),
     completionChunk({}, 'tool_calls'),

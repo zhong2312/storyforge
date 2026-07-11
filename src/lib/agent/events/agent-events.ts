@@ -67,10 +67,18 @@ export type ToolFailedAgentEvent = BaseAgentEvent<'tool.failed', {
   readonly error: string
 }>
 
+export interface AgentChangePreview {
+  readonly target: string
+  readonly mode: string
+  readonly recordId?: number
+  readonly data: Readonly<Record<string, unknown>> | readonly Readonly<Record<string, unknown>>[]
+}
+
 export type ApprovalRequestedAgentEvent = BaseAgentEvent<'approval.requested', {
   readonly approvalId: string
   readonly planId: string
   readonly summary: string
+  readonly preview?: AgentChangePreview
 }>
 
 export type ApprovalResolvedAgentEvent = BaseAgentEvent<'approval.resolved', {

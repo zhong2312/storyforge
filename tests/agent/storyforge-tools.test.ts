@@ -194,6 +194,75 @@ describe('registry-driven StoryForge tools', () => {
     )).rejects.toThrow('plan missing or expired')
   })
 
+  it('derives chapter wordCount from proposed content instead of trusting the model estimate', async () => {
+    const now = 100
+    const volumeId = await db.outlineNodes.add({
+      projectId: 1,
+      parentId: null,
+      type: 'volume',
+      title: '第一卷',
+      summary: '',
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+    const outlineNodeId = await db.outlineNodes.add({
+      projectId: 1,
+      parentId: volumeId,
+      type: 'chapter',
+      title: '第一章',
+      summary: '',
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+    const chapterId = await db.chapters.add({
+      projectId: 1,
+      outlineNodeId,
+      title: '第一章',
+      content: '',
+      wordCount: 0,
+      status: 'outline',
+      order: 0,
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+    const content = '<p>雨夜 山门</p><p>追兵将至</p>'
+
+    const plan = await registry.execute(
+      'storyforge.change.propose',
+      context(['project:read'], { chapterId, outlineNodeId }),
+      {
+        target: 'chapters',
+        mode: 'replace',
+        recordId: chapterId,
+        data: { content, wordCount: 1, status: 'draft' },
+      },
+    ) as {
+      planId: string
+      approvalId: string
+      planHash: string
+      input: { data: { wordCount: number } }
+      preview: { canonicalFields: string[] }
+    }
+
+    expect(plan.input.data.wordCount).toBe(8)
+    expect(plan.preview.canonicalFields).toContain('wordCount')
+
+    await registry.execute(
+      'storyforge.change.commit',
+      context(['project:write'], {
+        chapterId,
+        outlineNodeId,
+        approval: { approvalId: plan.approvalId, planHash: plan.planHash },
+      }),
+      { planId: plan.planId },
+    )
+
+    expect(await db.chapters.get(chapterId)).toMatchObject({ content, wordCount: 8, status: 'draft' })
+  })
+
   it('rejects a stale plan after project revision changes', async () => {
     const plan = await registry.execute(
       'storyforge.change.propose',

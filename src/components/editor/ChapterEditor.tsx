@@ -272,6 +272,17 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         selection: selection ? { text: selection } : undefined,
       },
       instruction,
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'chapters',
+        mode: 'replace',
+        recordId: currentChapter.id,
+        requiredFields: ['content'],
+        minTextLength: { content: type === 'chapter.content' ? 500 : 1 },
+        requiredContextSources: Array.isArray(payload.requiredContextSources)
+          ? payload.requiredContextSources.filter((value): value is string => typeof value === 'string')
+          : undefined,
+      },
       payload: {
         chapterTitle: outlineNode.title || currentChapter.title,
         chapterSummary: outlineNode.summary,

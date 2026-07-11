@@ -14,6 +14,7 @@ import {
   Pencil,
   Plug,
   Plus,
+  RotateCcw,
   Send,
   Settings2,
   Sparkles,
@@ -24,7 +25,11 @@ import {
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
-import { isTerminalAgentEvent, type AgentEvent } from '../../lib/agent/events/agent-events'
+import {
+  isTerminalAgentEvent,
+  type AgentChangePreview,
+  type AgentEvent,
+} from '../../lib/agent/events/agent-events'
 import { AiSdkAgentRuntimeAdapter } from '../../lib/agent/runtime/ai-sdk'
 import { ToolRegistry } from '../../lib/agent/tools/tool-registry'
 import { AdoptionPlanStore, createStoryForgeTools } from '../../lib/agent/tools/internal'
@@ -37,7 +42,10 @@ import {
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
 import { useAIConfigStore } from '../../stores/ai-config'
-import type { AgentScope } from '../../lib/agent/runtime/agent-runtime-port'
+import type {
+  AgentCompletionRequirement,
+  AgentScope,
+} from '../../lib/agent/runtime/agent-runtime-port'
 import {
   agentScopeFromIntent,
   buildAgentIntentPrompt,
@@ -51,11 +59,15 @@ import {
   defaultConversationGroupId,
   loadAgentConversationState,
   saveAgentConversationState,
+  collectAgentTurnTimeline,
   type AgentConversation,
   type AgentConversationGroup,
   type AgentConversationState,
   type AgentConversationTurn,
+  type AgentTimelinePhase,
+  type AgentTimelineToolItem,
 } from '../../lib/agent/conversations'
+import { htmlToPlainText } from '../../lib/utils/html'
 
 interface Props {
   projectId: number
@@ -73,6 +85,23 @@ interface AgentResources {
   readonly runtime: AiSdkAgentRuntimeAdapter
   readonly mcp: McpToolProvider
   readonly storage: DexieProjectStorage
+}
+
+interface AgentRunContext {
+  readonly scope: AgentScope
+  readonly intentType?: string
+  readonly completionRequirement?: AgentCompletionRequirement
+  readonly originalPrompt: string
+}
+
+interface RunMessageOptions {
+  readonly scope: AgentScope
+  readonly displayMessage?: string
+  readonly intentType?: string
+  readonly completionRequirement?: AgentCompletionRequirement
+  readonly forceNewConversation?: boolean
+  readonly conversationId?: string
+  readonly ignoreBlock?: boolean
 }
 
 export default function AgentDock({
@@ -103,7 +132,7 @@ export default function AgentDock({
   const resources = useMemo<AgentResources>(() => createResources(projectId, configRef, setMcpStatus), [projectId])
   const currentRunIdRef = useRef<string | null>(null)
   const handledIntentIdsRef = useRef(new Set<string>())
-  const runContextRef = useRef(new Map<string, { scope: AgentScope; intentType?: string }>())
+  const runContextRef = useRef(new Map<string, AgentRunContext>())
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeConversation = conversationState.conversations.find(item => item.id === activeConversationId)
     ?? conversationState.conversations[0]!
@@ -194,15 +223,16 @@ export default function AgentDock({
 
   const runMessage = useCallback(async (
     rawMessage: string,
-    scope: AgentScope,
-    displayMessage = rawMessage,
-    intentType?: string,
-    forceNewConversation = false,
+    options: RunMessageOptions,
   ) => {
     const message = rawMessage.trim()
-    if (!message || busy || hasPendingApproval) return
-    const currentConversation = conversationState.conversations.find(item => item.id === activeConversationId)
-    const shouldCreate = !currentConversation || (forceNewConversation && currentConversation.turns.length > 0)
+    if (!message || (!options.ignoreBlock && (busy || hasPendingApproval))) return
+    const scope = options.scope
+    const displayMessage = options.displayMessage ?? rawMessage
+    const requestedConversationId = options.conversationId ?? activeConversationId
+    const currentConversation = conversationState.conversations.find(item => item.id === requestedConversationId)
+    const shouldCreate = !currentConversation
+      || (options.forceNewConversation && currentConversation.turns.length > 0)
     const targetConversation = shouldCreate
       ? createAgentConversation({
           id: `project-${projectId}-${nanoid(8)}`,
@@ -215,7 +245,12 @@ export default function AgentDock({
     const turnId = nanoid()
     setInput('')
     setBusy(true)
-    runContextRef.current.set(turnId, { scope, intentType })
+    runContextRef.current.set(turnId, {
+      scope,
+      intentType: options.intentType,
+      completionRequirement: options.completionRequirement,
+      originalPrompt: message,
+    })
     const turn: AgentConversationTurn = {
       id: turnId, userMessage: displayMessage, assistantMessage: '', events: [],
     }
@@ -248,6 +283,7 @@ export default function AgentDock({
         project: { backend: 'dexie', projectId },
         scope,
         userMessage: message,
+        completionRequirement: options.completionRequirement,
       })
       await consumeEvents(conversationId, turnId, stream)
     } finally {
@@ -256,9 +292,9 @@ export default function AgentDock({
     }
   }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime])
 
-  const send = async () => {
-    await runMessage(input, { module: activeModule, worldGroupId })
-  }
+  const send = async () => await runMessage(input, {
+    scope: { module: activeModule, worldGroupId },
+  })
 
   useEffect(() => {
     if (!intent || busy || pendingApproval || handledIntentIdsRef.current.has(intent.id)) return
@@ -267,10 +303,13 @@ export default function AgentDock({
     setView('chat')
     void runMessage(
       buildAgentIntentPrompt(intent),
-      agentScopeFromIntent(intent),
-      intent.title,
-      intent.type,
-      true,
+      {
+        scope: agentScopeFromIntent(intent),
+        displayMessage: intent.title,
+        intentType: intent.type,
+        completionRequirement: intent.completionRequirement,
+        forceNewConversation: true,
+      },
     )
   }, [busy, intent, onIntentConsumed, pendingApproval, runMessage])
 
@@ -284,6 +323,37 @@ export default function AgentDock({
       }))
     } finally {
       if (decision === 'rejected') runContextRef.current.delete(turn.id)
+      setBusy(false)
+      currentRunIdRef.current = null
+    }
+  }
+
+  const adjustApproval = async (turn: AgentConversationTurn, adjustment: string) => {
+    const normalized = adjustment.trim()
+    if (!turn.runId || !turn.waitingApproval || !normalized || busy) return
+    const context = runContextRef.current.get(turn.id)
+    if (!context) return
+    const conversationId = activeConversation.id
+    const adjustedPrompt = buildAdjustmentPrompt(
+      context.originalPrompt,
+      turn.waitingApproval.payload.preview,
+      normalized,
+    )
+    setBusy(true)
+    try {
+      await consumeEvents(conversationId, turn.id, resources.runtime.resume(turn.runId, {
+        approvalId: turn.waitingApproval.payload.approvalId,
+        decision: 'edited',
+      }))
+      await runMessage(adjustedPrompt, {
+        scope: context.scope,
+        displayMessage: `调整：${normalized}`,
+        intentType: context.intentType,
+        completionRequirement: context.completionRequirement,
+        conversationId,
+        ignoreBlock: true,
+      })
+    } finally {
       setBusy(false)
       currentRunIdRef.current = null
     }
@@ -484,6 +554,7 @@ export default function AgentDock({
                     turn={turn}
                     running={busy && turn.id === turns[turns.length - 1]?.id}
                     onResolve={decision => void resolveApproval(turn, decision)}
+                    onAdjust={adjustment => void adjustApproval(turn, adjustment)}
                   />
                 ))}
               </div>
@@ -864,12 +935,36 @@ function TurnView({
   turn,
   running,
   onResolve,
+  onAdjust,
 }: {
   turn: AgentConversationTurn
   running: boolean
   onResolve: (decision: 'approved' | 'rejected') => void
+  onAdjust: (adjustment: string) => void
 }) {
-  const phases = collectPhaseViews(turn.events)
+  const timeline = collectAgentTurnTimeline(turn.events)
+  const [adjusting, setAdjusting] = useState(false)
+  const [adjustment, setAdjustment] = useState('')
+  const preview = turn.waitingApproval?.payload.preview
+  const previewText = proposalPreviewText(preview)
+  const isChapterPreview = preview?.target === 'chapters' && previewText.length > 0
+  const fallbackMessage = timeline.finalMessages.length === 0
+    && !turn.events.some(event => event.type === 'message.delta' || event.type === 'message.completed')
+    ? turn.assistantMessage
+    : ''
+
+  useEffect(() => {
+    if (!turn.waitingApproval) {
+      setAdjusting(false)
+      setAdjustment('')
+    }
+  }, [turn.waitingApproval])
+
+  const submitAdjustment = () => {
+    const normalized = adjustment.trim()
+    if (!normalized || running) return
+    onAdjust(normalized)
+  }
 
   return (
     <section className="space-y-3">
@@ -877,12 +972,16 @@ function TurnView({
         {turn.userMessage}
       </div>
 
-      {phases.length > 0 && <PhaseTimeline phases={phases} running={running} />}
+      {timeline.phases.length > 0 && <PhaseTimeline phases={timeline.phases} running={running} />}
 
-      {turn.assistantMessage && (
-        <div className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">
-          {turn.assistantMessage}
+      {timeline.finalMessages.map(message => (
+        <div key={message.id} className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">
+          {message.text}
         </div>
+      ))}
+
+      {fallbackMessage && (
+        <div className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">{fallbackMessage}</div>
       )}
 
       {turn.waitingApproval && (
@@ -890,18 +989,78 @@ function TurnView({
           <div className="flex items-start gap-2">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold text-text-primary">变更方案待确认</div>
+              <div className="text-xs font-semibold text-text-primary">
+                {isChapterPreview ? '正文已生成，是否采纳？' : '变更方案待确认'}
+              </div>
               <p className="mt-1 text-xs leading-5 text-text-secondary">{turn.waitingApproval.payload.summary}</p>
             </div>
           </div>
-          <div className="mt-3 flex justify-end gap-2">
+
+          {isChapterPreview && (
+            <div className="mt-3 border-y border-warning/25 py-2.5">
+              <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold text-text-muted">
+                <span>候选正文</span>
+                <span>{previewText.replace(/\s/g, '').length} 字</span>
+              </div>
+              <div className="max-h-80 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-6 text-text-primary">
+                {previewText}
+              </div>
+            </div>
+          )}
+
+          {adjusting && (
+            <div className="mt-3 border-t border-warning/25 pt-3">
+              <label className="mb-2 block text-xs font-medium text-text-primary" htmlFor={`agent-adjust-${turn.id}`}>
+                希望如何调整？
+              </label>
+              <AutoResizeTextarea
+                id={`agent-adjust-${turn.id}`}
+                minRows={2}
+                maxRows={6}
+                autoFocus
+                value={adjustment}
+                onChange={event => setAdjustment(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    submitAdjustment()
+                  }
+                }}
+                placeholder="例如：减少说明性旁白，加强人物冲突，结尾保留悬念"
+                disabled={running}
+                className="w-full rounded border border-border bg-bg-base px-2.5 py-2 text-xs leading-5 text-text-primary outline-none placeholder:text-text-muted focus:border-accent disabled:opacity-50"
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={submitAdjustment}
+                  disabled={running || !adjustment.trim()}
+                  className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  按要求重新生成
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
             <button
               type="button"
               onClick={() => onResolve('rejected')}
               disabled={running}
               className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50"
             >
-              拒绝
+              放弃
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjusting(value => !value)}
+              disabled={running}
+              className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              调整
             </button>
             <button
               type="button"
@@ -910,7 +1069,7 @@ function TurnView({
               className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" />
-              批准并写入
+              采纳最终版本
             </button>
           </div>
         </div>
@@ -923,7 +1082,7 @@ function TurnView({
         </div>
       )}
 
-      {running && !turn.assistantMessage && !turn.waitingApproval && (
+      {running && timeline.phases.length === 0 && !turn.waitingApproval && (
         <div className="flex items-center gap-2 px-1 text-xs text-text-muted">
           <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           Agent 正在执行
@@ -933,32 +1092,13 @@ function TurnView({
   )
 }
 
-interface ToolCallView {
-  readonly toolCallId: string
-  readonly name: string
-  readonly summary: string
-  readonly status: 'running' | 'completed' | 'failed'
-  readonly result?: string
-}
-
-interface PhaseView {
-  id: string
-  label: string
-  status: 'running' | 'completed' | 'failed'
-  startedAt: number
-  completedAt?: number
-  reasoning: string
-  output: string
-  tools: ToolCallView[]
-}
-
-function PhaseTimeline({ phases, running }: { phases: PhaseView[]; running: boolean }) {
+function PhaseTimeline({ phases, running }: { phases: AgentTimelinePhase[]; running: boolean }) {
   return (
     <div className="space-y-2 border-l-2 border-accent/45 pl-3">
       <div className="text-[10px] font-semibold text-text-muted">执行过程</div>
       {phases.map((phase, index) => {
-        const phaseOutput = phase.output.trim()
-        const title = phase.tools[0]?.summary || phase.label
+        const firstTool = phase.items.find((item): item is AgentTimelineToolItem => item.kind === 'tool')
+        const title = firstTool?.summary || phase.label
         const duration = Math.max(0, (phase.completedAt ?? Date.now()) - phase.startedAt)
         return (
           <details
@@ -979,15 +1119,21 @@ function PhaseTimeline({ phases, running }: { phases: PhaseView[]; running: bool
               )}
             </summary>
             <div className="mt-2 space-y-2 pl-4">
-              {phase.reasoning.trim() && (
-                <p className="whitespace-pre-wrap text-xs leading-5 text-text-secondary">{phase.reasoning.trim()}</p>
-              )}
-              {phase.tools.map(call => <ToolCallRow key={call.toolCallId} call={call} />)}
-              {phaseOutput && (
-                <div className="whitespace-pre-wrap border-l-2 border-border pl-2 text-xs leading-5 text-text-primary">
-                  {phaseOutput}
+              {phase.items.map(item => item.kind === 'tool' ? (
+                <ToolCallRow key={item.id} call={item} />
+              ) : item.kind === 'reasoning' ? (
+                <p key={item.id} className="whitespace-pre-wrap text-xs leading-5 text-text-secondary">
+                  {item.text.trim()}
+                </p>
+              ) : item.kind === 'summary' ? (
+                <div key={item.id} className="whitespace-pre-wrap text-[11px] leading-5 text-text-muted">
+                  {item.text.trim()}
                 </div>
-              )}
+              ) : (
+                <div key={item.id} className="whitespace-pre-wrap border-l-2 border-accent/35 pl-2 text-xs leading-5 text-text-primary">
+                  {item.text.trim()}
+                </div>
+              ))}
             </div>
           </details>
         )
@@ -1002,7 +1148,7 @@ function formatDuration(durationMs: number, active: boolean): string {
   return `${Math.max(1, Math.round(durationMs / 1000))}秒`
 }
 
-function ToolCallRow({ call }: { call: ToolCallView }) {
+function ToolCallRow({ call }: { call: AgentTimelineToolItem }) {
   const Icon = call.status === 'completed' ? Check : call.status === 'failed' ? XCircle : LoaderCircle
   return (
     <div className="flex items-start gap-2 text-[11px]">
@@ -1016,6 +1162,29 @@ function ToolCallRow({ call }: { call: ToolCallView }) {
       <Icon className={`mt-1 h-3 w-3 shrink-0 ${call.status === 'running' ? 'animate-spin text-text-muted' : call.status === 'failed' ? 'text-error' : 'text-success'}`} />
     </div>
   )
+}
+
+function proposalPreviewText(preview: AgentChangePreview | undefined): string {
+  if (!preview) return ''
+  const data = Array.isArray(preview.data) ? preview.data[0] : preview.data
+  const content = data?.content
+  return typeof content === 'string' ? htmlToPlainText(content) : ''
+}
+
+function buildAdjustmentPrompt(
+  originalPrompt: string,
+  preview: AgentChangePreview | undefined,
+  adjustment: string,
+): string {
+  const previous = proposalPreviewText(preview)
+    || (preview ? JSON.stringify(preview.data, null, 2) : '')
+  return [
+    originalPrompt,
+    '上一版候选未被采纳，现已作废。',
+    previous ? `上一版候选内容：\n${previous}` : '',
+    `用户调整要求：\n${adjustment}`,
+    '请按调整要求生成新的完整候选版本，并重新调用 storyforge.change.propose。不要复用或提交上一版方案。',
+  ].filter(Boolean).join('\n\n')
 }
 
 function McpConnections({
@@ -1166,6 +1335,7 @@ function createResources(
       'external:read',
       ...(configRef.current.some(server => server.enabled && server.allowWrite) ? ['external:write' as const] : []),
     ],
+    discardPlan: planId => plans.consume(planId),
     createToolRegistry: async () => {
       const registry = new ToolRegistry()
       for (const tool of createStoryForgeTools({ storage, plans })) registry.register(tool)
@@ -1194,102 +1364,6 @@ function reduceTurn(turn: AgentConversationTurn, event: AgentEvent): AgentConver
   if (event.type === 'run.failed') next.error = event.payload.error
   if (event.type === 'run.cancelled') next.error = event.payload.reason || '任务已停止'
   return next
-}
-
-function collectPhaseViews(events: readonly AgentEvent[]): PhaseView[] {
-  const phases: PhaseView[] = []
-  let current: PhaseView | undefined
-
-  const ensurePhase = (event: AgentEvent): PhaseView => {
-    if (current) return current
-    current = {
-      id: `implicit-${event.runId}-${phases.length + 1}`,
-      label: `阶段 ${phases.length + 1}`,
-      status: 'running',
-      startedAt: event.timestamp,
-      reasoning: '',
-      output: '',
-      tools: [],
-    }
-    phases.push(current)
-    return current
-  }
-
-  for (const event of events) {
-    if (event.type === 'phase.started') {
-      current = {
-        id: `${event.runId}-${event.payload.phase}-${event.sequence}`,
-        label: event.payload.label,
-        status: 'running',
-        startedAt: event.timestamp,
-        reasoning: '',
-        output: '',
-        tools: [],
-      }
-      phases.push(current)
-    } else if (event.type === 'phase.completed') {
-      const phase = current ?? ensurePhase(event)
-      phase.status = 'completed'
-      phase.completedAt = event.timestamp
-      if (event.payload.summary && !phase.output.includes(event.payload.summary)) {
-        phase.output += `${phase.output ? '\n' : ''}${event.payload.summary}`
-      }
-    } else if (event.type === 'reasoning.summary.delta') {
-      ensurePhase(event).reasoning += event.payload.text
-    } else if (event.type === 'tool.requested') {
-      ensurePhase(event).tools.push({
-        toolCallId: event.payload.toolCallId,
-        name: event.payload.toolName,
-        summary: event.payload.summary,
-        status: 'running',
-      })
-    } else if (event.type === 'tool.completed') {
-      const phase = phases.find(item => item.tools.some(tool => tool.toolCallId === event.payload.toolCallId))
-        ?? ensurePhase(event)
-      const callIndex = phase.tools.findIndex(tool => tool.toolCallId === event.payload.toolCallId)
-      const call = callIndex >= 0 ? phase.tools[callIndex] : undefined
-      const completed: ToolCallView = {
-        toolCallId: event.payload.toolCallId,
-        name: event.payload.toolName,
-        summary: call?.summary || event.payload.toolName,
-        status: 'completed',
-        result: event.payload.summary,
-      }
-      if (callIndex >= 0) phase.tools[callIndex] = completed
-      else phase.tools.push(completed)
-    } else if (event.type === 'tool.failed') {
-      const phase = phases.find(item => item.tools.some(tool => tool.toolCallId === event.payload.toolCallId))
-        ?? ensurePhase(event)
-      const callIndex = phase.tools.findIndex(tool => tool.toolCallId === event.payload.toolCallId)
-      const call = callIndex >= 0 ? phase.tools[callIndex] : undefined
-      const failed: ToolCallView = {
-        toolCallId: event.payload.toolCallId,
-        name: event.payload.toolName,
-        summary: call?.summary || event.payload.toolName,
-        status: 'failed',
-        result: event.payload.error,
-      }
-      if (callIndex >= 0) phase.tools[callIndex] = failed
-      else phase.tools.push(failed)
-      phase.status = 'failed'
-      phase.completedAt = event.timestamp
-    } else if (event.type === 'message.delta') {
-      ensurePhase(event).output += event.payload.text
-    } else if (event.type === 'message.completed') {
-      const phase = ensurePhase(event)
-      if (!phase.output.endsWith(event.payload.text)) {
-        phase.output += `${phase.output ? '\n\n' : ''}${event.payload.text}`
-      }
-    } else if (event.type === 'run.failed' || event.type === 'run.cancelled') {
-      const phase = ensurePhase(event)
-      phase.status = 'failed'
-      phase.completedAt = event.timestamp
-    } else if (event.type === 'run.completed' && current?.status === 'running') {
-      current.status = 'completed'
-      current.completedAt = event.timestamp
-    }
-  }
-  return phases
 }
 
 function isTauri(): boolean {

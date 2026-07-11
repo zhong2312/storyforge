@@ -1247,3 +1247,31 @@ CF-10(0字导出)已由 `61bf441` 修复并在 ROADMAP 标完成。
 - Portable 实测 `1280x720` 与 `390x844`：分组历史无横向溢出；自定义分组创建、内联重命名、重载持久化和删除通过；运行时控制台无错误。
 
 👉 球在 Claude：请重点审查本机会话裁剪策略、重载后审批失效逻辑、功能入口自动归组，以及阶段输出与最终回答的展示边界。
+
+### [2026-07-11] Codex · REPORT · Agent 正文完成契约与最终版本审批 / 分支 `refactor/phase-27-task-2`
+
+作者反馈正文 Agent 的阶段描述与工具顺序相反、只读一轮就停止，并要求生成后可调整、放弃或采纳最终版本。本轮在既有 Agent 工具架构内补齐完整闭环，没有新增并行写入路径。
+
+本次实现：
+- 章节入口声明结构化完成契约：限定 `chapters/replace/current chapterId`、必含 `content`、首次正文不少于 500 字，并要求读取入口声明的上下文源；无合法提案时发送 `run.failed`，不再假完成。
+- 时间线按 `AgentEvent.sequence` 在阶段内依次渲染描述、推理摘要、消息和工具，历史压缩仍保留原事件位置。
+- 审批卡直接预览待提交计划中的完整候选正文和实际字数，提供“采纳最终版本 / 调整 / 放弃”。调整先作废旧计划，再带上一版候选与用户要求生成新方案；只有采纳后才执行 `change.commit → adopt()`。
+- `storyforge.change.propose` 从候选 `content` 确定性派生 `wordCount`，审批预览使用工具返回的实际计划输入，避免模型估值与正文不一致。
+- DeepSeek Chat Completions 仅接受 `tool_choice=auto`，因此按阶段只开放 `context.read` 或 `change.propose`；GLM、MiniMax、豆包继续使用 `required/指定工具`。
+- 未改 IndexedDB schema、注册表字段或项目表，未迁移、删除或清理用户数据。
+
+真实验收：
+- GLM-5.2：从空白第一章读取上下文并生成 2003 字候选；编辑器在审批前保持 0 字；输入调整要求后旧方案失效，新候选生成；采纳后正文和“初稿”状态写入。
+- DeepSeek-V4-Pro：兼容修复后完成 `context.read → change.propose`，生成 777 字候选；点击“放弃”后原 1197 字正文保持不变。
+- 桌面截图确认阶段描述位于对应工具调用之前，审批正文和三个操作按钮无重叠；窄屏检查完成后已恢复默认 viewport。
+
+验证闸门：
+- `npm run test`：118 files / 489 tests passed。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`（42 tables）、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+
+Portable：
+- 只覆盖 `F:\workspace\小说项目\storyforge-test\StoryForge-Windows-Portable.exe`，保留 `data/` 与 `user-data/`。
+- 候选与安装后 EXE 均通过 `/healthz`（v3.7.5）、测试 seed、审批文案及 DeepSeek 兼容代码检查；最终 SHA-256：`1717B2F72F0CEAF7F03A07ECB758A0CD53060A55CD61CFB26BBDF1B8F8B489B2`。
+
+👉 球在 Claude：请重点审查完成契约边界、调整时旧计划失效、计划预览与提交数据同源，以及 DeepSeek `auto + activeTools` 的兼容策略。

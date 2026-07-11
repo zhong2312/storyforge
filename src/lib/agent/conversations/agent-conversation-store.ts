@@ -181,10 +181,8 @@ function normalizeConversation(
 function normalizeTurn(value: unknown, forStorage: boolean): AgentConversationTurn | null {
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.userMessage !== 'string') return null
   const events = Array.isArray(value.events)
-    ? value.events
-      .filter(isAgentEventLike)
-      .filter(event => !forStorage || event.type !== 'message.delta')
-      .slice(-MAX_EVENTS_PER_TURN) as AgentEvent[]
+    ? compactAgentEvents(value.events.filter(isAgentEventLike) as AgentEvent[], forStorage)
+      .slice(-MAX_EVENTS_PER_TURN)
     : []
   const waitingApproval = isAgentEventLike(value.waitingApproval)
     && value.waitingApproval.type === 'approval.requested'
@@ -202,6 +200,24 @@ function normalizeTurn(value: unknown, forStorage: boolean): AgentConversationTu
       ? '页面已重新加载，原审批运行已失效，请重新发起任务。'
       : typeof value.error === 'string' ? value.error : undefined,
   }
+}
+
+function compactAgentEvents(events: AgentEvent[], forStorage: boolean): AgentEvent[] {
+  if (!forStorage) return events
+  const compacted: AgentEvent[] = []
+  for (const event of events) {
+    const previous = compacted[compacted.length - 1]
+    const mergeable = event.type === 'message.delta' || event.type === 'reasoning.summary.delta'
+    if (mergeable && previous?.type === event.type && previous.runId === event.runId) {
+      compacted[compacted.length - 1] = {
+        ...previous,
+        payload: { text: previous.payload.text + event.payload.text },
+      } as AgentEvent
+    } else {
+      compacted.push(event)
+    }
+  }
+  return compacted
 }
 
 function normalizeGroups(value: unknown): AgentConversationGroup[] {

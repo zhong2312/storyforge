@@ -35,6 +35,7 @@ describe('Agent conversation store', () => {
       assistantMessage: '已生成方案',
       events: [
         event('message.delta', { text: '已生成' }),
+        event('message.delta', { text: '方案' }),
         event('phase.started', { phase: 'step-1', label: 'Agent 步骤 1' }),
       ],
     })
@@ -44,7 +45,9 @@ describe('Agent conversation store', () => {
     const loaded = loadAgentConversationState(7, storage)
 
     expect(loaded.conversations[0]).toMatchObject({ title: '写第一章', groupId: 'chapters' })
-    expect(loaded.conversations[0].turns[0].events.map(item => item.type)).toEqual(['phase.started'])
+    const events = loaded.conversations[0].turns[0].events
+    expect(events.map(item => item.type)).toEqual(['message.delta', 'phase.started'])
+    expect(events[0]).toMatchObject({ payload: { text: '已生成方案' } })
   })
 
   it('invalidates persisted approvals after a page reload', () => {

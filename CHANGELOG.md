@@ -3,6 +3,8 @@
 ## Unreleased — 2026-07-07 · 一致性工程化第一步 + LongCat 接入 + 世界观字段边界
 
 - **新增 StoryForge Agent 首个可用切片**：右侧常驻对话栏接入 AI SDK `ToolLoopAgent`，支持多步工具调用、阶段/推理摘要/工具时间线、停止任务和错误展示。
+- **补齐 Agent 正文生成闭环**：正文任务使用结构化完成契约，未读取入口声明的上下文或未生成当前章节完整正文提案时不再误报完成；候选正文按真实事件顺序展示，并支持“采纳最终版本 / 调整后重新生成 / 放弃”；章节字数由候选正文确定性计算，不再采用模型估值。
+- **兼容 DeepSeek Agent 工具调用**：DeepSeek Chat Completions 使用其支持的 `tool_choice=auto`，并按阶段只开放上下文读取或变更提案工具；GLM、MiniMax、豆包等继续使用强制工具模式。
 - **项目设定统一包装为 Agent 工具**：设定目录与读取从 `CONTEXT_SOURCES` 派生，修改使用“生成方案 → 用户批准 → 提交”流程并最终委托 `adopt()`；Agent 不直接访问 Zustand 或 Dexie。
 - **新增 MCP 外部工具接入**：支持 Streamable HTTP / SSE 连接，MCP 工具与内部工具进入同一 `ToolRegistry`；外部写入工具默认关闭，需逐连接授权。
 - **修复 Agent / Portable 模型请求的 CORS 分叉**：AI SDK 调用复用现有 OpenAI-compatible 通用开发代理，避免普通 AI 按钮可用而 Agent 仍直连报错。

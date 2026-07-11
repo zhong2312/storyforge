@@ -39,6 +39,9 @@ export interface AgentLoopRequest {
   readonly signal: AbortSignal
   readonly execute: (toolName: string, input: unknown) => Promise<unknown>
   readonly shouldStop: () => boolean
+  readonly requiredContextTool?: string
+  readonly requiredCompletionTool?: string
+  readonly shouldForceCompletion?: () => boolean
 }
 
 export type AgentLoopStreamer = (request: AgentLoopRequest) => AsyncIterable<AgentLoopPart>
@@ -58,6 +61,19 @@ export async function* streamAiSdkAgentLoop(
     ), init),
   })
   const toolNames = createToolNameMap(request.descriptors)
+  const completionToolName = request.requiredCompletionTool
+    ? toolNames.toSdk.get(request.requiredCompletionTool)
+    : undefined
+  const contextToolName = request.requiredContextTool
+    ? toolNames.toSdk.get(request.requiredContextTool)
+    : undefined
+  if (request.requiredCompletionTool && !completionToolName) {
+    throw new Error(`[agent-loop] required completion tool is unavailable: ${request.requiredCompletionTool}`)
+  }
+  if (request.requiredContextTool && !contextToolName) {
+    throw new Error(`[agent-loop] required context tool is unavailable: ${request.requiredContextTool}`)
+  }
+  const autoOnlyToolChoice = usesAutoOnlyToolChoice(request.config)
   const tools: ToolSet = {}
 
   for (const descriptor of request.descriptors) {
@@ -77,6 +93,23 @@ export async function* streamAiSdkAgentLoop(
     tools,
     temperature: request.config.temperature,
     maxOutputTokens: normalizeOutputLimit(request.config.maxTokens, request.tokenBudget),
+    toolChoice: completionToolName ? (autoOnlyToolChoice ? 'auto' : 'required') : undefined,
+    prepareStep: completionToolName
+      ? ({ stepNumber }) => ({
+          ...(autoOnlyToolChoice
+            ? {
+                activeTools: [request.shouldForceCompletion?.() || !contextToolName
+                  ? completionToolName
+                  : contextToolName],
+                toolChoice: 'auto' as const,
+              }
+            : {
+                toolChoice: request.shouldForceCompletion?.() || stepNumber >= request.maxSteps - 1
+                  ? { type: 'tool' as const, toolName: completionToolName }
+                  : 'required' as const,
+              }),
+        })
+      : undefined,
     stopWhen: [
       stepCountIs(request.maxSteps),
       ({ steps }) => request.shouldStop() || totalTokens(steps) >= request.tokenBudget,
@@ -143,6 +176,13 @@ function normalizeBaseUrl(value: string): string {
 function normalizeOutputLimit(configured: number | undefined, budget: number): number {
   if (configured && configured > 0) return Math.min(configured, budget)
   return budget
+}
+
+function usesAutoOnlyToolChoice(config: AgentModelConfig): boolean {
+  // DeepSeek 的 OpenAI-compatible Chat Completions 接口只接受 auto/none；
+  // required 和指定函数都会返回 InvalidParameter。通过 activeTools 仍将
+  // 每一步收窄到当前唯一合法工具，并由完成契约做最终兜底校验。
+  return /deepseek/i.test(config.model)
 }
 
 function totalTokens(steps: readonly unknown[]): number {
