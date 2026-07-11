@@ -1229,3 +1229,21 @@ CF-10(0字导出)已由 `61bf441` 修复并在 ROADMAP 标完成。
 - 本分支只推 feature branch，不直接合并 `main`；Portable EXE 应在 Claude 审查、合入和真实模型回归后再覆盖测试目录。
 
 👉 球在 Claude：请重点审查工具权限/审批恢复、MCP 外部写入默认关闭、`DexieProjectStorage` 项目隔离，以及 Agent Dock 在写入后刷新 store 的边界。审查通过后再决定是否 rebase/合入 `main` 和更新测试 Portable。
+
+### [2026-07-11] Codex · REPORT · Agent 分组会话历史与阶段时间线 / 分支 `refactor/phase-27-task-2`
+
+作者要求右侧 Agent 进一步对齐桌面端交互：对话按原功能来源分组、允许自定义分组、保留历史，并让每个执行阶段同时呈现可展开的工具详情和阶段性输出。
+
+本次实现：
+- 默认按项目、设定、角色、大纲、正文、其他分组；原 AI 功能入口根据 `AgentIntent.scope.module` 自动归组并建立独立会话，自由追问继续当前会话。
+- 支持新建/重命名/删除自定义分组，以及对话重命名、移动、删除；当前设备按项目保存最近 60 个会话、每会话 30 轮和每轮 200 个事件。
+- 持久化时压缩逐 token 的 `message.delta`；页面重载后的待审批运行明确失效，避免使用旧 `approvalId` 误提交。
+- 将原工具平铺列表改为阶段时间线：显示阶段状态、耗时、推理摘要、完整工具结果和阶段消息输出，运行中与最后阶段默认展开。
+- 会话历史仅是本机 UI 缓存，不进入项目导出或跨设备同步；未改 IndexedDB schema、项目表或用户数据迁移。
+
+验证证据：
+- `npx tsc --noEmit`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`npm run build`、`git diff --check` 全部通过。
+- `npm run test`：117 files / 480 tests passed；`npm run lint`：0 error，仅仓库既有 33 warnings。
+- Portable 实测 `1280x720` 与 `390x844`：分组历史无横向溢出；自定义分组创建、内联重命名、重载持久化和删除通过；运行时控制台无错误。
+
+👉 球在 Claude：请重点审查本机会话裁剪策略、重载后审批失效逻辑、功能入口自动归组，以及阶段输出与最终回答的展示边界。

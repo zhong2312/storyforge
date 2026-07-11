@@ -17,10 +17,11 @@
 - `AiSdkAgentRuntimeAdapter` 已通过 `AgentRuntimePort` 接入 AI SDK `ToolLoopAgent`，支持多步工具循环、事件流、取消、提案暂停和审批恢复。
 - 项目设定工具从 `CONTEXT_SOURCES` / `FIELD_REGISTRY` 派生，读取委托 `assembleContext()`，写入走 `change.propose → 用户批准 → change.commit → adopt()`。
 - MCP Streamable HTTP / SSE 工具映射到同一个 `ToolRegistry`；只读和写入工具按 scope 隔离，外部写工具默认不开放。
-- Workspace 右侧 Agent Dock 已显示阶段、推理摘要、工具调用、错误和审批卡片；批准写入后刷新现有面板 store。
+- Workspace 右侧 Agent Dock 已按阶段显示推理摘要、工具调用、阶段输出、耗时、错误和审批卡片；批准写入后刷新现有面板 store。
+- 对话按原功能来源自动归入项目/设定/角色/大纲/正文/其他分组，支持自定义分组、重命名、移动和删除；最近会话与压缩后的阶段事件保存在当前设备，页面重载后可继续查看历史。
 - `dispatchAgentIntent` 已把灵感反推、角色新建/补全、大纲卷章生成和章节生成/改写主入口接到 Agent Dock；宿主传入的项目、世界、章节、实体与选区作用域会进入同一次工具运行，面板不再为这些入口显示重复的流式输出和采纳卡。
 - 自由对话中的“第 N 章”先通过注册源 `chapterIndex` 解析规范章序、真实 `outlineNodeId/chapterId` 与正文状态，再携带解析后的作用域读取章纲和连续性上下文；面板锁定的章节作用域不可被模型改写。
-- 当前边界：会话/事件仅保留在当前页面会话；其余 AI 入口仍需逐模块迁移；不支持 tool calling 的 provider 降级、Tauri stdio MCP、编辑审批方案、多 Agent 编排和后台 Agent 尚未实施。
+- 当前边界：会话历史为当前设备的 UI 缓存，未进入项目导出/跨设备同步；重载前未处理的审批会失效并要求重提案；其余 AI 入口仍需逐模块迁移；不支持 tool calling 的 provider 降级、Tauri stdio MCP、编辑审批方案、多 Agent 编排和后台 Agent 尚未实施。
 
 ---
 

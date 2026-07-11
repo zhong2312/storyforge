@@ -6,8 +6,12 @@ import {
   ChevronRight,
   CircleAlert,
   CircleStop,
+  FolderPlus,
+  History,
   LoaderCircle,
+  MessageSquarePlus,
   PanelRight,
+  Pencil,
   Plug,
   Plus,
   Send,
@@ -40,6 +44,18 @@ import {
   dispatchAgentProjectCommit,
   type AgentIntent,
 } from '../../lib/agent/intents'
+import {
+  conversationTitle,
+  createAgentConversation,
+  createAgentConversationState,
+  defaultConversationGroupId,
+  loadAgentConversationState,
+  saveAgentConversationState,
+  type AgentConversation,
+  type AgentConversationGroup,
+  type AgentConversationState,
+  type AgentConversationTurn,
+} from '../../lib/agent/conversations'
 
 interface Props {
   projectId: number
@@ -51,16 +67,6 @@ interface Props {
   onOpenProperties: () => void
   onOpenSettings: () => void
   onProjectChanged: () => Promise<void>
-}
-
-interface ConversationTurn {
-  readonly id: string
-  readonly userMessage: string
-  runId?: string
-  assistantMessage: string
-  events: AgentEvent[]
-  waitingApproval?: Extract<AgentEvent, { type: 'approval.requested' }>
-  error?: string
 }
 
 interface AgentResources {
@@ -83,19 +89,29 @@ export default function AgentDock({
   const model = useAIConfigStore(state => state.config.model)
   const baseUrl = useAIConfigStore(state => state.config.baseUrl)
   const [input, setInput] = useState('')
-  const [turns, setTurns] = useState<ConversationTurn[]>([])
+  const [conversationState, setConversationState] = useState<AgentConversationState>(() => (
+    ensureConversationState(loadAgentConversationState(projectId), projectId, activeModule)
+  ))
+  const [activeConversationId, setActiveConversationId] = useState(() => conversationState.conversations[0].id)
   const [busy, setBusy] = useState(false)
-  const [view, setView] = useState<'chat' | 'connections'>('chat')
+  const [view, setView] = useState<'chat' | 'history' | 'connections'>('chat')
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>(loadMcpServerConfigs)
   const [mcpStatus, setMcpStatus] = useState<Record<string, string>>({})
   const configRef = useRef(mcpServers)
+  const activeModuleRef = useRef(activeModule)
+  activeModuleRef.current = activeModule
   const resources = useMemo<AgentResources>(() => createResources(projectId, configRef, setMcpStatus), [projectId])
-  const conversationId = useMemo(() => `project-${projectId}-${nanoid(8)}`, [projectId])
   const currentRunIdRef = useRef<string | null>(null)
   const handledIntentIdsRef = useRef(new Set<string>())
   const runContextRef = useRef(new Map<string, { scope: AgentScope; intentType?: string }>())
   const bottomRef = useRef<HTMLDivElement>(null)
+  const activeConversation = conversationState.conversations.find(item => item.id === activeConversationId)
+    ?? conversationState.conversations[0]!
+  const turns = activeConversation.turns
   const pendingApproval = turns.find(turn => turn.waitingApproval)?.waitingApproval
+  const hasPendingApproval = conversationState.conversations.some(conversation => (
+    conversation.turns.some(turn => turn.waitingApproval)
+  ))
 
   useEffect(() => {
     configRef.current = mcpServers
@@ -103,11 +119,19 @@ export default function AgentDock({
   }, [mcpServers])
 
   useEffect(() => {
-    setTurns([])
+    const restored = ensureConversationState(loadAgentConversationState(projectId), projectId, activeModuleRef.current)
+    setConversationState(restored)
+    setActiveConversationId(restored.conversations[0].id)
     currentRunIdRef.current = null
     handledIntentIdsRef.current.clear()
     runContextRef.current.clear()
   }, [projectId])
+
+  useEffect(() => {
+    if (conversationState.projectId !== projectId) return
+    const timer = window.setTimeout(() => saveAgentConversationState(conversationState), 250)
+    return () => window.clearTimeout(timer)
+  }, [conversationState, projectId])
 
   useEffect(() => () => {
     void resources.runtime.cancel(currentRunIdRef.current ?? '')
@@ -117,14 +141,40 @@ export default function AgentDock({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [turns, busy])
+  }, [turns, busy, activeConversationId])
 
-  const consumeEvents = useCallback(async (turnId: string, stream: AsyncIterable<AgentEvent>) => {
+  const patchConversation = useCallback((
+    conversationId: string,
+    updater: (conversation: AgentConversation) => AgentConversation,
+  ) => {
+    setConversationState(current => ({
+      ...current,
+      conversations: current.conversations.map(conversation => (
+        conversation.id === conversationId ? updater(conversation) : conversation
+      )),
+    }))
+  }, [])
+
+  const patchTurn = useCallback((
+    conversationId: string,
+    turnId: string,
+    updater: (turn: AgentConversationTurn) => AgentConversationTurn,
+  ) => {
+    patchConversation(conversationId, conversation => ({
+      ...conversation,
+      updatedAt: Date.now(),
+      turns: conversation.turns.map(turn => turn.id === turnId ? updater(turn) : turn),
+    }))
+  }, [patchConversation])
+
+  const consumeEvents = useCallback(async (
+    conversationId: string,
+    turnId: string,
+    stream: AsyncIterable<AgentEvent>,
+  ) => {
     for await (const event of stream) {
       currentRunIdRef.current = event.runId
-      setTurns(current => current.map(turn => turn.id === turnId
-        ? reduceTurn(turn, event)
-        : turn))
+      patchTurn(conversationId, turnId, turn => reduceTurn(turn, event))
       if (event.type === 'tool.completed'
         && event.payload.toolName === 'storyforge.change.commit') {
         await onProjectChanged()
@@ -140,26 +190,57 @@ export default function AgentDock({
       }
       if (isTerminalAgentEvent(event)) runContextRef.current.delete(turnId)
     }
-  }, [onProjectChanged, projectId])
+  }, [onProjectChanged, patchTurn, projectId])
 
   const runMessage = useCallback(async (
     rawMessage: string,
     scope: AgentScope,
     displayMessage = rawMessage,
     intentType?: string,
+    forceNewConversation = false,
   ) => {
     const message = rawMessage.trim()
-    if (!message || busy || pendingApproval) return
+    if (!message || busy || hasPendingApproval) return
+    const currentConversation = conversationState.conversations.find(item => item.id === activeConversationId)
+    const shouldCreate = !currentConversation || (forceNewConversation && currentConversation.turns.length > 0)
+    const targetConversation = shouldCreate
+      ? createAgentConversation({
+          id: `project-${projectId}-${nanoid(8)}`,
+          projectId,
+          module: scope.module || activeModule,
+          title: displayMessage,
+        })
+      : currentConversation
+    const conversationId = targetConversation.id
     const turnId = nanoid()
     setInput('')
     setBusy(true)
     runContextRef.current.set(turnId, { scope, intentType })
-    setTurns(current => [...current, {
-      id: turnId,
-      userMessage: displayMessage,
-      assistantMessage: '',
-      events: [],
-    }])
+    const turn: AgentConversationTurn = {
+      id: turnId, userMessage: displayMessage, assistantMessage: '', events: [],
+    }
+    setConversationState(current => {
+      const exists = current.conversations.some(item => item.id === conversationId)
+      const conversations = exists ? current.conversations : [targetConversation, ...current.conversations]
+      return {
+        ...current,
+        conversations: conversations.map(conversation => conversation.id === conversationId
+          ? {
+              ...conversation,
+              title: conversation.turns.length === 0 ? conversationTitle(displayMessage) : conversation.title,
+              groupId: conversation.turns.length === 0
+                ? defaultConversationGroupId(scope.module || activeModule)
+                : conversation.groupId,
+              sourceModule: conversation.turns.length === 0
+                ? scope.module || activeModule
+                : conversation.sourceModule,
+              updatedAt: Date.now(),
+              turns: [...conversation.turns, turn],
+            }
+          : conversation),
+      }
+    })
+    setActiveConversationId(conversationId)
 
     try {
       const stream = resources.runtime.run({
@@ -168,12 +249,12 @@ export default function AgentDock({
         scope,
         userMessage: message,
       })
-      await consumeEvents(turnId, stream)
+      await consumeEvents(conversationId, turnId, stream)
     } finally {
       setBusy(false)
       currentRunIdRef.current = null
     }
-  }, [busy, consumeEvents, conversationId, pendingApproval, projectId, resources.runtime])
+  }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime])
 
   const send = async () => {
     await runMessage(input, { module: activeModule, worldGroupId })
@@ -189,14 +270,15 @@ export default function AgentDock({
       agentScopeFromIntent(intent),
       intent.title,
       intent.type,
+      true,
     )
   }, [busy, intent, onIntentConsumed, pendingApproval, runMessage])
 
-  const resolveApproval = async (turn: ConversationTurn, decision: 'approved' | 'rejected') => {
+  const resolveApproval = async (turn: AgentConversationTurn, decision: 'approved' | 'rejected') => {
     if (!turn.runId || !turn.waitingApproval || busy) return
     setBusy(true)
     try {
-      await consumeEvents(turn.id, resources.runtime.resume(turn.runId, {
+      await consumeEvents(activeConversation.id, turn.id, resources.runtime.resume(turn.runId, {
         approvalId: turn.waitingApproval.payload.approvalId,
         decision,
       }))
@@ -205,6 +287,90 @@ export default function AgentDock({
       setBusy(false)
       currentRunIdRef.current = null
     }
+  }
+
+  const startNewConversation = () => {
+    if (busy || hasPendingApproval) return
+    const conversation = createAgentConversation({
+      id: `project-${projectId}-${nanoid(8)}`,
+      projectId,
+      module: activeModule,
+    })
+    setConversationState(current => ({ ...current, conversations: [conversation, ...current.conversations] }))
+    setActiveConversationId(conversation.id)
+    setView('chat')
+  }
+
+  const renameConversation = (conversationId: string, title: string) => {
+    patchConversation(conversationId, conversation => ({
+      ...conversation,
+      title: conversationTitle(title),
+      updatedAt: Date.now(),
+    }))
+  }
+
+  const moveConversation = (conversationId: string, groupId: string) => {
+    if (!conversationState.groups.some(group => group.id === groupId)) return
+    patchConversation(conversationId, conversation => ({ ...conversation, groupId, updatedAt: Date.now() }))
+  }
+
+  const addConversationGroup = (label: string) => {
+    const normalized = label.trim().slice(0, 12)
+    if (!normalized) return
+    setConversationState(current => ({
+      ...current,
+      groups: [...current.groups, {
+        id: `custom-${nanoid(8)}`,
+        label: normalized,
+        custom: true,
+        order: current.groups.length,
+      }],
+    }))
+  }
+
+  const deleteConversationGroup = (groupId: string) => {
+    const group = conversationState.groups.find(item => item.id === groupId)
+    if (!group?.custom) return
+    setConversationState(current => ({
+      ...current,
+      groups: current.groups.filter(item => item.id !== groupId),
+      conversations: current.conversations.map(conversation => (
+        conversation.groupId === groupId ? { ...conversation, groupId: 'other' } : conversation
+      )),
+    }))
+  }
+
+  const renameConversationGroup = (groupId: string, label: string) => {
+    const normalized = label.trim().slice(0, 12)
+    if (!normalized) return
+    setConversationState(current => ({
+      ...current,
+      groups: current.groups.map(group => (
+        group.id === groupId && group.custom ? { ...group, label: normalized } : group
+      )),
+    }))
+  }
+
+  const deleteConversation = (conversationId: string) => {
+    if (busy) return
+    const target = conversationState.conversations.find(item => item.id === conversationId)
+    if (target?.turns.some(turn => turn.waitingApproval)) return
+    const remaining = conversationState.conversations.filter(item => item.id !== conversationId)
+    if (remaining.length > 0) {
+      setConversationState(current => ({
+        ...current,
+        conversations: current.conversations.filter(item => item.id !== conversationId),
+      }))
+      if (activeConversationId === conversationId) setActiveConversationId(remaining[0].id)
+      return
+    }
+    const replacement = createAgentConversation({
+      id: `project-${projectId}-${nanoid(8)}`,
+      projectId,
+      module: activeModule,
+    })
+    setConversationState(current => ({ ...current, conversations: [replacement] }))
+    setActiveConversationId(replacement.id)
   }
 
   const stop = async () => {
@@ -230,6 +396,16 @@ export default function AgentDock({
           <div className="truncate text-sm font-semibold text-text-primary">StoryForge Agent</div>
           <div className="truncate text-[10px] text-text-muted">{model || '未配置模型'}</div>
         </div>
+        <button
+          type="button"
+          onClick={() => setView(value => value === 'history' ? 'chat' : 'history')}
+          disabled={busy}
+          className={`rounded p-1.5 transition-colors hover:bg-bg-hover disabled:opacity-40 ${view === 'history' ? 'text-accent' : 'text-text-muted hover:text-text-primary'}`}
+          title="对话历史"
+          aria-label="对话历史"
+        >
+          <History className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={onOpenProperties}
@@ -267,8 +443,36 @@ export default function AgentDock({
           onTest={testMcp}
           onBack={() => setView('chat')}
         />
+      ) : view === 'history' ? (
+        <ConversationHistory
+          groups={conversationState.groups}
+          conversations={conversationState.conversations}
+          activeConversationId={activeConversation.id}
+          busy={busy}
+          onBack={() => setView('chat')}
+          onSelect={conversationId => {
+            setActiveConversationId(conversationId)
+            setView('chat')
+          }}
+          onNew={startNewConversation}
+          onAddGroup={addConversationGroup}
+          onRenameGroup={renameConversationGroup}
+          onDeleteGroup={deleteConversationGroup}
+          onRenameConversation={renameConversation}
+          onMoveConversation={moveConversation}
+          onDeleteConversation={deleteConversation}
+        />
       ) : (
         <>
+          <ConversationToolbar
+            conversation={activeConversation}
+            groups={conversationState.groups}
+            busy={busy}
+            blocked={hasPendingApproval}
+            onShowHistory={() => setView('history')}
+            onNew={startNewConversation}
+            onMove={groupId => moveConversation(activeConversation.id, groupId)}
+          />
           <div className="flex-1 overflow-y-auto px-3 py-4">
             {turns.length === 0 ? (
               <EmptyConversation onUse={setInput} />
@@ -278,7 +482,7 @@ export default function AgentDock({
                   <TurnView
                     key={turn.id}
                     turn={turn}
-                    busy={busy}
+                    running={busy && turn.id === turns[turns.length - 1]?.id}
                     onResolve={decision => void resolveApproval(turn, decision)}
                   />
                 ))}
@@ -310,14 +514,14 @@ export default function AgentDock({
                     void send()
                   }
                 }}
-                disabled={busy || Boolean(pendingApproval)}
-                placeholder={pendingApproval ? '请先处理变更方案' : '向 Agent 发出指令...'}
+                disabled={busy || hasPendingApproval}
+                placeholder={pendingApproval ? '请先处理变更方案' : hasPendingApproval ? '请返回待审批对话' : '向 Agent 发出指令...'}
                 className="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm leading-5 text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={busy ? () => void stop() : () => void send()}
-                disabled={!busy && (!input.trim() || Boolean(pendingApproval))}
+                disabled={!busy && (!input.trim() || hasPendingApproval)}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-35"
                 title={busy ? '停止' : '发送'}
                 aria-label={busy ? '停止' : '发送'}
@@ -330,6 +534,302 @@ export default function AgentDock({
       )}
     </aside>
   )
+}
+
+function ConversationToolbar({
+  conversation,
+  groups,
+  busy,
+  blocked,
+  onShowHistory,
+  onNew,
+  onMove,
+}: {
+  conversation: AgentConversation
+  groups: AgentConversationGroup[]
+  busy: boolean
+  blocked: boolean
+  onShowHistory: () => void
+  onNew: () => void
+  onMove: (groupId: string) => void
+}) {
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-bg-elevated px-3">
+      <button
+        type="button"
+        onClick={onShowHistory}
+        disabled={busy}
+        className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-text-primary disabled:opacity-40"
+        title="对话历史"
+        aria-label="对话历史"
+      >
+        <History className="h-3.5 w-3.5" />
+      </button>
+      <div className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">{conversation.title}</div>
+      <select
+        aria-label="对话分组"
+        value={conversation.groupId}
+        onChange={event => onMove(event.target.value)}
+        disabled={busy}
+        className="h-7 max-w-20 rounded border border-border bg-bg-base px-1.5 text-[10px] text-text-secondary outline-none focus:border-accent disabled:opacity-50"
+      >
+        {groups.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}
+      </select>
+      <button
+        type="button"
+        onClick={onNew}
+        disabled={busy || blocked}
+        className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent disabled:opacity-40"
+        title="新建对话"
+        aria-label="新建对话"
+      >
+        <MessageSquarePlus className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function ConversationHistory({
+  groups,
+  conversations,
+  activeConversationId,
+  busy,
+  onBack,
+  onSelect,
+  onNew,
+  onAddGroup,
+  onRenameGroup,
+  onDeleteGroup,
+  onRenameConversation,
+  onMoveConversation,
+  onDeleteConversation,
+}: {
+  groups: AgentConversationGroup[]
+  conversations: AgentConversation[]
+  activeConversationId: string
+  busy: boolean
+  onBack: () => void
+  onSelect: (conversationId: string) => void
+  onNew: () => void
+  onAddGroup: (label: string) => void
+  onRenameGroup: (groupId: string, label: string) => void
+  onDeleteGroup: (groupId: string) => void
+  onRenameConversation: (conversationId: string, title: string) => void
+  onMoveConversation: (conversationId: string, groupId: string) => void
+  onDeleteConversation: (conversationId: string) => void
+}) {
+  const [newGroup, setNewGroup] = useState('')
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [editingGroupLabel, setEditingGroupLabel] = useState('')
+
+  const submitGroup = () => {
+    if (!newGroup.trim()) return
+    onAddGroup(newGroup)
+    setNewGroup('')
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <button type="button" onClick={onBack} className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-text-primary" aria-label="返回对话">
+          <ChevronRight className="h-4 w-4 rotate-180" />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text-primary">对话历史</span>
+        <button
+          type="button"
+          onClick={onNew}
+          disabled={busy || conversations.some(conversation => conversation.turns.some(turn => turn.waitingApproval))}
+          className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent disabled:opacity-40"
+          title="新建对话"
+          aria-label="新建对话"
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+        <FolderPlus className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+        <input
+          value={newGroup}
+          onChange={event => setNewGroup(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) submitGroup()
+          }}
+          placeholder="新分组"
+          maxLength={12}
+          className="h-7 min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
+        />
+        <button
+          type="button"
+          onClick={submitGroup}
+          disabled={!newGroup.trim()}
+          className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-accent disabled:opacity-35"
+          aria-label="添加分组"
+          title="添加分组"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {[...groups].sort((left, right) => left.order - right.order).map(group => {
+          const grouped = conversations
+            .filter(conversation => conversation.groupId === group.id)
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+          if (grouped.length === 0 && !group.custom) return null
+          return (
+            <section key={group.id} className="border-b border-border">
+              <div className="flex h-8 items-center gap-2 bg-bg-elevated px-3">
+                {editingGroupId === group.id ? (
+                  <input
+                    value={editingGroupLabel}
+                    onChange={event => setEditingGroupLabel(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') {
+                        onRenameGroup(group.id, editingGroupLabel)
+                        setEditingGroupId(null)
+                      }
+                    }}
+                    autoFocus
+                    maxLength={12}
+                    className="h-6 min-w-0 flex-1 border-b border-accent bg-transparent text-[11px] text-text-primary outline-none"
+                  />
+                ) : (
+                  <div className="min-w-0 flex-1 truncate text-[10px] font-semibold text-text-muted">{group.label}</div>
+                )}
+                <span className="text-[10px] text-text-muted">{grouped.length}</span>
+                {group.custom && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingGroupId === group.id) {
+                          onRenameGroup(group.id, editingGroupLabel)
+                          setEditingGroupId(null)
+                        } else {
+                          setEditingGroupId(group.id)
+                          setEditingGroupLabel(group.label)
+                        }
+                      }}
+                      className="rounded p-0.5 text-text-muted hover:text-accent"
+                      aria-label={editingGroupId === group.id ? '保存分组名称' : '重命名分组'}
+                      title={editingGroupId === group.id ? '保存' : '重命名'}
+                    >
+                      {editingGroupId === group.id ? <Check className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteGroup(group.id)}
+                      className="rounded p-0.5 text-text-muted hover:text-error"
+                      aria-label="删除分组"
+                      title="删除分组"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="divide-y divide-border">
+                {grouped.map(conversation => {
+                  const editing = editingConversationId === conversation.id
+                  const waiting = conversation.turns.some(turn => turn.waitingApproval)
+                  return (
+                    <div key={conversation.id} className={`px-3 py-2.5 ${conversation.id === activeConversationId ? 'bg-accent/[0.08]' : 'hover:bg-bg-hover'}`}>
+                      {editing ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={editingTitle}
+                              onChange={event => setEditingTitle(event.target.value)}
+                              maxLength={40}
+                              autoFocus
+                              className="h-7 min-w-0 flex-1 rounded border border-accent bg-bg-base px-2 text-xs text-text-primary outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onRenameConversation(conversation.id, editingTitle)
+                                setEditingConversationId(null)
+                              }}
+                              className="rounded p-1 text-success hover:bg-bg-hover"
+                              aria-label="保存对话名称"
+                              title="保存"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <select
+                            value={conversation.groupId}
+                            onChange={event => onMoveConversation(conversation.id, event.target.value)}
+                            className="h-7 w-full rounded border border-border bg-bg-base px-2 text-[11px] text-text-secondary outline-none focus:border-accent"
+                            aria-label="移动到分组"
+                          >
+                            {groups.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onSelect(conversation.id)}
+                            disabled={busy}
+                            className="min-w-0 flex-1 text-left disabled:opacity-50"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-xs font-medium text-text-primary">{conversation.title}</span>
+                              {waiting && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" title="待审批" />}
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
+                              <span>{conversation.turns.length} 轮</span>
+                              <span>{formatConversationTime(conversation.updatedAt)}</span>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingConversationId(conversation.id)
+                              setEditingTitle(conversation.title)
+                            }}
+                            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-accent"
+                            aria-label="编辑对话"
+                            title="编辑"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteConversation(conversation.id)}
+                            disabled={waiting || busy}
+                            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-error disabled:opacity-30"
+                            aria-label="删除对话"
+                            title="删除"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function formatConversationTime(timestamp: number): string {
+  const elapsed = Math.max(0, Date.now() - timestamp)
+  if (elapsed < 60_000) return '刚刚'
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`
+  if (elapsed < 604_800_000) return `${Math.floor(elapsed / 86_400_000)} 天前`
+  return new Date(timestamp).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
 function EmptyConversation({ onUse }: { onUse: (value: string) => void }) {
@@ -362,19 +862,14 @@ function EmptyConversation({ onUse }: { onUse: (value: string) => void }) {
 
 function TurnView({
   turn,
-  busy,
+  running,
   onResolve,
 }: {
-  turn: ConversationTurn
-  busy: boolean
+  turn: AgentConversationTurn
+  running: boolean
   onResolve: (decision: 'approved' | 'rejected') => void
 }) {
-  const reasoning = turn.events
-    .filter((event): event is Extract<AgentEvent, { type: 'reasoning.summary.delta' }> => event.type === 'reasoning.summary.delta')
-    .map(event => event.payload.text)
-    .join('')
-  const toolCalls = collectToolCalls(turn.events)
-  const phases = turn.events.filter(event => event.type === 'phase.started') as Array<Extract<AgentEvent, { type: 'phase.started' }>>
+  const phases = collectPhaseViews(turn.events)
 
   return (
     <section className="space-y-3">
@@ -382,18 +877,7 @@ function TurnView({
         {turn.userMessage}
       </div>
 
-      {(reasoning || phases.length > 0 || toolCalls.length > 0) && (
-        <details className="group border-l-2 border-accent/45 pl-3" open={busy && !turn.waitingApproval}>
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-text-muted hover:text-text-secondary">
-            <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-            执行过程
-          </summary>
-          <div className="mt-2 space-y-2">
-            {reasoning && <p className="text-xs leading-5 text-text-secondary">{reasoning}</p>}
-            {toolCalls.map(call => <ToolCallRow key={call.toolCallId} call={call} />)}
-          </div>
-        </details>
-      )}
+      {phases.length > 0 && <PhaseTimeline phases={phases} running={running} />}
 
       {turn.assistantMessage && (
         <div className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">
@@ -414,7 +898,7 @@ function TurnView({
             <button
               type="button"
               onClick={() => onResolve('rejected')}
-              disabled={busy}
+              disabled={running}
               className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50"
             >
               拒绝
@@ -422,7 +906,7 @@ function TurnView({
             <button
               type="button"
               onClick={() => onResolve('approved')}
-              disabled={busy}
+              disabled={running}
               className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" />
@@ -439,7 +923,7 @@ function TurnView({
         </div>
       )}
 
-      {busy && !turn.assistantMessage && !turn.waitingApproval && (
+      {running && !turn.assistantMessage && !turn.waitingApproval && (
         <div className="flex items-center gap-2 px-1 text-xs text-text-muted">
           <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           Agent 正在执行
@@ -457,6 +941,67 @@ interface ToolCallView {
   readonly result?: string
 }
 
+interface PhaseView {
+  id: string
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  startedAt: number
+  completedAt?: number
+  reasoning: string
+  output: string
+  tools: ToolCallView[]
+}
+
+function PhaseTimeline({ phases, running }: { phases: PhaseView[]; running: boolean }) {
+  return (
+    <div className="space-y-2 border-l-2 border-accent/45 pl-3">
+      <div className="text-[10px] font-semibold text-text-muted">执行过程</div>
+      {phases.map((phase, index) => {
+        const phaseOutput = phase.output.trim()
+        const title = phase.tools[0]?.summary || phase.label
+        const duration = Math.max(0, (phase.completedAt ?? Date.now()) - phase.startedAt)
+        return (
+          <details
+            key={phase.id}
+            className="group border-b border-border pb-2 last:border-b-0"
+            open={phase.status === 'running' || index === phases.length - 1}
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-0.5 text-[11px] text-text-secondary hover:text-text-primary">
+              <ChevronDown className="h-3 w-3 shrink-0 transition-transform group-open:rotate-180" />
+              <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+              <span className="shrink-0 text-[10px] text-text-muted">{formatDuration(duration, phase.status === 'running' && running)}</span>
+              {phase.status === 'running' ? (
+                <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-accent" />
+              ) : phase.status === 'failed' ? (
+                <XCircle className="h-3 w-3 shrink-0 text-error" />
+              ) : (
+                <Check className="h-3 w-3 shrink-0 text-success" />
+              )}
+            </summary>
+            <div className="mt-2 space-y-2 pl-4">
+              {phase.reasoning.trim() && (
+                <p className="whitespace-pre-wrap text-xs leading-5 text-text-secondary">{phase.reasoning.trim()}</p>
+              )}
+              {phase.tools.map(call => <ToolCallRow key={call.toolCallId} call={call} />)}
+              {phaseOutput && (
+                <div className="whitespace-pre-wrap border-l-2 border-border pl-2 text-xs leading-5 text-text-primary">
+                  {phaseOutput}
+                </div>
+              )}
+            </div>
+          </details>
+        )
+      })}
+    </div>
+  )
+}
+
+function formatDuration(durationMs: number, active: boolean): string {
+  if (active && durationMs < 1000) return '进行中'
+  if (durationMs < 1000) return '<1秒'
+  return `${Math.max(1, Math.round(durationMs / 1000))}秒`
+}
+
 function ToolCallRow({ call }: { call: ToolCallView }) {
   const Icon = call.status === 'completed' ? Check : call.status === 'failed' ? XCircle : LoaderCircle
   return (
@@ -465,8 +1010,8 @@ function ToolCallRow({ call }: { call: ToolCallView }) {
         <Wrench className="h-3 w-3" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-text-secondary">{call.summary || call.name}</div>
-        {call.result && <div className="mt-0.5 truncate text-text-muted">{call.result}</div>}
+        <div className="break-words text-text-secondary">{call.summary || call.name}</div>
+        {call.result && <div className="mt-0.5 whitespace-pre-wrap break-words text-text-muted">{call.result}</div>}
       </div>
       <Icon className={`mt-1 h-3 w-3 shrink-0 ${call.status === 'running' ? 'animate-spin text-text-muted' : call.status === 'failed' ? 'text-error' : 'text-success'}`} />
     </div>
@@ -638,7 +1183,7 @@ function createResources(
   return { runtime, mcp, storage }
 }
 
-function reduceTurn(turn: ConversationTurn, event: AgentEvent): ConversationTurn {
+function reduceTurn(turn: AgentConversationTurn, event: AgentEvent): AgentConversationTurn {
   const next = { ...turn, runId: event.runId, events: [...turn.events, event] }
   if (event.type === 'message.delta') next.assistantMessage += event.payload.text
   if (event.type === 'message.completed' && !next.assistantMessage.endsWith(event.payload.text)) {
@@ -651,39 +1196,119 @@ function reduceTurn(turn: ConversationTurn, event: AgentEvent): ConversationTurn
   return next
 }
 
-function collectToolCalls(events: readonly AgentEvent[]): ToolCallView[] {
-  const calls = new Map<string, ToolCallView>()
+function collectPhaseViews(events: readonly AgentEvent[]): PhaseView[] {
+  const phases: PhaseView[] = []
+  let current: PhaseView | undefined
+
+  const ensurePhase = (event: AgentEvent): PhaseView => {
+    if (current) return current
+    current = {
+      id: `implicit-${event.runId}-${phases.length + 1}`,
+      label: `阶段 ${phases.length + 1}`,
+      status: 'running',
+      startedAt: event.timestamp,
+      reasoning: '',
+      output: '',
+      tools: [],
+    }
+    phases.push(current)
+    return current
+  }
+
   for (const event of events) {
-    if (event.type === 'tool.requested') {
-      calls.set(event.payload.toolCallId, {
+    if (event.type === 'phase.started') {
+      current = {
+        id: `${event.runId}-${event.payload.phase}-${event.sequence}`,
+        label: event.payload.label,
+        status: 'running',
+        startedAt: event.timestamp,
+        reasoning: '',
+        output: '',
+        tools: [],
+      }
+      phases.push(current)
+    } else if (event.type === 'phase.completed') {
+      const phase = current ?? ensurePhase(event)
+      phase.status = 'completed'
+      phase.completedAt = event.timestamp
+      if (event.payload.summary && !phase.output.includes(event.payload.summary)) {
+        phase.output += `${phase.output ? '\n' : ''}${event.payload.summary}`
+      }
+    } else if (event.type === 'reasoning.summary.delta') {
+      ensurePhase(event).reasoning += event.payload.text
+    } else if (event.type === 'tool.requested') {
+      ensurePhase(event).tools.push({
         toolCallId: event.payload.toolCallId,
         name: event.payload.toolName,
         summary: event.payload.summary,
         status: 'running',
       })
     } else if (event.type === 'tool.completed') {
-      const current = calls.get(event.payload.toolCallId)
-      calls.set(event.payload.toolCallId, {
+      const phase = phases.find(item => item.tools.some(tool => tool.toolCallId === event.payload.toolCallId))
+        ?? ensurePhase(event)
+      const callIndex = phase.tools.findIndex(tool => tool.toolCallId === event.payload.toolCallId)
+      const call = callIndex >= 0 ? phase.tools[callIndex] : undefined
+      const completed: ToolCallView = {
         toolCallId: event.payload.toolCallId,
         name: event.payload.toolName,
-        summary: current?.summary || event.payload.toolName,
+        summary: call?.summary || event.payload.toolName,
         status: 'completed',
         result: event.payload.summary,
-      })
+      }
+      if (callIndex >= 0) phase.tools[callIndex] = completed
+      else phase.tools.push(completed)
     } else if (event.type === 'tool.failed') {
-      const current = calls.get(event.payload.toolCallId)
-      calls.set(event.payload.toolCallId, {
+      const phase = phases.find(item => item.tools.some(tool => tool.toolCallId === event.payload.toolCallId))
+        ?? ensurePhase(event)
+      const callIndex = phase.tools.findIndex(tool => tool.toolCallId === event.payload.toolCallId)
+      const call = callIndex >= 0 ? phase.tools[callIndex] : undefined
+      const failed: ToolCallView = {
         toolCallId: event.payload.toolCallId,
         name: event.payload.toolName,
-        summary: current?.summary || event.payload.toolName,
+        summary: call?.summary || event.payload.toolName,
         status: 'failed',
         result: event.payload.error,
-      })
+      }
+      if (callIndex >= 0) phase.tools[callIndex] = failed
+      else phase.tools.push(failed)
+      phase.status = 'failed'
+      phase.completedAt = event.timestamp
+    } else if (event.type === 'message.delta') {
+      ensurePhase(event).output += event.payload.text
+    } else if (event.type === 'message.completed') {
+      const phase = ensurePhase(event)
+      if (!phase.output.endsWith(event.payload.text)) {
+        phase.output += `${phase.output ? '\n\n' : ''}${event.payload.text}`
+      }
+    } else if (event.type === 'run.failed' || event.type === 'run.cancelled') {
+      const phase = ensurePhase(event)
+      phase.status = 'failed'
+      phase.completedAt = event.timestamp
+    } else if (event.type === 'run.completed' && current?.status === 'running') {
+      current.status = 'completed'
+      current.completedAt = event.timestamp
     }
   }
-  return [...calls.values()]
+  return phases
 }
 
 function isTauri(): boolean {
   return '__TAURI_INTERNALS__' in window || '__TAURI__' in window
+}
+
+function ensureConversationState(
+  state: AgentConversationState,
+  projectId: number,
+  module: string,
+): AgentConversationState {
+  const current = state.projectId === projectId ? state : createAgentConversationState(projectId)
+  if (current.conversations.length > 0) return current
+  return {
+    ...current,
+    conversations: [createAgentConversation({
+      id: `project-${projectId}-${nanoid(8)}`,
+      projectId,
+      module,
+    })],
+  }
 }

@@ -43,4 +43,16 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(dock).toContain('buildAgentIntentPrompt(intent)')
     expect(dock).toContain('agentScopeFromIntent(intent)')
   })
+
+  it('Agent Dock 提供功能分组会话历史与逐阶段输出', () => {
+    const dock = source('src/components/agent/AgentDock.tsx')
+    const conversations = source('src/lib/agent/conversations/agent-conversation-store.ts')
+
+    expect(dock).toContain('<ConversationHistory')
+    expect(dock).toContain('<PhaseTimeline')
+    expect(dock).toContain('defaultConversationGroupId(scope.module || activeModule)')
+    expect(conversations).toContain("{ id: 'characters', label: '角色'")
+    expect(conversations).toContain("{ id: 'chapters', label: '正文'")
+    expect(conversations).toContain('saveAgentConversationState')
+  })
 })
