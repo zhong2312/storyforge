@@ -47,7 +47,8 @@ function isAbsoluteHttpUrl(url: string): boolean {
 
 export function shouldUseGenericDevProxy(provider: AIProvider | undefined, rawBaseUrl: string): boolean {
   void provider
-  if (!import.meta.env.DEV) return false
+  if (typeof window === 'undefined') return false
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) return false
   const normalized = normalizeOpenAIBaseUrl(rawBaseUrl).baseUrl
   return isAbsoluteHttpUrl(normalized)
 }
