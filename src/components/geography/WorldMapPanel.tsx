@@ -11,7 +11,7 @@ import { useWorldNodeStore } from '../../stores/world-node'
 import { useWorldGroupStore } from '../../stores/world-group'
 import { useAIStream } from '../../hooks/useAIStream'
 import { createAISessionKey } from '../../stores/ai-generation-session'
-import { projectDb as db } from '../../lib/storage/project-db-compat'
+import { db } from '../../lib/db/schema'
 import WorldGroupSwitcher from '../world-group/WorldGroupSwitcher'
 import {
   buildVoronoiMapPrompt,

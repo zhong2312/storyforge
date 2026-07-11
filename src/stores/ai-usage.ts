@@ -2,7 +2,7 @@
  * AI 消耗统计 store — 读取 aiUsageLog 持久化记录
  */
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { AIUsageEntry } from '../lib/ai/usage-log'
 
 interface AIUsageStore {

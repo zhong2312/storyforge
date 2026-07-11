@@ -1,7 +1,7 @@
 import type { Chapter, ItemLedgerEntry, OutlineNode } from '../types'
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
 import type { ConsistencyFinding } from '../ai/adapters/consistency-audit-adapter'
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 
 export interface HeldItemProjection {
   itemName: string

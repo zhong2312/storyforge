@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { WorldNode, WorldPortal } from '../lib/types'
 import { parseWorldPortals, stringifyWorldPortals } from '../lib/utils/world-portals'
 

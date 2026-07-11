@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { Character } from '../lib/types'
 import { applyCharacterReferenceRemap } from '../lib/registry/character-references'
 import { normalizeCharacterAxes } from '../lib/character/character-axes'

@@ -5,7 +5,7 @@
  *   - buildCurrentWorldContext：单个世界的完整设定（给"在某世界内生成"用）
  *   - buildAllWorldsOverview：所有世界的精简摘要（给跨世界/世界管理用）
  */
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import { WORLD_GROUP_TYPE_LABELS } from '../types/world-group'
 import { buildCodexContext } from './codex-context'
 import { formatWorldviewBlock, formatPowerSystemBlock, formatStoryCoreBlock } from './context-builder'

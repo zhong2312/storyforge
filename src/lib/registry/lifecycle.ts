@@ -13,10 +13,9 @@
  *    1.1b 才把 deleteProject/deleteGroup/migrate 改成调这里。
  */
 import type { Table } from 'dexie'
-import { projectDb as db } from '../storage/project-db-compat'
-import { PROJECT_TABLES, REGISTRY_BY_NAME } from './project-tables'
+import { db } from '../db/schema'
+import { PROJECT_TABLES } from './project-tables'
 import type { TableSpec } from './types'
-import { getActiveProjectStorage } from '../storage/application-project-storage'
 
 // ─────────────────────────────────────────────────────────────
 // 派生选择器
@@ -52,10 +51,10 @@ export function transactionTablesFor(
   if (op === 'deleteGroup') {
     // 删世界组:所有 worldScoped 表 + 角色(homeWorldGroupId setNull)+ 大纲(worldGroupId setNull)+ 世界组本身
     const set = new Set<Table>(worldScopedTables().map(s => s.table))
-    set.add(REGISTRY_BY_NAME.get('characters')!.table)
-    set.add(REGISTRY_BY_NAME.get('outlineNodes')!.table)
-    set.add(REGISTRY_BY_NAME.get('worldGroups')!.table)
-    set.add(REGISTRY_BY_NAME.get('worldGroupLinks')!.table)
+    set.add(db.characters)
+    set.add(db.outlineNodes)
+    set.add(db.worldGroups)
+    set.add(db.worldGroupLinks)
     return [...set]
   }
   // migrate:所有 worldScoped 表
@@ -67,18 +66,6 @@ export function transactionTablesFor(
 // ─────────────────────────────────────────────────────────────
 
 export async function cascadeDeleteProject(projectId: number): Promise<void> {
-  const activeStorage = getActiveProjectStorage(projectId)
-  if (activeStorage?.locator.backend === 'local-folder') {
-    const names = projectScopedTables().map(spec => spec.name)
-    await activeStorage.transaction('readwrite', names, async transaction => {
-      for (const name of names) {
-        const table = transaction.table(name)
-        const ids = (await table.list()).flatMap(row => row.id == null ? [] : [row.id])
-        if (ids.length) await table.bulkDelete(ids)
-      }
-    })
-    return
-  }
   // ── Step 1:事务前预收集间接归属/blob 的父键 ──
   // (父表会在事务中被删,所以必须先把关联键拿到手)
   const indirectKeys = new Map<string, number[]>()
@@ -91,7 +78,7 @@ export async function cascadeDeleteProject(projectId: number): Promise<void> {
   const blobOwnerRows = new Map<string, any[]>()
   for (const spec of PROJECT_TABLES) {
     if (spec.refs?.some(r => r.kind === 'blob-owner')) {
-      blobOwnerRows.set(spec.name, await lifecycleTable(spec).where('projectId').equals(projectId).toArray())
+      blobOwnerRows.set(spec.name, await (spec.table as any).where('projectId').equals(projectId).toArray())
     }
   }
   const importSessionIds = (await db.importSessions
@@ -103,12 +90,12 @@ export async function cascadeDeleteProject(projectId: number): Promise<void> {
       if (spec.name === 'projects') continue // 根表最后删
 
       if (spec.owner === 'project' || spec.owner === 'transient') {
-        await lifecycleTable(spec).where('projectId').equals(projectId).delete()
+        await spec.table.where('projectId').equals(projectId).delete()
       } else if (spec.owner === 'direct-child' || spec.owner === 'indirect') {
         const parentKeys = indirectKeys.get(spec.name) ?? []
         const linkField = resolveLinkField(spec)
         if (parentKeys.length && linkField) {
-          await lifecycleTable(spec).where(linkField).anyOf(parentKeys).delete()
+          await (spec.table as any).where(linkField).anyOf(parentKeys).delete()
         }
       } else if (spec.owner === 'blob') {
         await deleteBlobsInTransaction(importSessionIds, blobOwnerRows)
@@ -162,27 +149,24 @@ export async function cascadeDeleteGroup(projectId: number, wgId: number): Promi
 
       // codexCategories 特殊:内置分类(builtInKey 非空)保持全局,不按世界删
       if (spec.name === 'codexCategories') {
-        const table = lifecycleTable(spec)
-        const all = await table.where('projectId').equals(projectId).toArray()
+        const all = await spec.table.where('projectId').equals(projectId).toArray()
         for (const row of all as any[]) {
-          if (row[wgField] === wgId && !row.builtInKey) await table.delete(row.id)
+          if (row[wgField] === wgId && !row.builtInKey) await spec.table.delete(row.id)
         }
         continue
       }
       // outlineNodes 特殊:不删,只 setNull(卷脱离该世界)
       if (spec.name === 'outlineNodes') {
-        const table = lifecycleTable(spec)
-        const all = await table.where('projectId').equals(projectId).toArray()
+        const all = await spec.table.where('projectId').equals(projectId).toArray()
         for (const row of all as any[]) {
-          if (row[wgField] === wgId) await table.update(row.id, { [wgField]: null })
+          if (row[wgField] === wgId) await spec.table.update(row.id, { [wgField]: null })
         }
         continue
       }
 
-      const table = lifecycleTable(spec)
-      const rows = await table.where('projectId').equals(projectId).toArray()
+      const rows = await spec.table.where('projectId').equals(projectId).toArray()
       for (const row of rows as any[]) {
-        if (row[wgField] === wgId) await table.delete(row.id)
+        if (row[wgField] === wgId) await spec.table.delete(row.id)
       }
     }
 
@@ -210,17 +194,12 @@ export async function stampPrimaryWorld(projectId: number, primaryId: number): P
       // 只有「词条」codexEntries 才盖章归属主世界。与手写版 migrate 一致。
       if (spec.name === 'codexCategories') continue
       const wgField = spec.worldGroupField ?? 'worldGroupId'
-      const table = lifecycleTable(spec)
-      const rows = await table.where('projectId').equals(projectId).toArray()
+      const rows = await spec.table.where('projectId').equals(projectId).toArray()
       for (const row of rows as any[]) {
         if (row[wgField] == null) {
-          await table.update(row.id, { [wgField]: primaryId })
+          await spec.table.update(row.id, { [wgField]: primaryId })
         }
       }
     }
   })
-}
-
-function lifecycleTable(spec: TableSpec): any {
-  return (db as unknown as Record<string, unknown>)[spec.name]
 }

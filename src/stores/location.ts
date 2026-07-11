@@ -2,7 +2,7 @@
  * Phase 25.3 — 重要地点 Store
  */
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { ImportantLocation } from '../lib/types'
 
 /** 树形节点（带 children，UI 用） */

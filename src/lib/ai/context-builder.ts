@@ -3,7 +3,7 @@ import type { HistoricalKeyword, HistoricalKeywordCategory } from '../types/hist
 import { KEYWORD_CATEGORY_LABELS } from '../types/history'
 import { DIMENSION_LABELS, ANALYSIS_DIMENSIONS } from '../types/reference'
 import { loadContextMemo } from '../export/context-snapshot'
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import {
   MORAL_AXIS_LABELS,
   normalizeCharacterAxes,

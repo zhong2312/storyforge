@@ -6,7 +6,7 @@
  * - 导入永远只写 candidate/import，不自动升级 confirmed Canon；
  * - 谓词必须存在于 FACT_PREDICATE_REGISTRY；时序章节引用必须属于本项目，否则跳过。
  */
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import { getFactPredicate } from '../registry/fact-predicate-registry'
 import type { FactKind, TemporalFact } from '../types/temporal-fact'
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'

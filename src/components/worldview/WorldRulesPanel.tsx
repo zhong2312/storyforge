@@ -26,7 +26,7 @@ import {
 } from '../../lib/ai/world-rules-manifest'
 import type { Project } from '../../lib/types'
 import type { HistoricalTimelineEvent, HistoricalKeyword } from '../../lib/types/history'
-import { projectDb as db } from '../../lib/storage/project-db-compat'
+import { db } from '../../lib/db/schema'
 import { useDialog } from '../shared/Dialog'
 
 interface Props {

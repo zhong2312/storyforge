@@ -2,7 +2,7 @@
  * 故事进程年表 store — Phase 25.5.2-a
  */
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { StoryTimelineEvent } from '../lib/types'
 
 interface StoryTimelineStore {

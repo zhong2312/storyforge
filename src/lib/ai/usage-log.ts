@@ -5,7 +5,7 @@
  * 类型来源于各 AI 行为的 moduleKey（如 chapter.content / worldview.dimension），
  * 映射为友好中文标签展示。
  */
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 
 /** 一条 AI 消耗记录 */
 export interface AIUsageEntry {

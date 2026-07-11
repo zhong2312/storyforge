@@ -9,7 +9,7 @@
  * 句柄持久化在 folder-handle-store.ts（独立 IndexedDB），与本模块配合。
  */
 import { exportProjectJSON, type ProjectExportData } from '../export/json-export'
-import { projectDb as db } from './project-db-compat'
+import { db } from '../db/schema'
 
 interface WindowWithFSA extends Window {
   showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>

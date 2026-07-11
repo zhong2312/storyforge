@@ -12,7 +12,6 @@ import {
   writeProjectJSONToFolder,
 } from '../../lib/storage/folder-backup'
 import { saveFolderHandle, loadFolderHandle, clearFolderHandle, projFolderKey, LAST_FOLDER_KEY } from '../../lib/storage/folder-handle-store'
-import { loadProjectStorageBinding, migrateDexieProjectToFolder } from '../../lib/storage/project-storage-binding'
 import { useBackupStore } from '../../stores/backup'
 import CloudBackupCard from './CloudBackupCard'
 import { useToast } from '../shared/Toast'
@@ -74,8 +73,6 @@ function ExportTab({ project, onImported }: Props) {
   const [status, setStatus] = useState<ExportStatus>('idle')
   const [message, setMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [projectStorageBinding, setProjectStorageBinding] = useState(() => loadProjectStorageBinding(project.id!))
-  const [projectStorageBusy, setProjectStorageBusy] = useState(false)
 
   // ── 本地文件夹（句柄持久化 + 重新授权 + 自动备份，FB-11）──
   const [folderHandle, setFolderHandle] = useState<FileSystemDirectoryHandle | null>(null)
@@ -141,22 +138,6 @@ function ExportTab({ project, onImported }: Props) {
     } catch (e) { show('error', `导出失败：${(e as Error).message}`) }
   }
 
-  const handleMigrateProjectStorage = async () => {
-    const handle = await pickFolder()
-    if (!handle) return
-    setProjectStorageBusy(true)
-    try {
-      show('loading', '正在迁移并校验全部项目数据...')
-      const report = await migrateDexieProjectToFolder(project.id!, handle)
-      setProjectStorageBinding(loadProjectStorageBinding(project.id!))
-      show('success', `已迁移 ${report.tables.length} 张表，本地项目存储已生效`)
-    } catch (error) {
-      show('error', `迁移失败：${(error as Error).message}`)
-    } finally {
-      setProjectStorageBusy(false)
-    }
-  }
-
   // 绑定文件夹：选目录 → 请求授权 → 持久化句柄 → 立刻写一次
   const handleBindFolder = async () => {
     const h = await pickFolder()
@@ -210,29 +191,6 @@ function ExportTab({ project, onImported }: Props) {
       {status !== 'idle' && (
         <StatusBar status={status} message={message} />
       )}
-
-      <SectionCard
-        icon={<HardDrive className="w-5 h-5 text-accent" />}
-        title="项目存储位置"
-        desc="将项目完整迁移到本地文件夹。迁移会逐表校验数量和内容指纹，成功后所有设定、正文和 Agent 写回都直接写入该文件夹。"
-        badge={projectStorageBinding ? '本地文件存储' : '浏览器存储'}
-      >
-        {projectStorageBinding ? (
-          <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-400">
-            <CheckCircle className="h-4 w-4" />
-            <span className="truncate">活动目录：{projectStorageBinding.folderName}</span>
-          </div>
-        ) : (
-          <ActionButton
-            onClick={handleMigrateProjectStorage}
-            disabled={!isFSASupported() || projectStorageBusy || status === 'loading'}
-            variant="accent"
-          >
-            {projectStorageBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-            {projectStorageBusy ? '迁移中...' : '迁移到本地文件夹'}
-          </ActionButton>
-        )}
-      </SectionCard>
 
       {/* JSON */}
       <SectionCard

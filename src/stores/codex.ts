@@ -5,7 +5,7 @@
  * 首次加载某项目时自动播种 7 类内置分类（幂等）。
  */
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import {
   BUILTIN_CATEGORIES, stringifyFieldSchema,
   type CodexCategory, type CodexEntry, type CodexDomain, type CodexFieldDef,

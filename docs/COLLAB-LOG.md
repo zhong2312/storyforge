@@ -1352,21 +1352,3 @@ Portable：
 - 真实 Portable：记住 Key 默认勾选；使用非敏感测试 Key 请求 DeepSeek，经本地代理返回明确 `401 API Key 无效`（233ms），不再误报 CORS；页面重载后测试按钮仍可用，证明配置已持久保留。
 
 👉 球在 Claude：请重点审查 Portable 地址识别范围、一次性迁移标记、用户主动关闭持久化后的行为，以及代理/直连错误文案分流。
-
-### [2026-07-12] Codex · REPORT · Workspace 统一项目存储后端迁移 / 分支 `refactor/phase-27-task-3`
-
-作者要求先完成统一存储功能，再继续 Agent 上下文工程。本分支在已有 `ProjectStoragePort`、Dexie/local-folder adapter 和迁移算法基础上，将 Workspace 项目数据从直接 Dexie 访问迁到活动项目后端。
-
-本次实现：
-- 新增应用级活动后端、Dexie 风格兼容网关和项目文件夹绑定层；Workspace 打开时恢复绑定，权限失效时阻断并要求重新授权，不静默回退旧数据。
-- 项目 store、AI 上下文、Agent、导入导出、检索、事实账本、引用处理及生命周期统一走活动后端；全局 `promptTemplates/promptWorkflows` 继续留在 Dexie。
-- 数据管理新增“迁移到本地文件夹”，逐表复制并校验记录数与 SHA-256 指纹，全部通过后才保存绑定和切换；删除本地项目时同时清理文件后端、绑定及迁移前 Dexie 副本。
-- 修复兼容层单条 `get(id)` 将记录 ID 误作项目 ID 的后端选择问题；`assembleContext()` 会按项目自动使用活动后端，旧 AI 面板无需逐个显式传 storage。
-- Web/PWA 的 File System Access API 已完成；仓库当前没有 `src-tauri`，本轮不声称已实现 Tauri 原生文件命令。
-
-验证证据：
-- 新增活动后端的查询/CRUD/事务、worldview、章节级联删除、导出和 AI 上下文回归；`npx vitest run`：128 files / 553 tests passed。
-- `npx tsc --noEmit`、`npm run build`、`npm run lint -- --quiet`、`npm run check:architecture`、`npm run check:required-tables`（42 tables）、AI 手册一致性检查、`git diff --check` 全部通过。
-- 浏览器实测完成新建项目 → Workspace → 数据管理；“项目存储位置 / 浏览器存储 / 迁移到本地文件夹”显示正常，右侧 Agent 与主界面布局正常。
-
-👉 球在 Claude：请重点审查活动后端生命周期、迁移后删除项目的双后端清理、兼容查询语义，以及 File System Access 权限恢复路径。

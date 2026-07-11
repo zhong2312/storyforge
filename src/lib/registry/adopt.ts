@@ -12,7 +12,6 @@ import { ADOPTION_BY_TARGET } from './adoption-schema'
 import type { AdoptInput, AdoptResult, CollectionAdoptionSpec, FieldSpec, TableSpec } from './types'
 import { normalizeCharacterAxes } from '../character/character-axes'
 import type { ProjectStoragePort, StorageRecord, StorageTable } from '../storage/ports'
-import { getActiveProjectStorage } from '../storage/application-project-storage'
 
 export interface AdoptOptions {
   /** 活动项目存储；未传时保持现有 Dexie 行为。 */
@@ -22,7 +21,6 @@ export interface AdoptOptions {
 type AdoptionTable = StorageTable<StorageRecord & Record<string, any>>
 
 export async function adopt(input: AdoptInput, options: AdoptOptions = {}): Promise<AdoptResult> {
-  const storage = options.storage ?? getActiveProjectStorage(input.projectId)
   const result = emptyResult()
   const fieldSpecs = FIELD_BY_TARGET.get(input.target) ?? []
   if (!fieldSpecs.length) {
@@ -34,12 +32,12 @@ export async function adopt(input: AdoptInput, options: AdoptOptions = {}): Prom
   if (!tableSpec) throw new Error(`[adopt] target ${input.target} 不在 PROJECT_TABLES`)
 
   if (input.recordId != null) {
-    return adoptCollectionRecord(input, fieldSpecs, tableSpec, result, storage)
+    return adoptCollectionRecord(input, fieldSpecs, tableSpec, result, options.storage)
   }
 
   const isCollection = input.mode === 'add' || input.mode === 'add-many' || input.mode === 'merge-diffs'
-  if (isCollection) return adoptCollection(input, fieldSpecs, tableSpec, result, storage)
-  return adoptSingleton(input, fieldSpecs, tableSpec, result, storage)
+  if (isCollection) return adoptCollection(input, fieldSpecs, tableSpec, result, options.storage)
+  return adoptSingleton(input, fieldSpecs, tableSpec, result, options.storage)
 }
 
 function emptyResult(): AdoptResult {

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { projectDb as db } from '../lib/storage/project-db-compat'
+import { db } from '../lib/db/schema'
 import type { Worldview, StoryCore, PowerSystem, DivineDesign, NaturalResources } from '../lib/types'
 import { adopt } from '../lib/registry/adopt'
 

@@ -1,4 +1,4 @@
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import type { OutlineNode, Chapter } from '../types'
 import { isHtml, htmlToPlainText } from '../utils/html'
 import { buildBestChapterByOutlineMap } from '../chapters/selectors'

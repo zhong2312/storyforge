@@ -7,7 +7,7 @@
  *   硬过滤：未来章不泄漏（规范章序）、世界隔离、按时间重组；去重、邻接保留、top-K。
  * - embedding 不可用时只走关键词通道（优雅降级）。
  */
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import type { RetrievalChunk } from '../types/retrieval-chunk'
 import type { NarrativeSummaryNode } from '../types/narrative-summary'
 import { cosineSimilarity } from '../types/retrieval-chunk'

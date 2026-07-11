@@ -9,7 +9,7 @@
  * - ★不在此自动 supersede 旧权威事实——supersede 只发生在【作者确认候选/异常复核】时（confirmFactCandidate），
  *   候选(observation)不改 canon（§14.6「无证据 observation 不得自动升级为 Canon」）。
  */
-import { projectDb as db } from '../storage/project-db-compat'
+import { db } from '../db/schema'
 import type { TemporalFact } from '../types/temporal-fact'
 import type { ExtractedFactCandidate } from '../ai/adapters/fact-extract-adapter'
 import { getFactPredicate } from '../registry/fact-predicate-registry'
