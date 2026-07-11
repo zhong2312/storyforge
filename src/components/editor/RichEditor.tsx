@@ -26,7 +26,7 @@ import {
   Palette,
   PaintBucket,
 } from 'lucide-react'
-import { toHtml, countWords } from '../../lib/utils/html'
+import { toHtml, countWords, htmlToPlainText } from '../../lib/utils/html'
 import { loadEditorTypography, saveEditorTypography, applyEditorTypography, type EditorTypography } from '../../lib/editor-typography'
 
 const FONT_FAMILY_OPTIONS = [
@@ -675,7 +675,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="flex-1" />
         {/* G3：正文字数统计 */}
         <span className="text-[11px] text-text-muted font-mono px-1.5 tabular-nums select-none" title="本章正文字数（不含空白）">
-          {countWords(editor.getText()).toLocaleString()} 字
+          {countWords(htmlToPlainText(value)).toLocaleString()} 字
         </span>
         <div className="w-px h-4 bg-border mx-1" />
         <button
