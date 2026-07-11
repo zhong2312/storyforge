@@ -200,6 +200,12 @@ export default function WorkspacePage() {
 
   const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow'])
   const isImmersiveModule = immersiveModules.has(activeModule)
+  const fullHeightModules = new Set<SidebarModule>([
+    'worldview-origin',
+    'worldview-natural',
+    'worldview-humanity',
+  ])
+  const isFullHeightModule = fullHeightModules.has(activeModule)
 
   /** 根据当前模块渲染主面板内容 */
   const renderMainPanel = () => {
@@ -331,10 +337,12 @@ export default function WorkspacePage() {
 
       {/* 主面板 */}
       <main
-        className={`relative flex-1 overflow-y-auto ${
+        className={`relative min-h-0 flex-1 ${
           isImmersiveModule
-            ? 'bg-[radial-gradient(circle_at_top_left,var(--border-subtle)_1px,transparent_1px)] [background-size:32px_32px]'
-            : 'p-6'
+            ? 'overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--border-subtle)_1px,transparent_1px)] [background-size:32px_32px]'
+            : isFullHeightModule
+              ? 'overflow-hidden p-6'
+              : 'overflow-y-auto p-6'
         }`}
       >
         {/* 右侧工作区完全关闭时显示恢复入口，避免遮挡各面板自己的操作按钮。 */}

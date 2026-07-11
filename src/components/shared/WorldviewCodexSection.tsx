@@ -10,7 +10,7 @@ export default function WorldviewCodexSection({
   children: ReactNode
 }) {
   return (
-    <section className="space-y-3 border-b border-border/60 pb-5">
+    <section className="space-y-3 pb-2">
       <div>
         <h3 className="text-sm font-semibold text-text-primary">📚 {title}</h3>
         <p className="mt-1 text-xs leading-5 text-text-muted">{description}</p>

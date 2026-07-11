@@ -17,6 +17,7 @@ import type { Project, NaturalResources } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 import WorldviewCodexSection from '../shared/WorldviewCodexSection'
+import WorldviewEditorTabs from '../shared/WorldviewEditorTabs'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -163,9 +164,9 @@ export default function WorldviewNaturalPanel({ project }: Props) {
         </nav>
 
         {/* ── 右侧：所有字段同时渲染，hidden 控制显示 ── */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-hidden p-6">
           {FIELDS.map(f => (
-            <div key={f.key} className={activeKey === f.key ? '' : 'hidden'}>
+            <div key={f.key} className={activeKey === f.key ? 'h-full' : 'hidden'}>
               <SimpleFieldEditor
                 field={f}
                 value={values[f.key] || ''}
@@ -192,7 +193,7 @@ export default function WorldviewNaturalPanel({ project }: Props) {
               />
             </div>
           ))}
-          <div className={activeKey === 'naturalResources' ? 'space-y-4' : 'hidden'}>
+          <div className={activeKey === 'naturalResources' ? 'h-full overflow-y-auto' : 'hidden'}>
             {/* 全貌(上):自然资源整体概述,带 AI 生成,与其它方面一致 */}
             <SimpleFieldEditor
               field={{ key: 'naturalResourceOverview', emoji: '🌿', label: '自然资源', desc: '矿产 / 灵材 / 动植物等自然产出的总体分布、丰饶程度与特点' }}
@@ -287,15 +288,8 @@ function SimpleFieldEditor({ field, value, onChange, project, contextSummary, on
     ai.start(messages, undefined, { category: 'worldview.dimension', projectId: project.id! })
   }
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary">{field.emoji} {field.label}</h3>
-        <p className="mt-1 text-sm text-text-muted">{field.desc}</p>
-      </div>
-
-      {codexContent}
-
+  const body = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input value={hint} onChange={e => setHint(e.target.value)}
@@ -324,7 +318,18 @@ function SimpleFieldEditor({ field, value, onChange, project, contextSummary, on
         onChange={onChange}
         placeholder={field.desc}
         label={`${field.label}正文`}
+        fill
       />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
+        <h3 className="text-lg font-semibold text-text-primary">{field.emoji} {field.label}</h3>
+        <p className="mt-1 text-sm text-text-muted">{field.desc}</p>
+      </div>
+      <WorldviewEditorTabs label={field.label} body={body} codex={codexContent} />
     </div>
   )
 }

@@ -16,6 +16,7 @@ import PromptRunPanel from '../shared/PromptRunPanel'
 import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 import WorldviewCodexSection from '../shared/WorldviewCodexSection'
+import WorldviewEditorTabs from '../shared/WorldviewEditorTabs'
 import type { Project, DivineDesign } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 
@@ -120,7 +121,7 @@ export default function WorldviewOriginPanel({ project }: Props) {
   }, [])
 
   return (
-    <div className="flex flex-col w-full max-w-5xl space-y-4">
+    <div className="flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
       {/* 顶部 */}
       <div className="pb-4 border-b border-border/40">
         <div className="flex items-start justify-between gap-3">
@@ -140,7 +141,7 @@ export default function WorldviewOriginPanel({ project }: Props) {
         </div>
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex min-h-0 flex-1 gap-4">
         {/* ── 左侧边栏 ── */}
         <div className="w-fit min-w-32 max-w-44 shrink-0 space-y-0.5 pt-1">
           {FIELDS.map(f => {
@@ -169,9 +170,9 @@ export default function WorldviewOriginPanel({ project }: Props) {
         </div>
 
         {/* ── 右侧：所有字段同时渲染，hidden 控制显示 ── */}
-        <div className="flex-1 min-w-0">
+        <div className="min-h-0 min-w-0 flex-1">
           {/* 世界来源 */}
-          <div className={active === 'origin' ? '' : 'hidden'}>
+          <div className={active === 'origin' ? 'h-full' : 'hidden'}>
             <TextFieldEditor
               field={FIELDS[0]}
               value={worldOrigin}
@@ -183,7 +184,7 @@ export default function WorldviewOriginPanel({ project }: Props) {
           </div>
 
           {/* 力量体系:全貌(上) + 具体词条(下) */}
-          <div className={active === 'power' ? '' : 'hidden'}>
+          <div className={active === 'power' ? 'h-full' : 'hidden'}>
             <TextFieldEditor
               field={FIELDS[1]}
               value={powerHierarchy}
@@ -208,7 +209,7 @@ export default function WorldviewOriginPanel({ project }: Props) {
           </div>
 
           {/* 神明与信仰:全貌(上) + 具体词条(下) */}
-          <div className={active === 'divine' ? '' : 'hidden'}>
+          <div className={active === 'divine' ? 'h-full' : 'hidden'}>
             <DivineFieldEditor
               field={FIELDS[2]}
               divineDesign={divineDesign}
@@ -295,17 +296,8 @@ function TextFieldEditor({
     ai.start(messages, undefined, { category: 'worldview.dimension', projectId: project.id! })
   }
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
-          <span>{field.icon}</span> {field.label}
-        </h2>
-        <p className="text-xs text-text-muted mt-0.5">{field.desc}</p>
-      </div>
-
-      {codexContent}
-
+  const body = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
@@ -336,7 +328,20 @@ function TextFieldEditor({
         onChange={onChange}
         placeholder={field.desc}
         label={`${field.label}正文`}
+        fill
       />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
+        <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+          <span>{field.icon}</span> {field.label}
+        </h2>
+        <p className="text-xs text-text-muted mt-0.5">{field.desc}</p>
+      </div>
+      <WorldviewEditorTabs label={field.label} body={body} codex={codexContent} />
     </div>
   )
 }
@@ -449,18 +454,22 @@ function DivineFieldEditor({
   }
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
         <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
           <span>{field.icon}</span> {field.label}
         </h2>
         <p className="text-xs text-text-muted mt-0.5">{field.desc}</p>
       </div>
 
-      {codexContent}
+      <WorldviewEditorTabs
+        label={field.label}
+        codex={codexContent}
+        body={(
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
 
       {/* AI 生成 */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
@@ -530,6 +539,9 @@ function DivineFieldEditor({
               />
         </div>
       )}
+          </div>
+        )}
+      />
     </div>
   )
 }

@@ -14,6 +14,7 @@ import type { Project } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 import WorldviewCodexSection from '../shared/WorldviewCodexSection'
+import WorldviewEditorTabs from '../shared/WorldviewEditorTabs'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -171,9 +172,9 @@ export default function WorldviewHumanityPanel({ project }: Props) {
         </nav>
 
         {/* ── 右侧：所有字段同时渲染，hidden 控制显示 ── */}
-        <div className="flex-1 min-w-0 overflow-y-auto p-6">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden p-6">
           {FIELDS.map(f => (
-            <div key={f.key} className={activeKey === f.key ? '' : 'hidden'}>
+            <div key={f.key} className={activeKey === f.key ? 'h-full' : 'hidden'}>
               {/* 全貌（上）：现有字段本身就是这个方面的整体概述，带 AI 生成 */}
               <HumanityFieldEditor
                 meta={f}
@@ -254,20 +255,8 @@ function HumanityFieldEditor({
     ai.start(messages, undefined, { category: 'worldview.dimension', projectId: project.id! })
   }
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary">{meta.emoji} {meta.label}</h3>
-        <p className="mt-1 text-sm text-text-muted">{meta.description}</p>
-        {meta.hint && (
-          <p className="mt-1.5 text-xs text-accent/80 bg-accent/5 border border-accent/15 rounded px-2 py-1">
-            💡 {meta.hint}
-          </p>
-        )}
-      </div>
-
-      {codexContent}
-
+  const body = (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
@@ -298,7 +287,23 @@ function HumanityFieldEditor({
         onChange={onChange}
         placeholder={meta.description}
         label={`${meta.label}正文`}
+        fill
       />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
+        <h3 className="text-lg font-semibold text-text-primary">{meta.emoji} {meta.label}</h3>
+        <p className="mt-1 text-sm text-text-muted">{meta.description}</p>
+        {meta.hint && (
+          <p className="mt-1.5 text-xs text-accent/80 bg-accent/5 border border-accent/15 rounded px-2 py-1">
+            💡 {meta.hint}
+          </p>
+        )}
+      </div>
+      <WorldviewEditorTabs label={meta.label} body={body} codex={codexContent} />
     </div>
   )
 }

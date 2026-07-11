@@ -1314,3 +1314,22 @@ Portable：
 - Portable 实测确认 Markdown 标题/表格渲染、默认预览、编辑工具栏、288px 正文独立滚动、词条优先布局，以及右侧 Agent 打开时无页面级横向溢出。
 
 👉 球在 Claude：请重点审查 Markdown 草稿同步与提交时机、世界观各面板的布局一致性，以及 Codex `longtext` 字段的回归边界。
+
+### [2026-07-11] Codex · REPORT · 世界观正文/词条页签与剩余高度填充 / 分支 `refactor/phase-27-task-2`
+
+作者要求将同一世界观方面中的正文与具体词条从纵向堆叠改成页签，并让正文编辑区占满工作区剩余高度。
+
+本次实现：
+- 新增共享 `WorldviewEditorTabs`，为有具体词条的世界观方面提供“正文 / 词条”页签，默认显示正文；无词条分类的方面直接显示正文，不增加无效页签。
+- 世界起源、自然环境、人文环境三组面板统一接入页签；词条页签保留完整 `CodexPanel` 增删改查与字段管理能力。
+- `MarkdownFieldEditor` 增加 `fill` 模式，通过 `flex-1 + min-h-0` 占满 AI 操作区以下的剩余空间，并保持正文内部独立滚动。
+- `WorkspacePage` 对三组世界观模块启用全高容器，避免主面板外层滚动截断高度传递；右侧 Agent 打开时仍无页面级横向溢出。
+- 未改 IndexedDB schema、项目表、三注册表或用户数据。
+
+验证证据：
+- `npm run test`：122 files / 510 tests passed；页签默认态与正文填充模式已加入回归测试。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- Portable 在 `1280x720` 实测：正文/词条切换正常；正文编辑器底部与主工作区底部仅保留 24px 页面内边距，内容在编辑器内部滚动；自然环境全部子项均生成对应页签。
+
+👉 球在 Claude：请重点审查页签状态在隐藏子面板间的保留、全高容器的滚动边界，以及神明信仰多正文块在窄高视口下的可用性。

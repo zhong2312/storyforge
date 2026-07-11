@@ -18,6 +18,7 @@ interface Props {
   placeholder?: string
   label?: string
   compact?: boolean
+  fill?: boolean
 }
 
 type EditorMode = 'preview' | 'edit'
@@ -28,6 +29,7 @@ export default function MarkdownFieldEditor({
   placeholder = '输入设定内容，支持 Markdown…',
   label = '设定正文',
   compact = false,
+  fill = false,
 }: Props) {
   const [mode, setMode] = useState<EditorMode>(value.trim() ? 'preview' : 'edit')
   const [draft, setDraft] = useState(value)
@@ -85,10 +87,10 @@ export default function MarkdownFieldEditor({
     })
   }
 
-  const heightClass = compact ? 'h-48' : 'h-72'
+  const heightClass = fill ? 'min-h-80 flex-1' : compact ? 'h-48' : 'h-72'
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border bg-bg-surface">
+    <section className={`overflow-hidden rounded-lg border border-border bg-bg-surface ${fill ? 'flex min-h-80 flex-1 flex-col' : ''}`}>
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-bg-elevated/55 px-3 py-1.5">
         <span className="text-xs font-medium text-text-secondary">{label}</span>
         <div className="flex rounded-md border border-border bg-bg-base p-0.5" aria-label={`${label}显示模式`}>
@@ -126,7 +128,7 @@ export default function MarkdownFieldEditor({
         </div>
       )}
 
-      <div className={`${heightClass} overflow-y-auto overscroll-contain`}>
+      <div className={`${heightClass} min-h-0 overflow-y-auto overscroll-contain`}>
         {mode === 'preview' ? (
           draft.trim() ? (
             <div
