@@ -43,4 +43,33 @@ describe('Agent proposal diff', () => {
     expect(result.beforeText).toBe('（无现有内容）')
     expect(result.afterText).toContain('新角色')
   })
+
+  it('does not show unknown fields that adopt will discard', () => {
+    const result = createProposalDiff({
+      target: 'characters',
+      mode: 'replace',
+      recordId: 2,
+      beforeData: { name: '柳青棠', personality: '谨慎' },
+      data: { personality: '果断', imaginaryField: '不会落库' },
+    })
+
+    expect(result.afterText).toContain('果断')
+    expect(result.afterText).not.toContain('不会落库')
+  })
+
+  it('shows every chapter in an add-many proposal', () => {
+    const result = createProposalDiff({
+      target: 'chapters',
+      mode: 'add-many',
+      data: [
+        { title: '第一章', content: '<p>第一章正文</p>' },
+        { title: '第二章', content: '<p>第二章正文</p>' },
+      ],
+    })
+
+    expect(result.afterText).toContain('【第一章】')
+    expect(result.afterText).toContain('第一章正文')
+    expect(result.afterText).toContain('【第二章】')
+    expect(result.afterText).toContain('第二章正文')
+  })
 })

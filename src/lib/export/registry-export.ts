@@ -15,7 +15,7 @@ import type { TableSpec } from '../registry/types'
 import type { ProjectExportData } from './json-export'
 
 /** 当前导出格式版本(与手写版保持一致) */
-const EXPORT_VERSION = 3
+const EXPORT_VERSION = 4
 
 /** 取一张 exportable 表的库内记录(项目级按 projectId;direct-child 经 projectResolver) */
 async function queryRows(spec: TableSpec, projectId: number): Promise<any[]> {

@@ -181,6 +181,84 @@ describe('NS-5 · retrieval', () => {
     expect(chapterHits.map(hit => hit.sourceChapterId)).not.toContain(chaps[2])
   })
 
+  it('全项目 RAG 按规范章节过滤未来章纲和细纲，并隔离章节所属世界', async () => {
+    const { pid, chaps } = await seedChapters([
+      '第一章正文。',
+      '第二章正文。',
+      '第三章正文。',
+    ])
+    const chapters = await db.chapters.where('projectId').equals(pid).toArray()
+    const first = chapters.find(chapter => chapter.id === chaps[0])!
+    const future = chapters.find(chapter => chapter.id === chaps[2])!
+    await db.outlineNodes.update(first.outlineNodeId, { summary: '旧港密令藏在第一章。', worldGroupId: 99 })
+    await db.outlineNodes.update(future.outlineNodeId, { summary: '未来才揭示星门坐标。', worldGroupId: 7 })
+    await db.detailedOutlines.add({
+      projectId: pid,
+      outlineNodeId: future.outlineNodeId,
+      summary: '细纲写明星门坐标位于王陵。',
+      scenes: [],
+      appearingCharacterIds: [],
+      createdAt: now,
+      updatedAt: now,
+    } as any)
+
+    const futureHits = await searchProjectRag({
+      projectId: pid,
+      currentChapterId: chaps[1],
+      worldGroupId: 7,
+      query: '星门坐标王陵',
+      sourceTables: ['outlineNodes', 'detailedOutlines'],
+    })
+    expect(futureHits).toEqual([])
+
+    const otherWorldHits = await searchProjectRag({
+      projectId: pid,
+      currentChapterId: chaps[1],
+      worldGroupId: 7,
+      query: '旧港密令',
+      sourceTables: ['outlineNodes'],
+    })
+    expect(otherWorldHits).toEqual([])
+  })
+
+  it('正文变化和历史恢复会清除旧正文块，但保留同章其他来源块', async () => {
+    const { pid, chaps } = await seedChapters(['旧稿写着赤铜钥匙。'])
+    await useChapterStore.getState().loadAll(pid)
+    const chapter = await db.chapters.get(chaps[0])
+    await rebuildChapterChunks({ projectId: pid, chapter: chapter!, knownEntities: [] })
+    const linkedId = await db.retrievalChunks.add({
+      projectId: pid,
+      worldGroupId: null,
+      sourceChapterId: chaps[0],
+      sourceTable: 'storyTimelineEvents',
+      sourceRecordId: 1,
+      sourceTitle: '时间线',
+      chunkIndex: 0,
+      text: '时间线仍应保留',
+      keywords: ['时间线'],
+      embedding: null,
+      embeddingModel: null,
+      sourceTextHash: 'timeline',
+      createdAt: now,
+    }) as number
+
+    await useChapterStore.getState().updateChapter(chaps[0], { content: '新稿不再包含钥匙。', wordCount: 9 })
+    expect((await db.retrievalChunks.where('sourceChapterId').equals(chaps[0]).toArray())
+      .filter(chunk => (chunk.sourceTable ?? 'chapters') === 'chapters')).toEqual([])
+    expect(await db.retrievalChunks.get(linkedId)).toBeDefined()
+
+    const revision = await db.chapterRevisions.where('chapterId').equals(chaps[0]).first()
+    await rebuildChapterChunks({
+      projectId: pid,
+      chapter: (await db.chapters.get(chaps[0]))!,
+      knownEntities: [],
+    })
+    expect(await useChapterStore.getState().restoreChapterRevision(revision!.id!)).toBe(true)
+    expect((await db.retrievalChunks.where('sourceChapterId').equals(chaps[0]).toArray())
+      .filter(chunk => (chunk.sourceTable ?? 'chapters') === 'chapters')).toEqual([])
+    expect(await db.retrievalChunks.get(linkedId)).toBeDefined()
+  })
+
   it('建立索引会写入非章节来源元数据，并在源记录变化后替换旧块', async () => {
     const { pid } = await seedChapters(['第一章：雨夜入城。'])
     const characterId = await db.characters.add({
@@ -200,6 +278,68 @@ describe('NS-5 · retrieval', () => {
     expect(nextChunks).toHaveLength(1)
     expect(nextChunks[0].text).toContain('远赴东海')
     expect(nextChunks[0].text).not.toContain('留守北境')
+  })
+
+  it('全项目 RAG 使用已建立的非章节 embedding 进行语义召回', async () => {
+    const { pid } = await seedChapters(['第一章正文。'])
+    const noteId = await db.notes.add({
+      projectId: pid,
+      title: '北境旧约',
+      content: '霜降之后城门永不关闭',
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+    await rebuildProjectRetrievalChunks({ projectId: pid })
+    const chunk = (await db.retrievalChunks.where('projectId').equals(pid).toArray())
+      .find(item => item.sourceTable === 'notes' && item.sourceRecordId === noteId)!
+    await db.retrievalChunks.update(chunk.id!, { embedding: [1, 0], embeddingModel: 'semantic-test' })
+
+    const hits = await searchProjectRag({
+      projectId: pid,
+      query: '没有任何共同关键词',
+      sourceTables: ['notes'],
+      queryEmbedding: [1, 0],
+      queryEmbeddingModel: 'semantic-test',
+    })
+    expect(hits[0]).toMatchObject({ sourceTable: 'notes', sourceRecordId: noteId })
+  })
+
+  it('默认 RAG 排除未审批推演，显式指定来源时仍可检索', async () => {
+    const { pid, chaps } = await seedChapters(['第一章正文。'])
+    const sessionId = await db.plotSimulationSessions.add({
+      projectId: pid,
+      sessionKey: 'tentative',
+      title: '候选推演',
+      premise: '测试',
+      goal: '测试',
+      status: 'completed',
+      chapterId: chaps[0],
+      selectedCharacterIds: [],
+      plannedTurns: 1,
+      currentTurn: 1,
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+    await db.plotSimulationTurns.add({
+      projectId: pid,
+      sessionId,
+      turnNumber: 1,
+      worldState: { pressure: '', events: [], constraints: [] },
+      characterActions: [],
+      narration: '候选中角色死于潮汐井',
+      summary: '角色死亡',
+      worldChanges: [],
+      unresolvedHooks: [],
+      createdAt: now,
+      updatedAt: now,
+    } as any)
+
+    expect(await searchProjectRag({ projectId: pid, query: '潮汐井死亡' })).toEqual([])
+    expect(await searchProjectRag({
+      projectId: pid,
+      query: '潮汐井死亡',
+      sourceTables: ['plotSimulationTurns'],
+    })).toMatchObject([{ sourceTable: 'plotSimulationTurns' }])
   })
 
   it('局部重建章节时不误删同章关联的其他数据块', async () => {

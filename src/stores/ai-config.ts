@@ -111,25 +111,14 @@ function modelEntryFromConfig(config: AIConfig, id: string, name = config.model)
 
 function migrateLegacyCatalog(config: AIConfig, presets: AIConfigPreset[]): AIModelCatalogState {
   const configs = [{ name: '默认供应商', config }, ...presets.map(preset => ({ name: preset.name, config: preset.config }))]
-  const providers: AIProviderConfig[] = []
-  for (const item of configs) {
-    const key = `${item.config.provider}\n${item.config.baseUrl}`
-    let provider = providers.find(candidate => `${candidate.provider}\n${candidate.baseUrl}` === key)
-    if (!provider) {
-      provider = {
-        id: `legacy-provider-${providers.length + 1}`,
-        name: item.name,
-        provider: item.config.provider,
-        apiKey: item.config.apiKey,
-        baseUrl: item.config.baseUrl,
-        models: [],
-      }
-      providers.push(provider)
-    }
-    if (!provider.models.some(model => model.model === item.config.model)) {
-      provider.models.push(modelEntryFromConfig(item.config, `legacy-model-${providers.length}-${provider.models.length + 1}`))
-    }
-  }
+  const providers: AIProviderConfig[] = configs.map((item, index) => ({
+    id: `legacy-provider-${index + 1}`,
+    name: item.name,
+    provider: item.config.provider,
+    apiKey: item.config.apiKey,
+    baseUrl: item.config.baseUrl,
+    models: [modelEntryFromConfig(item.config, `legacy-model-${index + 1}-1`, item.name === '默认供应商' ? item.config.model : item.name)],
+  }))
   const activeProvider = providers[0]
   const active = { providerConfigId: activeProvider.id, modelId: activeProvider.models[0].id }
   return { providers, bindings: {}, active }
@@ -438,8 +427,19 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     const preset = get().presets.find(p => p.id === id)
     if (!preset) return
     const newConfig = { ...preset.config, apiKey: preset.config.apiKey || get().config.apiKey }
+    const catalog = syncActiveCatalog({
+      providers: get().providerConfigs,
+      bindings: get().sceneBindings,
+      active: get().activeModelRef,
+    }, newConfig)
     persistConfig(newConfig, get().rememberApiKey)
-    set({ config: newConfig, activePresetId: id, editingPresetId: id })
+    persistModelCatalog(catalog, get().rememberApiKey)
+    set({
+      config: newConfig,
+      providerConfigs: catalog.providers,
+      activePresetId: id,
+      editingPresetId: id,
+    })
   },
 
   updatePresetFromCurrent: (id: string) => {
@@ -557,10 +557,13 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       models: item.models.filter(model => model.id !== modelId),
     })
     const fallbackModel = providers.find(item => item.id === providerConfigId)!.models[0]
-    const active = get().activeModelRef.modelId === modelId
+    const active = get().activeModelRef.providerConfigId === providerConfigId
+      && get().activeModelRef.modelId === modelId
       ? { providerConfigId, modelId: fallbackModel.id }
       : get().activeModelRef
-    const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => ref?.modelId !== modelId)) as AIModelSceneBindings
+    const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => (
+      ref?.providerConfigId !== providerConfigId || ref.modelId !== modelId
+    ))) as AIModelSceneBindings
     const catalog = { providers, bindings, active }
     const config = resolveCatalogConfig(catalog, active)
     persistModelCatalog(catalog, get().rememberApiKey)
@@ -603,9 +606,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     const { config } = get()
     const normalized = normalizeOpenAIBaseUrl(config.baseUrl)
     if (normalized.changed) {
-      const newConfig = { ...config, baseUrl: normalized.baseUrl }
-      persistConfig(newConfig, get().rememberApiKey)
-      set({ config: newConfig, activePresetId: null })
+      get().setConfig({ baseUrl: normalized.baseUrl })
     }
     const url = buildOpenAIEndpoint(normalized.baseUrl, 'chat/completions', { provider: config.provider })
     const startTime = Date.now()

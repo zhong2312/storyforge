@@ -146,7 +146,7 @@ describe('R-R1-character-axes', () => {
     await finalizeCharacterAxesMigrationSnapshots()
     const snapshot = await db.snapshots.get(snapshotId)
     const restored = JSON.parse(snapshot!.data)
-    expect(restored.version).toBe(3)
+    expect(restored.version).toBe(4)
     expect(restored.characters[0]).toMatchObject({
       name: '旧反派',
       role: 'antagonist',

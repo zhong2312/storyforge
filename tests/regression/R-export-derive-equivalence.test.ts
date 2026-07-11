@@ -23,11 +23,16 @@ const legacyFixturePath = path.resolve(__dirname, '../fixtures/legacy-export-v3.
  */
 function normalize(data: any) {
   data.exportedAt = 0
-  // v39 新增推演表不属于 v3 旧格式；旧格式字段仍逐字比较，新表由全表往返测试覆盖。
+  data.version = 3
+  // v4 新增历史/推演表不属于 v3 旧格式；旧字段仍逐字比较，新表由全表往返测试覆盖。
+  delete data.chapterRevisions
   delete data.plotSimulationSessions
   delete data.plotSimulationTurns
   for (const t of ['outlineNodes', 'worldNodes']) {
-    for (const row of (data as any)[t] ?? []) delete row.parentId
+    for (const row of (data as any)[t] ?? []) {
+      delete row.parentId
+      if (row.portalsJSON === undefined) delete row.portalsJSON
+    }
   }
   return data
 }

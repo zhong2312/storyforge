@@ -4,6 +4,7 @@ import { createAgentPromptProfile } from '../agent/prompts'
 import { assembleContext } from '../registry/assemble-context'
 import { adopt } from '../registry/adopt'
 import type {
+  AIConfig,
   AIModelRef,
   AIModelSceneBindings,
   AIProviderConfig,
@@ -39,11 +40,21 @@ export async function runPlotSimulation(input: RunPlotSimulationInput): Promise<
     character.id != null && input.session.selectedCharacterIds.includes(character.id)
   ))
   if (!participants.length) throw new Error('至少选择一个参与推演的角色')
-  const completed = [...(input.existingTurns ?? [])].sort((a, b) => a.turnNumber - b.turnNumber)
+  const completed = [...new Map(
+    (input.existingTurns ?? [])
+      .sort((a, b) => a.turnNumber - b.turnNumber)
+      .map(turn => [turn.turnNumber, turn]),
+  ).values()]
+  const checkpoint = completed[completed.length - 1]?.turnNumber ?? 0
 
-  await updateSession(input, { status: 'running', error: '' })
+  await updateSession(input, {
+    status: checkpoint >= input.session.plannedTurns ? 'completed' : 'running',
+    currentTurn: checkpoint,
+    error: '',
+  })
+  if (checkpoint >= input.session.plannedTurns) return completed
   try {
-    for (let turnNumber = input.session.currentTurn + 1; turnNumber <= input.session.plannedTurns; turnNumber++) {
+    for (let turnNumber = checkpoint + 1; turnNumber <= input.session.plannedTurns; turnNumber++) {
       throwIfAborted(input.signal)
       const turn = await runSimulationTurn(input, participants, completed, turnNumber)
       completed.push(turn)
@@ -70,7 +81,11 @@ async function runSimulationTurn(
   turnNumber: number,
 ): Promise<PlotSimulationTurn> {
   const previous = completed[completed.length - 1]
-  const narratorRef = input.session.narratorModelRef ?? input.sceneBindings.chapter ?? input.activeModelRef
+  const narratorRef = resolveAvailableModelRef(
+    input.session.narratorModelRef ?? input.sceneBindings.chapter ?? input.activeModelRef,
+    input.providerConfigs,
+    input.activeModelRef,
+  )
   const narratorConfig = resolveAIModelConfig(
     input.providerConfigs,
     input.sceneBindings,
@@ -112,7 +127,29 @@ async function runSimulationTurn(
       characterId: character.id!,
       label: `第 ${turnNumber} 回合：${character.name} 自主决策`,
     })
-    characterActions.push(await generateCharacterAction(input, character, context.text, previousState, worldState, turnNumber))
+    const characterRuntime = resolveCharacterRuntime(input, character)
+    assertReady(`${character.name} / ${characterRuntime.config.model}`, isAIConfigReady(characterRuntime.config))
+    const characterContext = await assembleContext({
+      projectId: input.projectId,
+      worldGroupId: input.session.worldGroupId ?? null,
+      sourceKeys: [
+        'storyCore', 'worldview', 'powerSystem', 'codex', 'characters',
+        'creativeRules', 'worldRules', 'historical', 'locations',
+      ],
+      characterIds: [character.id!],
+      provider: characterRuntime.config.provider,
+      model: characterRuntime.config.model,
+    })
+    characterActions.push(await generateCharacterAction(
+      input,
+      character,
+      characterContext.text,
+      previousState,
+      worldState,
+      turnNumber,
+      characterRuntime.modelRef,
+      characterRuntime.config,
+    ))
   }
 
   input.onStage?.({ type: 'narrator', turnNumber, label: `第 ${turnNumber} 回合：旁白裁决与成文` })
@@ -181,13 +218,9 @@ async function generateCharacterAction(
   previousState: string,
   worldState: PlotSimulationWorldState,
   turnNumber: number,
+  modelRef: AIModelRef,
+  config: AIConfig,
 ): Promise<PlotSimulationCharacterAction> {
-  const modelRef = character.simulationModelRef
-    ?? input.session.defaultCharacterModelRef
-    ?? input.sceneBindings.settings
-    ?? input.activeModelRef
-  const config = resolveAIModelConfig(input.providerConfigs, input.sceneBindings, input.activeModelRef, 'settings', modelRef)
-  assertReady(`${character.name} / ${config.model}`, isAIConfigReady(config))
   const profile = createAgentPromptProfile(usePromptStore.getState().getActive('character.generate'))
   const output = await chat([
     {
@@ -278,6 +311,40 @@ function stringArray(value: unknown): string[] {
 
 function assertReady(label: string, ready: boolean): void {
   if (!ready) throw new Error(`模型“${label}”未配置 API Key`)
+}
+
+function resolveCharacterRuntime(
+  input: RunPlotSimulationInput,
+  character: Character,
+): { modelRef: AIModelRef; config: AIConfig } {
+  const requestedModelRef = character.simulationModelRef
+    ?? input.session.defaultCharacterModelRef
+    ?? input.sceneBindings.settings
+    ?? input.activeModelRef
+  const modelRef = resolveAvailableModelRef(requestedModelRef, input.providerConfigs, input.activeModelRef)
+  return {
+    modelRef,
+    config: resolveAIModelConfig(
+      input.providerConfigs,
+      input.sceneBindings,
+      input.activeModelRef,
+      'settings',
+      modelRef,
+    ),
+  }
+}
+
+function resolveAvailableModelRef(
+  requested: AIModelRef,
+  providers: readonly AIProviderConfig[],
+  fallback: AIModelRef,
+): AIModelRef {
+  const requestedProvider = providers.find(provider => provider.id === requested.providerConfigId)
+  if (requestedProvider?.models.some(model => model.id === requested.modelId)) return requested
+  const fallbackProvider = providers.find(provider => provider.id === fallback.providerConfigId) ?? providers[0]
+  const fallbackModel = fallbackProvider?.models.find(model => model.id === fallback.modelId) ?? fallbackProvider?.models[0]
+  if (!fallbackProvider || !fallbackModel) throw new Error('没有可用的剧情推演模型')
+  return { providerConfigId: fallbackProvider.id, modelId: fallbackModel.id }
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

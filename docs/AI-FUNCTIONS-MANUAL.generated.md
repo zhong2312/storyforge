@@ -123,14 +123,13 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 36 个 category。
-未分类调用: 0 个。动态 category 调用: 3 个。
+共 35 个 category。
+未分类调用: 0 个。动态 category 调用: 4 个。
 
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:53` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
-| `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
 | `codex.extract` | `src/components/codex/CodexPanel.tsx:206` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:115`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
@@ -152,9 +151,9 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `review.readability` | `src/components/editor/ReviewPanel.tsx:96` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
-| `simulation.character` | `src/lib/simulation/plot-simulation-engine.ts:192` |
-| `simulation.narrator` | `src/lib/simulation/plot-simulation-engine.ts:226` |
-| `simulation.world` | `src/lib/simulation/plot-simulation-engine.ts:159` |
+| `simulation.character` | `src/lib/simulation/plot-simulation-engine.ts:225` |
+| `simulation.narrator` | `src/lib/simulation/plot-simulation-engine.ts:259` |
+| `simulation.world` | `src/lib/simulation/plot-simulation-engine.ts:196` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
 | `story.generate` | `src/components/worldview/StoryCorePanel.tsx:193` |
 | `story.timeline` | `src/components/timeline/StoryTimelinePanel.tsx:84` |
@@ -167,10 +166,11 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ### 动态 category 调用
 
+- `src/components/editor/FloatingToolbar.tsx:105 · ai.start`
 - `src/components/editor/ReviewPanel.tsx:130 · ai.start`
 - `src/components/settings/NS0EvalPanel.tsx:50 · chat`
 - `src/components/settings/prompt/WorkflowRunner.tsx:273 · ai.start`
 
 ---
 
-生成时间基准:commit `4121cf0`
+生成时间基准:commit `3a98163`

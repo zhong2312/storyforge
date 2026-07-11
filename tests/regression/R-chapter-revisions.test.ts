@@ -4,6 +4,7 @@ import { StoryForgeDB, db } from '../../src/lib/db/schema'
 import { adopt } from '../../src/lib/registry/adopt'
 import { useChapterStore } from '../../src/stores/chapter'
 import { MemoryProjectStorage } from '../../src/lib/storage/adapters/memory/memory-project-storage'
+import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 
 const now = 1_700_000_000_000
 
@@ -138,6 +139,54 @@ describe('章节正文历史与恢复', () => {
 
     expect(await db.chapters.get(chapterId)).toBeUndefined()
     expect(await db.chapterRevisions.where('chapterId').equals(chapterId).count()).toBe(0)
+  })
+
+  it('完整项目备份往返保留章节历史并重映射章节 ID', async () => {
+    const { projectId, chapterId } = await seedChapter()
+    await useChapterStore.getState().updateChapter(
+      chapterId,
+      { content: '<p>第二稿</p>', wordCount: 3 },
+      { revisionSource: 'manual', coalesceEdits: false },
+    )
+
+    const backup = await exportProjectJSON(projectId)
+    expect(backup.version).toBe(4)
+    expect(backup.chapterRevisions).toMatchObject([{ content: '<p>初稿</p>', source: 'manual' }])
+    const importedProjectId = await importProjectJSON(backup)
+    const importedChapter = await db.chapters.where('projectId').equals(importedProjectId).first()
+    const importedRevision = await db.chapterRevisions.where('projectId').equals(importedProjectId).first()
+    expect(importedRevision).toMatchObject({
+      chapterId: importedChapter!.id,
+      content: '<p>初稿</p>',
+      source: 'manual',
+    })
+  })
+
+  it('恢复正文后将已失去引文证据的确认事实降级为 stale', async () => {
+    const { projectId, chapterId } = await seedChapter('<p>初稿</p>')
+    await useChapterStore.getState().updateChapter(
+      chapterId,
+      { content: '<p>第二稿独有事实</p>', wordCount: 7 },
+      { revisionSource: 'manual', coalesceEdits: false },
+    )
+    const factId = await db.temporalFacts.add({
+      projectId,
+      sourceChapterId: chapterId,
+      sourceQuote: '第二稿独有事实',
+      subjectName: '主角',
+      predicate: 'location',
+      factKind: 'state',
+      value: '旧城',
+      sourceType: 'chapter',
+      status: 'confirmed',
+      locked: false,
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+    const revision = await db.chapterRevisions.where('chapterId').equals(chapterId).first()
+
+    expect(await useChapterStore.getState().restoreChapterRevision(revision!.id!)).toBe(true)
+    expect((await db.temporalFacts.get(factId))?.status).toBe('stale')
   })
 })
 

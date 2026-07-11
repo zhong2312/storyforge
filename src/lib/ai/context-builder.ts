@@ -185,16 +185,16 @@ export function buildWorldContext(wv: Worldview | null, sc: StoryCore | null, ps
  * - 次要角色：一句话描述+关系
  * - NPC/路人：仅名字、戏份与九宫格阵营
  */
-export function buildCharacterContext(characters: Character[]): string {
+export function buildCharacterContext(characters: Character[], forceFull = false): string {
   if (!characters.length) return ''
   const normalizedCharacters = characters.map(character => ({
     ...character,
     ...normalizeCharacterAxes(character as unknown as Record<string, unknown>),
   })) as Character[]
 
-  const core = normalizedCharacters.filter(c => c.roleWeight === 'main')
-  const supporting = normalizedCharacters.filter(c => c.roleWeight === 'secondary')
-  const others = normalizedCharacters.filter(c => c.roleWeight === 'npc' || c.roleWeight === 'extra')
+  const core = forceFull ? normalizedCharacters : normalizedCharacters.filter(c => c.roleWeight === 'main')
+  const supporting = forceFull ? [] : normalizedCharacters.filter(c => c.roleWeight === 'secondary')
+  const others = forceFull ? [] : normalizedCharacters.filter(c => c.roleWeight === 'npc' || c.roleWeight === 'extra')
   const axes = (c: Character) =>
     `${ROLE_WEIGHT_LABELS[c.roleWeight]} · ${ORDER_AXIS_LABELS[c.orderAxis]}${MORAL_AXIS_LABELS[c.moralAxis]}`
 

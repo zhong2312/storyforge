@@ -264,6 +264,8 @@ export interface AssembleContextInput {
   retrievalSourceTables?: string[]
   /** RAG 返回条数，统一限制为 1-20。 */
   retrievalTopK?: number
+  /** 角色档案源的可见角色白名单；用于角色有限视角推演。 */
+  characterIds?: number[]
   /** C2 反向哺喂：以某角色为主体，召回剧情里关于 TA 的事实/正文证据（characterFacts/characterPassages 源用）。 */
   subjectCharacterName?: string
   /** assembleContext 内部批量预取；调用方无需传。 */

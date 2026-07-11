@@ -119,10 +119,28 @@ async function extractZip(file: File): Promise<ExtractResult> {
   let extractedBytes = 0
   let pageCount = 0
 
+  let declaredExtractedBytes = 0
+  for (const entry of supported) {
+    const ext = entry.name.split('.').pop()?.toLowerCase() || ''
+    if (!(ext in FILE_SIZE_LIMITS)) continue
+    const declaredSize = zipEntryUncompressedSize(entry)
+    if (declaredSize == null) throw new Error(`无法确认 ZIP 条目解压大小：${entry.name}`)
+    declaredExtractedBytes += declaredSize
+    if (declaredExtractedBytes > ZIP_MAX_EXTRACTED_BYTES) {
+      throw new Error(`ZIP 解压后的支持文档超过 ${ZIP_MAX_EXTRACTED_BYTES / 1024 / 1024} MB，请拆分压缩包后重试。`)
+    }
+  }
+
   for (const entry of supported) {
     const ext = entry.name.split('.').pop()?.toLowerCase() || ''
     if (!(ext in FILE_SIZE_LIMITS)) {
       skippedFiles.push(`${entry.name}（不支持 .${ext || '无扩展名'}）`)
+      continue
+    }
+    const declaredSize = zipEntryUncompressedSize(entry)!
+    const fileLimit = FILE_SIZE_LIMITS[ext as SupportedExt]
+    if (declaredSize > fileLimit) {
+      skippedFiles.push(`${entry.name}（.${ext} 文件最大 ${fileLimit / 1024 / 1024} MB）`)
       continue
     }
     const bytes = await entry.async('uint8array')
@@ -156,6 +174,14 @@ async function extractZip(file: File): Promise<ExtractResult> {
     skippedFiles,
     pageCount: pageCount || undefined,
   }
+}
+
+function zipEntryUncompressedSize(entry: unknown): number | null {
+  if (!entry || typeof entry !== 'object') return null
+  const data = Reflect.get(entry, '_data')
+  if (!data || typeof data !== 'object') return null
+  const value = Reflect.get(data, 'uncompressedSize')
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
 }
 
 function isArchiveJunkPath(path: string): boolean {

@@ -4,6 +4,7 @@ import { detachTemporalFactsForDeletedChapters } from '../lib/fact-ledger/lifecy
 import { pickBestChapterForOutline } from '../lib/chapters/selectors'
 import { transactionTablesFor } from '../lib/registry/lifecycle'
 import { dexieRevisionWriter, recordChapterRevision } from '../lib/chapters/revisions'
+import { propagateChapterEditStale } from '../lib/consistency/impact-analysis'
 import type { Chapter, ChapterRevisionSource } from '../lib/types'
 
 interface ChapterUpdateOptions {
@@ -102,10 +103,12 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
   updateChapter: async (id, data, options) => {
     const updatedAt = now()
     const updated = { ...data, updatedAt }
+    let contentChanged = false
     await db.transaction('rw', db.chapters, db.chapterRevisions, async () => {
       const chapter = await db.chapters.get(id)
       if (!chapter) return
       if (Object.prototype.hasOwnProperty.call(data, 'content') && typeof data.content === 'string') {
+        contentChanged = chapter.content !== data.content
         await recordChapterRevision(
           dexieRevisionWriter(db.chapterRevisions),
           chapter,
@@ -120,6 +123,7 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
       }
       await db.chapters.update(id, updated)
     })
+    if (contentChanged) await deleteChapterRetrievalCache(id)
     if (Object.prototype.hasOwnProperty.call(data, 'content')) {
       const projectId = get().chapters.find(c => c.id === id)?.projectId ?? (await db.chapters.get(id))?.projectId
       if (projectId != null) {
@@ -172,6 +176,9 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
       restored = { ...chapter, content: revision.content, wordCount: revision.wordCount, updatedAt: restoredAt }
     })
     if (!restored?.id) return false
+
+    await deleteChapterRetrievalCache(restored.id)
+    await propagateChapterEditStale(restored.projectId, restored.id)
 
     const summaryNodes = await db.narrativeSummaryNodes.where('projectId').equals(restored.projectId).toArray()
     for (const node of summaryNodes) {
@@ -231,3 +238,11 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
     })
   },
 }))
+
+async function deleteChapterRetrievalCache(chapterId: number): Promise<void> {
+  const ids = (await db.retrievalChunks.where('sourceChapterId').equals(chapterId).toArray())
+    .filter(chunk => (chunk.sourceTable ?? 'chapters') === 'chapters')
+    .map(chunk => chunk.id)
+    .filter((id): id is number => id != null)
+  if (ids.length) await db.retrievalChunks.bulkDelete(ids)
+}

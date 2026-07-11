@@ -63,7 +63,7 @@ export async function batchGenerateDetails(
   opts: BatchDetailOptions,
 ): Promise<BatchDetailResult> {
   const { chapters, existingDetails, worldContext, worldContextResolver, characterContext, foreshadowContext, onSave, onProgress, signal } = opts
-  const config = useAIConfigStore.getState().resolveConfigForScene('outline')
+  const config = useAIConfigStore.getState().resolveConfigForScene('chapter')
   const start = Date.now()
 
   // 过滤出需要生成的

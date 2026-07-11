@@ -81,6 +81,16 @@ export default function CharacterDrivenPlotPanel({ project }: Props) {
     ref: { providerConfigId: provider.id, modelId: model.id },
     label: `${provider.name} / ${model.name}`,
   })))
+  const resolvedDefaultCharacterModelRef = resolveAvailableModelRef(
+    defaultCharacterModelRef,
+    sceneBindings.settings ?? activeModelRef,
+    modelOptions,
+  )
+  const resolvedNarratorModelRef = resolveAvailableModelRef(
+    narratorModelRef,
+    sceneBindings.chapter ?? activeModelRef,
+    modelOptions,
+  )
   const canRun = Boolean(!running
     && selectedCharacters.length > 0
     && premise.trim()
@@ -125,8 +135,8 @@ export default function CharacterDrivenPlotPanel({ project }: Props) {
       worldGroupId: targetWorldGroupId,
       chapterId,
       selectedCharacterIds: [...selectedCharacterIds],
-      narratorModelRef,
-      defaultCharacterModelRef,
+      narratorModelRef: resolvedNarratorModelRef,
+      defaultCharacterModelRef: resolvedDefaultCharacterModelRef,
       plannedTurns,
       currentTurn: 0,
     }
@@ -150,17 +160,29 @@ export default function CharacterDrivenPlotPanel({ project }: Props) {
     setStages([])
     const controller = new AbortController()
     abortRef.current = controller
+    let runningSessionId = activeSession?.id ?? null
     try {
       const session = activeSession?.id != null
-        ? { ...activeSession, id: activeSession.id, plannedTurns, narratorModelRef, defaultCharacterModelRef }
+        ? {
+            ...activeSession,
+            id: activeSession.id,
+            plannedTurns,
+            narratorModelRef: resolvedNarratorModelRef,
+            defaultCharacterModelRef: resolvedDefaultCharacterModelRef,
+          }
         : await createSession()
+      runningSessionId = session.id
       if (activeSession?.id != null) {
         await adopt({
           projectId: project.id!,
           target: 'plotSimulationSessions',
           recordId: activeSession.id,
           mode: 'merge-diffs',
-          data: { plannedTurns, narratorModelRef, defaultCharacterModelRef },
+          data: {
+            plannedTurns,
+            narratorModelRef: resolvedNarratorModelRef,
+            defaultCharacterModelRef: resolvedDefaultCharacterModelRef,
+          },
         })
       }
       setActiveSession(session)
@@ -183,8 +205,12 @@ export default function CharacterDrivenPlotPanel({ project }: Props) {
       if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
         setError(caught instanceof Error ? caught.message : String(caught))
       }
-      if (activeSession?.id != null) {
-        const savedTurns = await db.plotSimulationTurns.where('sessionId').equals(activeSession.id).sortBy('turnNumber')
+      if (runningSessionId != null) {
+        const [savedSession, savedTurns] = await Promise.all([
+          db.plotSimulationSessions.get(runningSessionId),
+          db.plotSimulationTurns.where('sessionId').equals(runningSessionId).sortBy('turnNumber'),
+        ])
+        if (savedSession) setActiveSession(savedSession)
         setTurns(savedTurns)
       }
       await loadSessions()
@@ -285,12 +311,16 @@ export default function CharacterDrivenPlotPanel({ project }: Props) {
           <section className="border-b border-border py-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-text-primary"><Users className="h-4 w-4 text-accent" />参与角色与独立模型</div>
-              <ModelSelect value={narratorModelRef} options={modelOptions} onChange={setNarratorModelRef} disabled={running} label="旁白" />
+              <ModelSelect value={resolvedNarratorModelRef} options={modelOptions} onChange={setNarratorModelRef} disabled={running} label="旁白" />
             </div>
             <div className="grid gap-2 lg:grid-cols-2">
               {characters.filter(character => character.id != null).map(character => {
                 const selected = selectedCharacterIds.has(character.id!)
-                const modelRef = character.simulationModelRef ?? defaultCharacterModelRef
+                const modelRef = resolveAvailableModelRef(
+                  character.simulationModelRef,
+                  resolvedDefaultCharacterModelRef,
+                  modelOptions,
+                )
                 return (
                   <div key={character.id} className={`rounded border px-3 py-2 ${selected ? 'border-accent/50 bg-accent/5' : 'border-border bg-bg-surface'}`}>
                     <label className="flex cursor-pointer items-center gap-2 text-sm text-text-primary">
@@ -357,6 +387,18 @@ function SimulationTurnView({ turn }: { turn: PlotSimulationTurn }) {
     </div>
     <div className="whitespace-pre-wrap text-sm leading-7 text-text-primary">{turn.narration}</div>
   </article>
+}
+
+function resolveAvailableModelRef(
+  candidate: AIModelRef | null | undefined,
+  fallback: AIModelRef,
+  options: Array<{ ref: AIModelRef }>,
+): AIModelRef {
+  const available = (ref: AIModelRef | null | undefined) => ref != null
+    && options.some(option => modelRefKey(option.ref) === modelRefKey(ref))
+  if (available(candidate)) return candidate!
+  if (available(fallback)) return fallback
+  return options[0]?.ref ?? fallback
 }
 
 function ModelSelect({ value, options, onChange, disabled, label }: {

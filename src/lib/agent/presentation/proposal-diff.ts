@@ -69,7 +69,8 @@ function normalizeFields(target: string, item: Readonly<Record<string, unknown>>
     for (const alias of field.aliases ?? []) canonicalByInput.set(alias, field.field)
   }
   for (const [field, value] of Object.entries(item)) {
-    normalized[canonicalByInput.get(field) ?? field] = value
+    const canonical = canonicalByInput.get(field)
+    if (canonical) normalized[canonical] = value
   }
   return normalized
 }
@@ -81,8 +82,15 @@ function comparableText(
 ): string {
   if (data.length === 0) return emptyText
   if (preview.target === 'chapters') {
-    const content = data[0]?.content
-    return typeof content === 'string' ? htmlToPlainText(content) : emptyText
+    const chapters = data.flatMap((item, index) => {
+      const content = item.content
+      if (typeof content !== 'string') return []
+      const text = htmlToPlainText(content)
+      if (data.length === 1) return [text]
+      const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : `第 ${index + 1} 项`
+      return [`【${title}】\n${text}`]
+    })
+    return chapters.length ? chapters.join('\n\n') : emptyText
   }
   return proposalPreviewMarkdown({ ...preview, data }) || emptyText
 }

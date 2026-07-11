@@ -6,6 +6,7 @@ import { db } from '../../src/lib/db/schema'
 import { CONTEXT_SOURCES } from '../../src/lib/registry/context-sources'
 import { assembleContext } from '../../src/lib/registry/assemble-context'
 import { checkRegistry } from '../../src/lib/registry/validate'
+import { MemoryProjectStorage } from '../../src/lib/storage/adapters/memory/memory-project-storage'
 
 async function createProject(): Promise<number> {
   const now = Date.now()
@@ -248,5 +249,62 @@ describe('Phase 1.3a · 统一上下文装配层', () => {
     expect(assembled.trimmed).toContain('references')
     expect(assembled.text).toContain('旧王印记')
     expect(assembled.text).not.toContain('非常长的叙事手法分析')
+  })
+
+  it('统一存储端口的前文召回按规范章序排除当前章和未来章', async () => {
+    const storage = new MemoryProjectStorage({ backend: 'dexie', projectId: 77 })
+    const now = Date.now()
+    await storage.table('projects').put({ id: 77, name: '文件项目', createdAt: now, updatedAt: now })
+    const volumeId = await storage.table('outlineNodes').add({
+      projectId: 77, parentId: null, type: 'volume', title: '第一卷', summary: '', order: 0,
+      createdAt: now, updatedAt: now,
+    })
+    const nodeIds: number[] = []
+    const chapterIds: number[] = []
+    for (let index = 0; index < 3; index += 1) {
+      const nodeId = await storage.table('outlineNodes').add({
+        projectId: 77, parentId: volumeId, type: 'chapter', title: `第${index + 1}章`, summary: '林飞', order: index,
+        createdAt: now, updatedAt: now,
+      })
+      nodeIds.push(nodeId)
+      chapterIds.push(await storage.table('chapters').add({
+        projectId: 77, outlineNodeId: nodeId, title: `第${index + 1}章`, content: '', order: index,
+        createdAt: now, updatedAt: now,
+      }))
+    }
+    await storage.table('characters').add({ projectId: 77, name: '林飞', createdAt: now, updatedAt: now })
+    await storage.table('retrievalChunks').bulkPut([
+      { id: 1, projectId: 77, sourceChapterId: chapterIds[0], chunkIndex: 0, text: '林飞在前文取得旧印', keywords: ['林飞'], sourceTextHash: 'a', createdAt: now },
+      { id: 2, projectId: 77, sourceChapterId: chapterIds[1], chunkIndex: 0, text: '林飞当前章秘密', keywords: ['林飞'], sourceTextHash: 'b', createdAt: now },
+      { id: 3, projectId: 77, sourceChapterId: chapterIds[2], chunkIndex: 0, text: '林飞未来章秘密', keywords: ['林飞'], sourceTextHash: 'c', createdAt: now },
+    ])
+    await storage.table('narrativeSummaryNodes').bulkPut([
+      { id: 1, projectId: 77, level: 'chapter', status: 'verified', sourceChapterId: chapterIds[0], title: '前章摘要', summary: '林飞拿到旧印', createdAt: now, updatedAt: now },
+      { id: 2, projectId: 77, level: 'chapter', status: 'verified', sourceChapterId: chapterIds[2], title: '未来摘要', summary: '未来真相', createdAt: now, updatedAt: now },
+    ])
+
+    const context = await assembleContext({
+      projectId: 77,
+      storage,
+      chapterId: chapterIds[1],
+      outlineNodeId: nodeIds[1],
+      worldGroupId: null,
+      sourceKeys: ['retrievedPassages'],
+    })
+    expect(context.text).toContain('林飞在前文取得旧印')
+    expect(context.text).toContain('林飞拿到旧印')
+    expect(context.text).not.toContain('当前章秘密')
+    expect(context.text).not.toContain('未来章秘密')
+    expect(context.text).not.toContain('未来真相')
+
+    const orphan = await assembleContext({
+      projectId: 77,
+      storage,
+      chapterId: 999,
+      outlineNodeId: nodeIds[1],
+      worldGroupId: null,
+      sourceKeys: ['retrievedPassages'],
+    })
+    expect(orphan.text).toBe('')
   })
 })

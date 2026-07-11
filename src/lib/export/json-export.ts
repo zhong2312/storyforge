@@ -24,7 +24,7 @@ import type {
   HistoricalTimelineEvent, HistoricalKeyword,
   WorldGroup, WorldGroupLink, ItemLedgerEntry, StoryTimelineEvent,
   ImportantLocation, WorldRulesProfile, CodexCategory, CodexEntry,
-  UserStyleProfile,
+  UserStyleProfile, ChapterRevision,
   PlotSimulationSession, PlotSimulationTurn,
 } from '../types'
 import type { TemporalFact } from '../types/temporal-fact'
@@ -48,6 +48,7 @@ type HomeWorldGroupExportRef = {
  *   1 — 初始版本（14 张表）
  *   2 — 补全全部项目数据（2026-05-27）
  *   3 — 多世界系统（2026-06-02，Phase 25.4）
+ *   4 — 章节历史与剧情推演（2026-07-12）
  */
 export interface ProjectExportData {
   version: number
@@ -61,6 +62,7 @@ export interface ProjectExportData {
   characters: (Omit<Character, 'id' | 'projectId' | 'homeWorldGroupId'> & HomeWorldGroupExportRef)[]
   outlineNodes: (Omit<OutlineNode, 'id' | 'projectId' | 'worldGroupId'> & WorldGroupExportRef & { _exportId: number; _parentExportId: number | null })[]
   chapters: (Omit<Chapter, 'id' | 'projectId' | 'outlineNodeId'> & { _outlineExportId: number })[]
+  chapterRevisions?: (Omit<ChapterRevision, 'id' | 'projectId' | 'chapterId'> & { _chapterExportId: number })[]
   foreshadows: Omit<Foreshadow, 'id' | 'projectId'>[]
   geographies: (Omit<Geography, 'id' | 'projectId' | 'worldGroupId'> & WorldGroupExportRef)[]
   histories: (Omit<History, 'id' | 'projectId' | 'worldGroupId'> & WorldGroupExportRef)[]

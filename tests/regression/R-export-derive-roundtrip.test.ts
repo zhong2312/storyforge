@@ -87,7 +87,8 @@ describe('R-export-derive-roundtrip · 派生往返 + 旧格式兼容', () => {
     await expectKeysRemapped(newId)
     // fixture 即 seedFullProject 的导出,行数应与重新 seed 的源项目一致
     const { projectId: freshSrc } = await seedFullProject()
-    await expectSameCounts(freshSrc, newId, new Set(['plotSimulationSessions', 'plotSimulationTurns']))
+    await expectSameCounts(freshSrc, newId, new Set(['chapterRevisions', 'plotSimulationSessions', 'plotSimulationTurns']))
+    expect(await db.chapterRevisions.where('projectId').equals(newId).count()).toBe(0)
     expect(await db.plotSimulationSessions.where('projectId').equals(newId).count()).toBe(0)
   })
 })

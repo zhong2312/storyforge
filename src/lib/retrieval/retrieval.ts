@@ -54,6 +54,7 @@ const RAG_SYSTEM_FIELDS = new Set([
   'id', 'projectId', 'createdAt', 'updatedAt', 'order',
   'worldGroupId', 'homeWorldGroupId', 'chapterId', 'sourceChapterId',
 ])
+const TENTATIVE_RAG_TABLES = new Set(['chapterRevisions', 'plotSimulationSessions', 'plotSimulationTurns'])
 
 export interface ProjectRagDocument {
   sourceTable: string
@@ -92,13 +93,14 @@ export async function buildProjectRagDocuments(args: {
   const selected = args.sourceTables?.length
     ? [...new Set(args.sourceTables)].filter(table => allowed.has(table))
     : [...allowed]
+  const scopeMetadata = await loadProjectRagScopeMetadata(storage)
   const documents: ProjectRagDocument[] = []
 
   for (const table of selected) {
     const rows = await storage.table<StorageRecord & Record<string, unknown>>(table).list()
     for (const row of rows) {
       if (row.id == null) continue
-      const projected = projectRagRecord(table, row)
+      const projected = projectRagRecord(table, row, scopeMetadata)
       if (!projected.text) continue
       const sourceTextHash = await sha256Text(projected.text)
       const pieces = splitIntoChunks(projected.text)
@@ -127,16 +129,23 @@ export async function searchProjectRag(args: {
   worldGroupId?: number | null
   currentChapterId?: number | null
   topK?: number
+  queryEmbedding?: number[] | null
+  queryEmbeddingModel?: string | null
 }): Promise<ProjectRagSearchHit[]> {
   const query = args.query.trim()
   if (!query) return []
-  const documents = await buildProjectRagDocuments(args)
+  const sourceTables = args.sourceTables?.length
+    ? args.sourceTables
+    : projectRagSourceTables().filter(table => !TENTATIVE_RAG_TABLES.has(table))
+  const documents = await buildProjectRagDocuments({ ...args, sourceTables })
   const terms = extractSearchTerms(query)
   const queryNormalized = normalizeSearchText(query)
   const chapterOrder = args.currentChapterId != null
     ? await loadChapterOrder(args.projectId, args.storage)
     : null
   const currentOrder = args.currentChapterId != null ? chapterOrder?.get(args.currentChapterId) : undefined
+  if (args.currentChapterId != null && currentOrder == null) return []
+  const semanticByDocument = await loadProjectRagSemanticScores(args, documents)
   const hits: ProjectRagSearchHit[] = []
 
   for (const document of documents) {
@@ -155,6 +164,7 @@ export async function searchProjectRag(args: {
       if (document.keywords.includes(term)) score += 2
       else if (normalizedText.includes(term)) score += 1
     }
+    score += semanticByDocument.get(ragDocumentKey(document)) ?? 0
     if (score > 0) hits.push({ ...document, score })
   }
 
@@ -178,9 +188,40 @@ export function formatProjectRagHits(query: string, hits: readonly ProjectRagSea
   ].join('\n')
 }
 
+async function loadProjectRagSemanticScores(
+  args: {
+    projectId: number
+    storage?: ProjectStoragePort
+    queryEmbedding?: number[] | null
+    queryEmbeddingModel?: string | null
+  },
+  documents: readonly ProjectRagDocument[],
+): Promise<Map<string, number>> {
+  if (!args.queryEmbedding?.length) return new Map()
+  const storage = args.storage ?? new DexieProjectStorage({ backend: 'dexie', projectId: args.projectId })
+  const current = new Map(documents.map(document => [ragDocumentKey(document), document]))
+  const chunks = await storage.table<RetrievalChunk>('retrievalChunks').list()
+  const scores = new Map<string, number>()
+  for (const chunk of chunks) {
+    if (!chunk.embedding?.length || chunk.sourceTable == null || chunk.sourceRecordId == null) continue
+    if (args.queryEmbeddingModel && chunk.embeddingModel !== args.queryEmbeddingModel) continue
+    const key = `${chunk.sourceTable}:${chunk.sourceRecordId}:${chunk.chunkIndex}`
+    const document = current.get(key)
+    if (!document || document.sourceTextHash !== chunk.sourceTextHash) continue
+    const similarity = cosineSimilarity(args.queryEmbedding, chunk.embedding)
+    if (similarity >= 0.25) scores.set(key, similarity * 6)
+  }
+  return scores
+}
+
+function ragDocumentKey(document: Pick<ProjectRagDocument, 'sourceTable' | 'sourceRecordId' | 'chunkIndex'>): string {
+  return `${document.sourceTable}:${document.sourceRecordId}:${document.chunkIndex}`
+}
+
 function projectRagRecord(
   table: string,
   row: StorageRecord & Record<string, unknown>,
+  scopeMetadata: ProjectRagScopeMetadata,
 ): { title: string; text: string; sourceChapterId: number; worldGroupId: number | null } {
   const title = firstText(row, ['name', 'title', 'label', 'entityName', 'subjectName']) || `${table} #${row.id}`
   const registered = FIELD_BY_TARGET.get(table) ?? []
@@ -196,15 +237,61 @@ function projectRagRecord(
     const label = spec?.label || spec?.aliases?.find(alias => /[\u3400-\u9fff]/.test(alias)) || field
     lines.push(`${label}：${text}`)
   }
-  const chapterCandidate = table === 'chapters' ? row.id : row.chapterId ?? row.sourceChapterId
+  const outlineNodeId = typeof row.outlineNodeId === 'number'
+    ? row.outlineNodeId
+    : table === 'outlineNodes' && typeof row.id === 'number' ? row.id : undefined
+  const simulationSessionId = typeof row.sessionId === 'number' ? row.sessionId : undefined
+  const chapterCandidate = table === 'chapters'
+    ? row.id
+    : row.chapterId ?? row.sourceChapterId
+      ?? (outlineNodeId != null ? scopeMetadata.chapterIdByOutlineNodeId.get(outlineNodeId) : undefined)
+      ?? (simulationSessionId != null ? scopeMetadata.chapterIdBySimulationSessionId.get(simulationSessionId) : undefined)
   const sourceChapterId = typeof chapterCandidate === 'number' && Number.isFinite(chapterCandidate)
     ? chapterCandidate
     : 0
   const worldCandidate = row.worldGroupId ?? row.homeWorldGroupId
+    ?? (outlineNodeId != null ? scopeMetadata.worldGroupIdByOutlineNodeId.get(outlineNodeId) : undefined)
+    ?? (simulationSessionId != null ? scopeMetadata.worldGroupIdBySimulationSessionId.get(simulationSessionId) : undefined)
   const worldGroupId = typeof worldCandidate === 'number' && Number.isFinite(worldCandidate)
     ? worldCandidate
     : null
   return { title, text: lines.length > 1 ? lines.join('\n') : '', sourceChapterId, worldGroupId }
+}
+
+interface ProjectRagScopeMetadata {
+  chapterIdByOutlineNodeId: ReadonlyMap<number, number>
+  worldGroupIdByOutlineNodeId: ReadonlyMap<number, number | null>
+  chapterIdBySimulationSessionId: ReadonlyMap<number, number>
+  worldGroupIdBySimulationSessionId: ReadonlyMap<number, number | null>
+}
+
+async function loadProjectRagScopeMetadata(storage: ProjectStoragePort): Promise<ProjectRagScopeMetadata> {
+  const [outlineNodes, chapters, simulationSessions] = await Promise.all([
+    storage.table<OutlineNode>('outlineNodes').list(),
+    storage.table<Chapter>('chapters').list(),
+    storage.table<StorageRecord & Record<string, unknown>>('plotSimulationSessions').list(),
+  ])
+  const chapterIdByOutlineNodeId = new Map<number, number>()
+  const worldGroupIdByOutlineNodeId = new Map<number, number | null>()
+  const chapterIdBySimulationSessionId = new Map<number, number>()
+  const worldGroupIdBySimulationSessionId = new Map<number, number | null>()
+  for (const entry of resolveCanonicalChapterSequence(outlineNodes, chapters).sequence) {
+    if (entry.chapter.id == null) continue
+    chapterIdByOutlineNodeId.set(entry.chapter.outlineNodeId, entry.chapter.id)
+    worldGroupIdByOutlineNodeId.set(entry.chapter.outlineNodeId, entry.worldGroupId)
+  }
+  for (const session of simulationSessions) {
+    if (session.id == null) continue
+    if (typeof session.chapterId === 'number') chapterIdBySimulationSessionId.set(session.id, session.chapterId)
+    const worldGroupId = typeof session.worldGroupId === 'number' ? session.worldGroupId : null
+    worldGroupIdBySimulationSessionId.set(session.id, worldGroupId)
+  }
+  return {
+    chapterIdByOutlineNodeId,
+    worldGroupIdByOutlineNodeId,
+    chapterIdBySimulationSessionId,
+    worldGroupIdBySimulationSessionId,
+  }
 }
 
 function firstText(row: Record<string, unknown>, fields: readonly string[]): string {

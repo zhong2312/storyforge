@@ -201,11 +201,20 @@ async function readChapterIndex(
   return `【章节索引（规范章序）】\n${lines.join('\n')}${anomaly}`
 }
 
-async function readCharacters(projectId: number, worldGroupId?: number | null, storage?: ProjectStoragePort): Promise<Character[]> {
+async function readCharacters(
+  projectId: number,
+  worldGroupId?: number | null,
+  storage?: ProjectStoragePort,
+  characterIds?: readonly number[],
+): Promise<Character[]> {
   const rows = await readProjectRows<Character>('characters', projectId, storage)
-  if (worldGroupId === undefined) return rows
+  if (characterIds?.length) {
+    return rows.filter(character => character.id != null && characterIds.includes(character.id))
+  }
+  const visible = rows
+  if (worldGroupId === undefined) return visible
   const wg = worldGroupId ?? null
-  return rows.filter(c => c.isCrossWorld || (c.homeWorldGroupId ?? null) === wg)
+  return visible.filter(c => c.isCrossWorld || (c.homeWorldGroupId ?? null) === wg)
 }
 
 async function readForeshadows(projectId: number, chapterId?: number | null, storage?: ProjectStoragePort): Promise<string> {
@@ -439,18 +448,33 @@ async function readRetrievedPassages(projectId: number, chapterId?: number | nul
   const mentioned = charNames.filter(n => summary.includes(n))
   const queryTerms = mentioned.length ? mentioned : charNames // 摘要没提具体角色 → 用全部角色作宽召回
   if (storage) {
-    const [chunks, chapters, summaries] = await Promise.all([
+    const [chunks, chapters, outlineNodes, summaries] = await Promise.all([
       readProjectRows<any>('retrievalChunks', projectId, storage),
       readProjectRows<Chapter>('chapters', projectId, storage),
+      readProjectRows<OutlineNode>('outlineNodes', projectId, storage),
       readProjectRows<any>('narrativeSummaryNodes', projectId, storage),
     ])
+    const orderOf = new Map<number, number>()
+    resolveCanonicalChapterSequence(outlineNodes, chapters).sequence.forEach((entry, index) => {
+      if (entry.chapter.id != null) orderOf.set(entry.chapter.id, index)
+    })
+    const currentOrder = orderOf.get(chapterId)
+    if (currentOrder == null) return ''
     const titleOf = new Map(chapters.filter(c => c.id != null).map(c => [c.id!, c.title]))
     const hierarchy = summaries
-      .filter(item => item.status === 'ready' && (item.worldGroupId == null || item.worldGroupId === (worldGroupId ?? null)))
+      .filter(item => item.level === 'chapter' && item.status === 'verified')
+      .filter(item => item.worldGroupId == null || item.worldGroupId === (worldGroupId ?? null))
+      .filter(item => {
+        const sourceOrder = orderOf.get(item.sourceChapterId)
+        return sourceOrder != null && sourceOrder < currentOrder
+      })
       .slice(-12)
       .map(item => `- ${item.title || item.nodeType || '摘要'}：${item.summary || ''}`)
     const hits = chunks
-      .filter(chunk => chunk.sourceChapterId !== chapterId)
+      .filter(chunk => {
+        const sourceOrder = orderOf.get(chunk.sourceChapterId)
+        return sourceOrder != null && sourceOrder < currentOrder
+      })
       .filter(chunk => chunk.worldGroupId == null || chunk.worldGroupId === (worldGroupId ?? null))
       .filter(chunk => queryTerms.length === 0 || queryTerms.some(term => String(chunk.text || '').includes(term)))
       .slice(-6)
@@ -485,6 +509,10 @@ async function readRetrievedPassages(projectId: number, chapterId?: number | nul
 async function readProjectRag(input: AssembleContextInput): Promise<string> {
   const query = input.retrievalQuery?.trim()
   if (!query) return ''
+  const embedding = useAIConfigStore.getState().embedding
+  const queryEmbedding = isEmbeddingReady(embedding)
+    ? await embedQuery(query.slice(0, 1000), embedding, input.projectId)
+    : null
   const hits = await searchProjectRag({
     projectId: input.projectId,
     storage: input.storage,
@@ -493,6 +521,8 @@ async function readProjectRag(input: AssembleContextInput): Promise<string> {
     worldGroupId: input.worldGroupId,
     currentChapterId: input.chapterId,
     topK: input.retrievalTopK,
+    queryEmbedding,
+    queryEmbeddingModel: queryEmbedding ? embeddingModelTag(embedding) : null,
   })
   return formatProjectRagHits(query, hits)
 }
@@ -717,7 +747,10 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     layer: 'L2',
     budgetTokens: 8000, // 放宽:容下完整角色档案(核心角色不再被砍残)
     requiresWorldGroupId: true,
-    read: async input => buildCharacterContext(await readCharacters(input.projectId, input.worldGroupId, input.storage)),
+    read: async input => buildCharacterContext(
+      await readCharacters(input.projectId, input.worldGroupId, input.storage, input.characterIds),
+      Boolean(input.characterIds?.length),
+    ),
   },
   {
     key: 'creativeRules',

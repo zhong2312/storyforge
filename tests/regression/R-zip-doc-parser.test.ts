@@ -36,4 +36,13 @@ describe('ZIP 多级目录文档解析', () => {
     const file = await zipFile({ '图片/封面.png': 'x', '资料/readme.exe': 'x' })
     await expect(extractTextFromFile(file)).rejects.toThrow('ZIP 中没有可解析的文档')
   })
+
+  it('在解压前拒绝超过单文件上限的高压缩比条目', async () => {
+    const zip = new JSZip()
+    zip.file('资料/超大.txt', 'x'.repeat(6 * 1024 * 1024))
+    const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    const file = new File([new Uint8Array(bytes).buffer], '压缩炸弹.zip', { type: 'application/zip' })
+
+    await expect(extractTextFromFile(file)).rejects.toThrow('.txt 文件最大 5 MB')
+  })
 })

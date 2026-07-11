@@ -73,4 +73,22 @@ describe('R-C3-dimension-coverage', () => {
       ending: '主动放弃权位，远行求道',
     })
   })
+
+  it('每个界面维度标签都可作为 Agent 字段名采纳', async () => {
+    const now = Date.now()
+    const projectId = await db.projects.add({ name: 'P', genre: 'x', createdAt: now, updatedAt: now } as any) as number
+    const data = Object.fromEntries(CHARACTER_DIMENSIONS.map(dimension => [dimension.label, `标签值-${dimension.key}`]))
+    const result = await adopt({
+      projectId,
+      target: 'characters',
+      mode: 'add',
+      data: { name: '标签角色', roleWeight: 'main', moralAxis: 'neutral', orderAxis: 'neutral', ...data },
+    })
+
+    expect(result.unknown).toEqual([])
+    const row = await db.characters.where('projectId').equals(projectId).first()
+    for (const dimension of CHARACTER_DIMENSIONS) {
+      expect((row as any)[dimension.key]).toBe(`标签值-${dimension.key}`)
+    }
+  })
 })

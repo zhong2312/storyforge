@@ -111,8 +111,9 @@ export const PROJECT_TABLES: TableSpec[] = [
     ],
     exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes', exportAs: '_outlineExportId', onUnmapped: 'require' }] },
 
-  { table: db.chapterRevisions, name: 'chapterRevisions', owner: 'project', exportable: false,
-    note: '章节正文的本地版本历史；随章节/项目删除，不进入项目导出' },
+  { table: db.chapterRevisions, name: 'chapterRevisions', owner: 'project', exportable: true,
+    exportRemap: [{ field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId', onUnmapped: 'drop' }],
+    note: '章节正文版本历史；随章节/项目删除，并进入完整项目备份' },
 
   { table: db.plotSimulationSessions, name: 'plotSimulationSessions', owner: 'project',
     worldScoped: true, exportable: true,

@@ -83,7 +83,9 @@ function patchSelfIdPaths(obj: Record<string, any>, paths: string[], newId: numb
  * 与手写 importProjectJSON 行为一致(往返完整性由 R-export-fullcoverage 锁死)。
  */
 export async function deriveImportProjectJSON(data: ProjectExportData): Promise<number> {
-  if (!data.version || !data.project) throw new Error('无效的导出文件格式')
+  if (!Number.isInteger(data.version) || data.version < 1 || data.version > 4 || !data.project) {
+    throw new Error(`不支持的导出文件版本：${String(data.version)}`)
+  }
   const now = Date.now()
   const specs = PROJECT_TABLES.filter(s => s.exportable && s.name !== 'projects')
   const order = deriveImportOrder(specs)

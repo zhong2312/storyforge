@@ -134,6 +134,42 @@ describe('R-AI-CONFIG · API Key 存储策略', () => {
     expect(JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}').providers).toHaveLength(1)
   })
 
+  it('迁移旧预设时保留同模型的不同参数和预设名称', async () => {
+    const base = {
+      provider: 'openai', apiKey: 'sk-old', baseUrl: 'https://example.com/v1',
+      model: 'writer-v1', temperature: 0.4, maxTokens: 4096, contextWindow: 64000,
+    }
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(base))
+    localStorage.setItem('storyforge-ai-presets', JSON.stringify([
+      { id: 'a', name: '长篇正文', config: { ...base, temperature: 0.7, maxTokens: 12000 } },
+      { id: 'b', name: '精修模式', config: { ...base, temperature: 0.2, maxTokens: 6000 } },
+    ]))
+
+    const useAIConfigStore = await freshStore()
+    expect(useAIConfigStore.getState().providerConfigs.map(provider => provider.name))
+      .toEqual(['默认供应商', '长篇正文', '精修模式'])
+    expect(useAIConfigStore.getState().providerConfigs.map(provider => provider.models[0].temperature))
+      .toEqual([0.4, 0.7, 0.2])
+  })
+
+  it('测试连接归一化 Base URL 后同步模型目录并可跨重载保留', async () => {
+    const useAIConfigStore = await freshStore()
+    useAIConfigStore.getState().setConfig({ baseUrl: 'https://api.deepseek.com/v1/chat/completions' })
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '连接成功' } }] }),
+      json: async () => ({ choices: [{ message: { content: '连接成功' } }] }),
+    })))
+
+    expect((await useAIConfigStore.getState().testConnection()).ok).toBe(true)
+    const normalized = useAIConfigStore.getState().config.baseUrl
+    expect(useAIConfigStore.getState().resolveConfigForScene('chat').baseUrl).toBe(normalized)
+
+    const reloaded = await freshStore()
+    expect(reloaded.getState().resolveConfigForScene('chat').baseUrl).toBe(normalized)
+  })
+
   it('支持多个供应商、多个模型及五类场景绑定', async () => {
     const useAIConfigStore = await freshStore()
     const secondProviderId = useAIConfigStore.getState().addProviderConfig('openai')

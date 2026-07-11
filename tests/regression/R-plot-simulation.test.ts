@@ -56,8 +56,8 @@ describe('剧情自动推演', () => {
     const projectId = await createProject()
     const providerConfigs = providerCatalog()
     const ref = (modelId: string) => ({ providerConfigId: 'provider', modelId })
-    const firstId = await db.characters.add({ ...character('沈砚', projectId), simulationModelRef: ref('actor-a') }) as number
-    const secondId = await db.characters.add({ ...character('闻铃', projectId), simulationModelRef: ref('actor-b') }) as number
+    const firstId = await db.characters.add({ ...character('沈砚', projectId), background: '沈砚私密身世', simulationModelRef: ref('actor-a') }) as number
+    const secondId = await db.characters.add({ ...character('闻铃', projectId), background: '闻铃秘密动机', simulationModelRef: ref('actor-b') }) as number
     const sessionResult = await adopt({
       projectId,
       target: 'plotSimulationSessions',
@@ -76,9 +76,9 @@ describe('剧情自动推演', () => {
       { intent: '寻找双赢出口', action: '启动排水机关', dialogue: '一起走。', innerThought: '机关还能运转', stateChange: '取得机关控制权' },
       { narration: '潮水撞上石阶。'.repeat(30), summary: '两人合作打开排水机关', worldChanges: ['神殿停止坍塌'], unresolvedHooks: ['机关唤醒未知存在'] },
     ]
-    const bodies: Array<{ model: string }> = []
+    const bodies: Array<{ model: string; messages: Array<{ content: string }> }> = []
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)) as { model: string })
+      bodies.push(JSON.parse(String(init?.body)) as { model: string; messages: Array<{ content: string }> })
       const content = JSON.stringify(responses.shift())
       return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) } as Response
     }))
@@ -97,12 +97,72 @@ describe('剧情自动推演', () => {
     })
 
     expect(bodies.map(body => body.model)).toEqual(['narrator-model', 'actor-a-model', 'actor-b-model', 'narrator-model'])
+    expect(JSON.stringify(bodies[1].messages)).toContain('沈砚私密身世')
+    expect(JSON.stringify(bodies[1].messages)).not.toContain('闻铃秘密动机')
+    expect(JSON.stringify(bodies[2].messages)).toContain('闻铃秘密动机')
+    expect(JSON.stringify(bodies[2].messages)).not.toContain('沈砚私密身世')
     expect(stages).toEqual(['world', 'character', 'character', 'narrator', 'saved'])
     expect(turns).toHaveLength(1)
     expect(turns[0].characterActions.map(action => action.characterName)).toEqual(['沈砚', '闻铃'])
     expect(turns[0].narration).toContain('潮水撞上石阶')
     expect(await db.plotSimulationTurns.where('sessionId').equals(session.id).count()).toBe(1)
     expect(await db.plotSimulationSessions.get(session.id)).toMatchObject({ status: 'completed', currentTurn: 1 })
+  })
+
+  it('续跑以已保存回合为检查点，不重复生成已完成回合', async () => {
+    const projectId = await createProject()
+    const ref = (modelId: string) => ({ providerConfigId: 'provider', modelId })
+    const characterId = await db.characters.add({ ...character('闻铃', projectId), simulationModelRef: ref('actor-a') }) as number
+    const sessionResult = await adopt({
+      projectId,
+      target: 'plotSimulationSessions',
+      mode: 'add',
+      data: {
+        sessionKey: 'resume', title: '续跑', premise: '城门将破', goal: '继续行动', status: 'failed',
+        selectedCharacterIds: [characterId], narratorModelRef: ref('narrator'),
+        defaultCharacterModelRef: ref('actor-a'), plannedTurns: 2, currentTurn: 0,
+      },
+    })
+    const session = await db.plotSimulationSessions.get(sessionResult.written[0].id) as PlotSimulationSession & { id: number }
+    const previous = {
+      id: 99,
+      projectId,
+      sessionId: session.id,
+      turnNumber: 1,
+      worldState: { pressure: '旧压力', events: [], constraints: [] },
+      characterActions: [],
+      narration: '第一回合已完成。'.repeat(30),
+      summary: '第一回合',
+      worldChanges: [],
+      unresolvedHooks: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.plotSimulationTurns.add(previous as any)
+    const responses = [
+      { pressure: '新压力', events: [], constraints: [] },
+      { intent: '守城', action: '登城', dialogue: '', innerThought: '', stateChange: '无' },
+      { narration: '第二回合继续推进。'.repeat(30), summary: '第二回合', worldChanges: [], unresolvedHooks: [] },
+    ]
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      calls.push((JSON.parse(String(init?.body)) as { model: string }).model)
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] }) } as Response
+    }))
+
+    const turns = await runPlotSimulation({
+      projectId,
+      session,
+      characters: [{ ...character('闻铃', projectId), id: characterId, simulationModelRef: ref('actor-a') }],
+      existingTurns: [previous as any],
+      providerConfigs: providerCatalog(),
+      sceneBindings: { settings: ref('actor-a'), chapter: ref('narrator') },
+      activeModelRef: ref('narrator'),
+    })
+    expect(calls).toEqual(['narrator-model', 'actor-a-model', 'narrator-model'])
+    expect(turns.map(turn => turn.turnNumber)).toEqual([1, 2])
+    expect(await db.plotSimulationTurns.where('sessionId').equals(session.id).count()).toBe(2)
+    expect(await db.plotSimulationSessions.get(session.id)).toMatchObject({ currentTurn: 2, status: 'completed' })
   })
 })
 
