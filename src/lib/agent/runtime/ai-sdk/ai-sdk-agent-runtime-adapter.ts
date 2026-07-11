@@ -119,7 +119,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           }
           const output = await registry.execute(toolName, context, toolInput)
           if (toolName === CONTEXT_READ_TOOL) {
-            for (const source of stringArrayField(asRecord(toolInput), 'sourceKeys')) {
+            for (const source of stringArrayField(asRecord(output), 'included')) {
               readContextSources.add(source)
             }
           }
@@ -187,7 +187,6 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     if (!decision || decision.approvalId !== pending.approvalId) {
       throw new Error('[agent-runtime] matching approval decision is required')
     }
-    this.#pending.delete(runId)
     const { input } = pending
     yield this.append(runId, input.conversationId, 'approval.resolved', {
       approvalId: decision.approvalId,
@@ -195,6 +194,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     })
 
     if (decision.decision !== 'approved') {
+      this.#pending.delete(runId)
       this.dependencies.discardPlan?.(pending.planId)
       const text = decision.decision === 'edited'
         ? '上一版候选已作废，项目数据未修改。正在按你的调整要求重新生成。'
@@ -234,6 +234,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
       const text = pending.preview?.target === 'chapters'
         ? '已采纳最终版本并写入当前章节。'
         : '已采纳最终方案并更新项目。'
+      this.#pending.delete(runId)
       yield this.append(runId, input.conversationId, 'message.completed', { text })
       yield this.append(runId, input.conversationId, 'run.completed', { summary: text })
     } catch (error) {
@@ -242,7 +243,14 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         toolName: COMMIT_TOOL,
         error: errorMessage(error),
       })
-      yield this.append(runId, input.conversationId, 'run.failed', { error: errorMessage(error) })
+      const retry = { ...pending, approvalId: nanoid() }
+      this.#pending.set(runId, retry)
+      yield this.append(runId, input.conversationId, 'approval.requested', {
+        approvalId: retry.approvalId,
+        planId: retry.planId,
+        summary: `写入失败：${errorMessage(error)}。可重试采纳、调整或放弃。`,
+        preview: retry.preview,
+      })
     } finally {
       this.#active.delete(runId)
     }

@@ -135,6 +135,53 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     }))).rejects.toThrow('not awaiting approval')
   })
 
+  it('keeps a proposal pending when commit fails and allows retry', async () => {
+    const registry = proposalRegistry()
+    let attempts = 0
+    registry.register({
+      name: 'storyforge.change.commit',
+      title: '提交变更',
+      description: 'commit',
+      inputSchema: { type: 'object' },
+      risk: 'write',
+      availability: 'both',
+      requiredScopes: ['project:write'],
+      async execute() {
+        attempts += 1
+        if (attempts === 1) throw new Error('temporary write failure')
+        return { written: [{}] }
+      },
+    })
+    const runtime = createRuntime(registry, proposalStreamer())
+    const first = await collect(runtime.run(runInput()))
+    const runId = first[0].runId
+
+    const failed = await collect(runtime.resume(runId, {
+      approvalId: 'approval-1', decision: 'approved',
+    }))
+
+    const retryApproval = failed.at(-1)
+    expect(retryApproval).toMatchObject({
+      type: 'approval.requested',
+      payload: {
+        summary: expect.stringContaining('temporary write failure'),
+      },
+    })
+    if (retryApproval?.type !== 'approval.requested') throw new Error('missing retry approval')
+    expect(retryApproval.payload.approvalId).not.toBe('approval-1')
+    expect(failed.some(event => event.type === 'run.failed')).toBe(false)
+
+    const retried = await collect(runtime.resume(runId, {
+      approvalId: retryApproval.payload.approvalId, decision: 'approved',
+    }))
+
+    expect(attempts).toBe(2)
+    expect(retried.at(-1)?.type).toBe('run.completed')
+    await expect(collect(runtime.resume(runId, {
+      approvalId: 'approval-1', decision: 'approved',
+    }))).rejects.toThrow('not awaiting approval')
+  })
+
   it('fails instead of reporting success when a constrained chapter run only reads context', async () => {
     const registry = chapterProposalRegistry()
     const streamer: AgentLoopStreamer = async function* (request) {
@@ -200,6 +247,30 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       target: 'chapters', mode: 'replace', recordId: 12, data: { content: validContent },
     })
     expect(events.some(event => event.type === 'run.completed')).toBe(false)
+  })
+
+  it('counts only context sources actually included by the read tool', async () => {
+    const registry = chapterProposalRegistry({ included: [] })
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const proposal = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: { content: '正文'.repeat(30) },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: proposal }
+      await request.execute('storyforge.change.propose', proposal)
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput()))
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed', payload: { error: expect.stringContaining('先读取上下文源 chapterOutline') },
+    })
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
   })
 
   it('rejects a chapter proposal targeting a different record', async () => {
@@ -452,7 +523,7 @@ function proposalRegistry(): ToolRegistry {
   return registry
 }
 
-function chapterProposalRegistry(): ToolRegistry {
+function chapterProposalRegistry(contextOutput?: unknown): ToolRegistry {
   const registry = new ToolRegistry()
   registry.register({
     name: 'storyforge.context.read',
@@ -463,7 +534,7 @@ function chapterProposalRegistry(): ToolRegistry {
     availability: 'both',
     requiredScopes: ['project:read'],
     async execute(_context, input) {
-      return { included: (input as { sourceKeys?: string[] }).sourceKeys ?? [] }
+      return contextOutput ?? { included: (input as { sourceKeys?: string[] }).sourceKeys ?? [] }
     },
   })
   registry.register({
