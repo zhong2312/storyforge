@@ -41,13 +41,14 @@ import type {
   StoryTimelineEvent,
   CodexCategory,
   CodexEntry,
+  ChapterRevision,
 } from '../types'
 import type { AIUsageEntry } from '../ai/usage-log'
 import type { TemporalFact } from '../types/temporal-fact'
 import type { RetrievalChunk } from '../types/retrieval-chunk'
 import type { NarrativeSummaryNode } from '../types/narrative-summary'
 
-class StoryForgeDB extends Dexie {
+export class StoryForgeDB extends Dexie {
   projects!: Table<Project>
   worldviews!: Table<Worldview>
   storyCores!: Table<StoryCore>
@@ -129,8 +130,11 @@ class StoryForgeDB extends Dexie {
   // NS-5 —— 章→卷→全书层级摘要树（可重建派生缓存，不导出）
   narrativeSummaryNodes!: Table<NarrativeSummaryNode, number>
 
-  constructor() {
-    super('storyforge')
+  // 章节正文历史（本地版本，不进入项目导出）
+  chapterRevisions!: Table<ChapterRevision, number>
+
+  constructor(databaseName = 'storyforge') {
+    super(databaseName)
 
     this.version(1).stores({
       projects: '++id, name, createdAt, updatedAt',
@@ -368,6 +372,11 @@ class StoryForgeDB extends Dexie {
     // 老项目通过设置页“建立检索索引”或生成上下文前按需重建。
     this.version(37).stores({
       narrativeSummaryNodes: '++id, projectId, worldGroupId, level, sourceChapterId, sourceOutlineNodeId, status',
+    })
+
+    // v38: 章节正文历史。纯新增空表，旧章节正文不迁移、不改写。
+    this.version(38).stores({
+      chapterRevisions: '++id, projectId, chapterId, createdAt, source',
     })
   }
 }

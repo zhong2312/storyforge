@@ -3,6 +3,7 @@ import Dexie from 'dexie'
 export const REQUIRED_TABLES = [
   'aiUsageLog',
   'chapters',
+  'chapterRevisions',
   'characterRelations',
   'characters',
   'codexCategories',

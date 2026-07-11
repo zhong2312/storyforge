@@ -12,6 +12,8 @@ import { ADOPTION_BY_TARGET } from './adoption-schema'
 import type { AdoptInput, AdoptResult, CollectionAdoptionSpec, FieldSpec, TableSpec } from './types'
 import { normalizeCharacterAxes } from '../character/character-axes'
 import type { ProjectStoragePort, StorageRecord, StorageTable } from '../storage/ports'
+import { dexieRevisionWriter, recordChapterRevision, storageRevisionWriter } from '../chapters/revisions'
+import type { Chapter, ChapterRevision } from '../types'
 
 export interface AdoptOptions {
   /** 活动项目存储；未传时保持现有 Dexie 行为。 */
@@ -83,9 +85,54 @@ async function adoptCollectionRecord(
   }
 
   patch.updatedAt = Date.now()
-  await table.update(input.recordId!, patch as any)
+  if (input.target === 'chapters' && typeof patch.content === 'string' && patch.content !== target.content) {
+    await writeChapterPatchWithRevision(input, tableSpec, patch, storage)
+  } else {
+    await table.update(input.recordId!, patch as any)
+  }
   result.written.push({ id: input.recordId!, fields: Object.keys(patch) })
   return result
+}
+
+async function writeChapterPatchWithRevision(
+  input: AdoptInput,
+  tableSpec: TableSpec,
+  patch: Record<string, unknown>,
+  storage?: ProjectStoragePort,
+): Promise<void> {
+  const revisionSpec = REGISTRY_BY_NAME.get('chapterRevisions')
+  if (!revisionSpec) throw new Error('[adopt] chapterRevisions 不在 PROJECT_TABLES')
+
+  if (storage) {
+    await storage.transaction('readwrite', [tableSpec.name, revisionSpec.name], async transaction => {
+      const chapters = transaction.table<Chapter>(tableSpec.name)
+      const revisions = transaction.table<ChapterRevision>(revisionSpec.name)
+      const current = await chapters.get(input.recordId!)
+      if (!current || current.projectId !== input.projectId) {
+        throw new Error(`[adopt] chapter ${input.recordId} 在写回事务中不存在`)
+      }
+      await recordChapterRevision(storageRevisionWriter(revisions), current, String(patch.content), {
+        source: 'agent',
+        label: '采纳 AI 正文前',
+        coalesceEdits: false,
+      })
+      await chapters.update(input.recordId!, patch)
+    })
+    return
+  }
+
+  await db.transaction('rw', tableSpec.table, revisionSpec.table, async () => {
+    const current = await db.chapters.get(input.recordId!)
+    if (!current || current.projectId !== input.projectId) {
+      throw new Error(`[adopt] chapter ${input.recordId} 在写回事务中不存在`)
+    }
+    await recordChapterRevision(dexieRevisionWriter(db.chapterRevisions), current, String(patch.content), {
+      source: 'agent',
+      label: '采纳 AI 正文前',
+      coalesceEdits: false,
+    })
+    await db.chapters.update(input.recordId!, patch as Partial<Chapter>)
+  })
 }
 
 async function adoptChapterMemoryRecordWithCas(

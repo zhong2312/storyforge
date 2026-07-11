@@ -3,7 +3,14 @@ import { db } from '../lib/db/schema'
 import { detachTemporalFactsForDeletedChapters } from '../lib/fact-ledger/lifecycle'
 import { pickBestChapterForOutline } from '../lib/chapters/selectors'
 import { transactionTablesFor } from '../lib/registry/lifecycle'
-import type { Chapter } from '../lib/types'
+import { dexieRevisionWriter, recordChapterRevision } from '../lib/chapters/revisions'
+import type { Chapter, ChapterRevisionSource } from '../lib/types'
+
+interface ChapterUpdateOptions {
+  revisionSource?: ChapterRevisionSource
+  revisionLabel?: string
+  coalesceEdits?: boolean
+}
 
 interface ChapterStore {
   chapters: Chapter[]
@@ -18,7 +25,8 @@ interface ChapterStore {
     outlineNodeId: number,
     create: Omit<Chapter, 'id' | 'projectId' | 'outlineNodeId' | 'createdAt' | 'updatedAt'>,
   ) => Promise<Chapter>
-  updateChapter: (id: number, data: Partial<Chapter>) => Promise<void>
+  updateChapter: (id: number, data: Partial<Chapter>, options?: ChapterUpdateOptions) => Promise<void>
+  restoreChapterRevision: (revisionId: number) => Promise<boolean>
   /** adopt()/事务写回后只刷新内存，不重复写数据库。 */
   refreshChapter: (id: number) => Promise<void>
   deleteChapter: (id: number) => Promise<void>
@@ -91,9 +99,27 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
     return chapter
   },
 
-  updateChapter: async (id, data) => {
-    const updated = { ...data, updatedAt: now() }
-    await db.chapters.update(id, updated)
+  updateChapter: async (id, data, options) => {
+    const updatedAt = now()
+    const updated = { ...data, updatedAt }
+    await db.transaction('rw', db.chapters, db.chapterRevisions, async () => {
+      const chapter = await db.chapters.get(id)
+      if (!chapter) return
+      if (Object.prototype.hasOwnProperty.call(data, 'content') && typeof data.content === 'string') {
+        await recordChapterRevision(
+          dexieRevisionWriter(db.chapterRevisions),
+          chapter,
+          data.content,
+          {
+            source: options?.revisionSource ?? 'edit',
+            label: options?.revisionLabel,
+            now: updatedAt,
+            coalesceEdits: options?.coalesceEdits ?? true,
+          },
+        )
+      }
+      await db.chapters.update(id, updated)
+    })
     if (Object.prototype.hasOwnProperty.call(data, 'content')) {
       const projectId = get().chapters.find(c => c.id === id)?.projectId ?? (await db.chapters.get(id))?.projectId
       if (projectId != null) {
@@ -113,6 +139,52 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
       ? { ...get().currentChapter!, ...updated }
       : get().currentChapter
     set({ chapters, currentChapter })
+  },
+
+  restoreChapterRevision: async (revisionId) => {
+    const restoredAt = now()
+    let restored: Chapter | undefined
+    await db.transaction('rw', db.chapters, db.chapterRevisions, async () => {
+      const revision = await db.chapterRevisions.get(revisionId)
+      if (!revision) return
+      const chapter = await db.chapters.get(revision.chapterId)
+      if (!chapter || chapter.projectId !== revision.projectId) return
+      if (chapter.content === revision.content) {
+        restored = chapter
+        return
+      }
+      await recordChapterRevision(
+        dexieRevisionWriter(db.chapterRevisions),
+        chapter,
+        revision.content,
+        {
+          source: 'restore',
+          label: `恢复前版本（${new Date(restoredAt).toLocaleString('zh-CN')}）`,
+          now: restoredAt,
+          coalesceEdits: false,
+        },
+      )
+      await db.chapters.update(chapter.id!, {
+        content: revision.content,
+        wordCount: revision.wordCount,
+        updatedAt: restoredAt,
+      })
+      restored = { ...chapter, content: revision.content, wordCount: revision.wordCount, updatedAt: restoredAt }
+    })
+    if (!restored?.id) return false
+
+    const summaryNodes = await db.narrativeSummaryNodes.where('projectId').equals(restored.projectId).toArray()
+    for (const node of summaryNodes) {
+      if (node.id == null) continue
+      if (node.level === 'book' || node.level === 'volume' || node.sourceChapterId === restored.id) {
+        await db.narrativeSummaryNodes.update(node.id, { status: 'stale', updatedAt: restoredAt })
+      }
+    }
+    set({
+      chapters: get().chapters.map(chapter => chapter.id === restored!.id ? restored! : chapter),
+      currentChapter: get().currentChapter?.id === restored.id ? restored : get().currentChapter,
+    })
+    return true
   },
 
   refreshChapter: async (id) => {
@@ -138,6 +210,9 @@ export const useChapterStore = create<ChapterStore>((set, get) => ({
       const beatKeys = (await db.emotionBeatCards
         .where('chapterId').anyOf(ids).primaryKeys()) as number[]
       if (beatKeys.length) await db.emotionBeatCards.bulkDelete(beatKeys)
+      const revisionKeys = (await db.chapterRevisions
+        .where('chapterId').anyOf(ids).primaryKeys()) as number[]
+      if (revisionKeys.length) await db.chapterRevisions.bulkDelete(revisionKeys)
       const chunkKeys = (await db.retrievalChunks
         .where('sourceChapterId').anyOf(ids).primaryKeys()) as number[]
       if (chunkKeys.length) await db.retrievalChunks.bulkDelete(chunkKeys)

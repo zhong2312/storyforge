@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote } from 'lucide-react'
+import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote, History } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
 import { useStateCardStore } from '../../stores/state-card'
@@ -25,6 +25,7 @@ import { pickBestChapterForOutline } from '../../lib/chapters/selectors'
 import { useStoryArcStore } from '../../stores/story-arc'
 import { useForeshadowStore } from '../../stores/foreshadow'
 import { htmlToPlainText, countWords } from '../../lib/utils/html'
+import { ChapterHistoryDialog } from './ChapterHistoryDialog'
 import { useDialog } from '../shared/Dialog'
 import { useAIConfigStore } from '../../stores/ai-config'
 import StateDiffModal from '../state/StateDiffModal'
@@ -83,6 +84,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [plainText, setPlainText] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [showContext, setShowContext] = useState(false)
+  const [showChapterHistory, setShowChapterHistory] = useState(false)
   const [customInstruction, setCustomInstruction] = useState('')
   const [extracting, setExtracting] = useState(false)
   const [extractingFacts, setExtractingFacts] = useState(false)
@@ -148,7 +150,10 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     const html = editorRef.current?.getHTML() ?? content
     const plain = editorRef.current?.getPlainText() ?? htmlToPlainText(html)
     const wc = countWords(plain)
-    await updateChapter(currentChapter.id, { content: html, wordCount: wc })
+    await updateChapter(currentChapter.id, { content: html, wordCount: wc }, {
+      revisionSource: 'manual',
+      coalesceEdits: false,
+    })
     setContent(html)
     setPlainText(plain)
     setSavedContent(html)
@@ -711,6 +716,14 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-bg-hover hover:text-accent">
             <Save className="w-3.5 h-3.5" /> 保存
           </button>
+          <button
+            onClick={() => {
+              void persistCurrentEditorContent().then(() => setShowChapterHistory(true))
+            }}
+            className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-bg-hover hover:text-accent"
+          >
+            <History className="w-3.5 h-3.5" /> 正文历史
+          </button>
         </div>
       </div>
 
@@ -1090,6 +1103,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           onConfirm={handleAcceptDiffs}
           onCancel={() => { setPendingDiffs(null); stateAI.reset() }}
           showSkip={autoProcessing !== 'idle'}
+        />
+      )}
+      {showChapterHistory && currentChapter.id && (
+        <ChapterHistoryDialog
+          chapterId={currentChapter.id}
+          chapterTitle={chapterDisplay?.title ?? currentChapter.title}
+          onClose={() => setShowChapterHistory(false)}
         />
       )}
     </div>

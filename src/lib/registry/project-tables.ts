@@ -106,9 +106,13 @@ export const PROJECT_TABLES: TableSpec[] = [
     selfIdPaths: ['continuityHandoff.chapterId', 'planReconciliation.chapterId'],
     refs: [
       { kind: 'simple', field: 'id', target: 'emotionBeatCards[chapterId]', onDelete: 'cascade' },
+      { kind: 'simple', field: 'id', target: 'chapterRevisions[chapterId]', onDelete: 'cascade' },
       // 软引用:itemLedger/storyTimelineEvents 的 chapterId 保留(独立产物,见 chapter store 注释)
     ],
     exportRemap: [{ field: 'outlineNodeId', remapVia: 'outlineNodes', exportAs: '_outlineExportId', onUnmapped: 'require' }] },
+
+  { table: db.chapterRevisions, name: 'chapterRevisions', owner: 'project', exportable: false,
+    note: '章节正文的本地版本历史；随章节/项目删除，不进入项目导出' },
 
   { table: db.detailedOutlines, name: 'detailedOutlines', owner: 'project', exportable: true,
     refs: [
