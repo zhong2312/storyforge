@@ -1,8 +1,8 @@
 import type {
   StoryForgeTool,
   ToolAvailability,
+  ToolDescriptor,
   ToolExecutionContext,
-  ToolRisk,
   ToolScope,
 } from './tool-types'
 
@@ -20,17 +20,9 @@ function hasScopes(
   return required.every(scope => granted.has(scope))
 }
 
-interface RegisteredToolDescriptor extends StoryForgeTool {
-  readonly name: string
-  readonly title: string
-  readonly description: string
-  readonly inputSchema: Readonly<Record<string, unknown>>
-  readonly risk: ToolRisk
-  readonly availability: ToolAvailability
-  readonly requiredScopes: readonly ToolScope[]
+interface RegisteredTool {
+  readonly descriptor: ToolDescriptor
   readonly execute: (this: void, context: ToolExecutionContext, input: unknown) => Promise<unknown>
-  readonly summarizeInput?: (this: void, input: unknown) => string
-  readonly summarizeOutput?: (this: void, output: unknown) => string
 }
 
 function freezeRecursively(value: unknown): unknown {
@@ -51,12 +43,11 @@ function snapshotSchema(
 
 function createDescriptor<Input, Output>(
   tool: StoryForgeTool<Input, Output>,
-): RegisteredToolDescriptor {
+): RegisteredTool {
   const execute = tool.execute
   const summarizeInput = tool.summarizeInput
   const summarizeOutput = tool.summarizeOutput
-
-  return Object.freeze({
+  const descriptor: ToolDescriptor<Input, Output> = Object.freeze({
     name: tool.name,
     title: tool.title,
     description: tool.description,
@@ -64,39 +55,44 @@ function createDescriptor<Input, Output>(
     risk: tool.risk,
     availability: tool.availability,
     requiredScopes: Object.freeze([...tool.requiredScopes]),
-    execute: (context: ToolExecutionContext, input: unknown): Promise<unknown> =>
-      execute(context, input as Input),
     ...(summarizeInput === undefined ? {} : {
-      summarizeInput: (input: unknown): string => summarizeInput(input as Input),
+      summarizeInput: (input: Input): string => summarizeInput(input),
     }),
     ...(summarizeOutput === undefined ? {} : {
-      summarizeOutput: (output: unknown): string => summarizeOutput(output as Output),
+      summarizeOutput: (output: Output): string => summarizeOutput(output),
     }),
+  })
+
+  return Object.freeze({
+    descriptor,
+    execute: (context: ToolExecutionContext, input: unknown): Promise<unknown> =>
+      execute(context, input as Input),
   })
 }
 
 export class ToolRegistry {
-  readonly #tools = new Map<string, RegisteredToolDescriptor>()
+  readonly #tools = new Map<string, RegisteredTool>()
 
   register<Input, Output>(tool: StoryForgeTool<Input, Output>): void {
-    const descriptor = createDescriptor(tool)
-    if (this.#tools.has(descriptor.name)) {
-      throw new Error(`[tool-registry] duplicate tool ${descriptor.name}`)
+    const registered = createDescriptor(tool)
+    if (this.#tools.has(registered.descriptor.name)) {
+      throw new Error(`[tool-registry] duplicate tool ${registered.descriptor.name}`)
     }
 
-    this.#tools.set(descriptor.name, descriptor)
+    this.#tools.set(registered.descriptor.name, registered)
   }
 
-  get(name: string): StoryForgeTool | undefined {
-    return this.#tools.get(name)
+  get(name: string): ToolDescriptor | undefined {
+    return this.#tools.get(name)?.descriptor
   }
 
-  listAvailable(context: ToolExecutionContext): StoryForgeTool[] {
+  listAvailable(context: ToolExecutionContext): ToolDescriptor[] {
     return Array.from(this.#tools.values())
-      .filter(descriptor =>
-        supportsPlatform(descriptor.availability, context.platform)
-        && hasScopes(descriptor.requiredScopes, context.scopes),
+      .filter(registered =>
+        supportsPlatform(registered.descriptor.availability, context.platform)
+        && hasScopes(registered.descriptor.requiredScopes, context.scopes),
       )
+      .map(registered => registered.descriptor)
   }
 
   async execute(
@@ -104,10 +100,11 @@ export class ToolRegistry {
     context: ToolExecutionContext,
     input: unknown,
   ): Promise<unknown> {
-    const descriptor = this.#tools.get(name)
-    if (!descriptor) {
+    const registered = this.#tools.get(name)
+    if (!registered) {
       throw new Error(`[tool-registry] unknown tool ${name}`)
     }
+    const { descriptor } = registered
 
     if (!supportsPlatform(descriptor.availability, context.platform)
       || !hasScopes(descriptor.requiredScopes, context.scopes)) {
@@ -118,6 +115,6 @@ export class ToolRegistry {
       throw new DOMException('Agent run aborted', 'AbortError')
     }
 
-    return descriptor.execute(context, input)
+    return registered.execute(context, input)
   }
 }

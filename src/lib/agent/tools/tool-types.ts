@@ -36,7 +36,7 @@ export interface ToolExecutionContext {
 
 export type ExecutionContext = ToolExecutionContext
 
-export interface StoryForgeTool<Input = unknown, Output = unknown> {
+export interface ToolDescriptor<Input = unknown, Output = unknown> {
   readonly name: string
   readonly title: string
   readonly description: string
@@ -44,7 +44,11 @@ export interface StoryForgeTool<Input = unknown, Output = unknown> {
   readonly risk: ToolRisk
   readonly availability: ToolAvailability
   readonly requiredScopes: readonly ToolScope[]
-  execute(this: void, context: ToolExecutionContext, input: Input): Promise<Output>
   summarizeInput?(this: void, input: Input): string
   summarizeOutput?(this: void, output: Output): string
+}
+
+export interface StoryForgeTool<Input = unknown, Output = unknown>
+  extends ToolDescriptor<Input, Output> {
+  execute(this: void, context: ToolExecutionContext, input: Input): Promise<Output>
 }

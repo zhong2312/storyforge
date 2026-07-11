@@ -1,6 +1,6 @@
 export type ProjectLocator =
-  | { backend: 'dexie'; projectId: number }
-  | { backend: 'local-folder'; projectUuid: string; projectPath: string }
+  | { readonly backend: 'dexie'; readonly projectId: number }
+  | { readonly backend: 'local-folder'; readonly projectUuid: string; readonly projectPath: string }
 
 export function projectLocatorKey(locator: ProjectLocator): string {
   if (locator.backend === 'dexie') {

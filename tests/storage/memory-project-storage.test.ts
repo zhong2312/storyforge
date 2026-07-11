@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MemoryProjectStorage } from '../../src/lib/storage/adapters/memory/memory-project-storage'
-import type { StorageTable } from '../../src/lib/storage/ports'
+import { projectLocatorKey, type StorageTable } from '../../src/lib/storage/ports'
 import { runStorageContract } from './storage-contract'
 
 runStorageContract('memory', () => new MemoryProjectStorage({
@@ -31,6 +31,26 @@ describe('MemoryProjectStorage specifics', () => {
     await expect(storage.transaction('readonly', ['rich-records'], async transaction => {
       await transaction.table<RichRecord>('rich-records').delete(999)
     })).rejects.toThrow('readonly transaction modified data')
+  })
+
+  it('exposes a frozen locator snapshot whose identity survives input and reflection mutation', () => {
+    const dexieLocator = { backend: 'dexie' as const, projectId: 1 }
+    const dexieStorage = new MemoryProjectStorage(dexieLocator)
+    const localFolderLocator = {
+      backend: 'local-folder' as const,
+      projectUuid: 'book-uuid',
+      projectPath: 'F:/books/demo',
+    }
+    const localFolderStorage = new MemoryProjectStorage(localFolderLocator)
+
+    expect(Reflect.set(dexieLocator, 'projectId', 2)).toBe(true)
+    expect(Reflect.set(localFolderLocator, 'projectUuid', 'mutated-uuid')).toBe(true)
+    expect(Reflect.set(localFolderStorage.locator, 'projectUuid', 'reflected-uuid')).toBe(false)
+
+    expect(Object.isFrozen(dexieStorage.locator)).toBe(true)
+    expect(Object.isFrozen(localFolderStorage.locator)).toBe(true)
+    expect(projectLocatorKey(dexieStorage.locator)).toBe('dexie:1')
+    expect(projectLocatorKey(localFolderStorage.locator)).toBe('local-folder:book-uuid')
   })
 
   it('persists Map payload changes and advances revision', async () => {

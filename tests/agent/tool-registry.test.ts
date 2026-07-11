@@ -11,6 +11,7 @@ import type {
   Actor,
   ApprovalReference,
   StoryForgeTool,
+  ToolDescriptor,
   ToolExecutionContext,
   ToolScope,
 } from '../../src/lib/agent/tools/tool-types'
@@ -62,6 +63,9 @@ describe('ToolRegistry', () => {
     })
     expect(descriptor).not.toBe(tool)
     expect(registry.listAvailable(createContext())).toEqual([descriptor])
+    expect('execute' in (descriptor ?? {})).toBe(false)
+    expect(Reflect.get(descriptor ?? {}, 'execute')).toBeUndefined()
+    expect(() => (Reflect.get(descriptor ?? {}, 'execute') as () => void)()).toThrow(TypeError)
     expect(() => registry.register(tool)).toThrow('duplicate tool storyforge.test.read')
   })
 
@@ -288,6 +292,7 @@ describe('ToolRegistry', () => {
     })
     expect(descriptorSchema.properties.value.description).toBe('注册时描述')
     expect(Object.isFrozen(descriptor)).toBe(true)
+    expect('execute' in descriptor).toBe(false)
     expect(Object.isFrozen(descriptor.requiredScopes)).toBe(true)
     expect(Object.isFrozen(descriptor.inputSchema)).toBe(true)
     expect(Object.isFrozen(descriptorSchema.properties)).toBe(true)
@@ -347,6 +352,9 @@ describe('ToolRegistry', () => {
     >
 
     expectTypeOf<ToolMetadata>().toEqualTypeOf<Readonly<ToolMetadata>>()
+    expectTypeOf<ReturnType<ToolRegistry['get']>>().toEqualTypeOf<ToolDescriptor | undefined>()
+    expectTypeOf<ReturnType<ToolRegistry['listAvailable']>>().toEqualTypeOf<ToolDescriptor[]>()
+    expectTypeOf<keyof ToolDescriptor>().not.toEqualTypeOf<keyof ToolDescriptor | 'execute'>()
     expectTypeOf<StoryForgeTool['requiredScopes']>().toEqualTypeOf<readonly ToolScope[]>()
     expectTypeOf<ToolRegistry['execute']>().toEqualTypeOf<
       (

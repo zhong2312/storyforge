@@ -19,6 +19,7 @@ const MEMORY_CAPABILITIES = Object.freeze({
 const READONLY_MODIFICATION_ERROR = 'readonly transaction modified data'
 const ACTIVE_TRANSACTION_ERROR = 'transaction already active'
 const EXTERNAL_WRITE_ERROR = 'storage modified outside active transaction'
+const INACTIVE_TRANSACTION_ERROR = 'transaction is no longer active'
 
 type TableRecords = Map<number, StorageRecord>
 type TableCollection = Map<string, TableRecords>
@@ -33,6 +34,7 @@ interface StorageSnapshot {
 interface TransactionContext {
   token: symbol
   mode: TransactionMode
+  active: boolean
 }
 
 export class MemoryProjectStorage implements ProjectStoragePort {
@@ -45,7 +47,7 @@ export class MemoryProjectStorage implements ProjectStoragePort {
   private activeTransaction?: TransactionContext
 
   constructor(locator: ProjectLocator) {
-    this.locator = structuredClone(locator)
+    this.locator = Object.freeze(structuredClone(locator)) as ProjectLocator
   }
 
   table<T extends StorageRecord>(name: string): StorageTable<T> {
@@ -61,13 +63,14 @@ export class MemoryProjectStorage implements ProjectStoragePort {
       throw new Error(ACTIVE_TRANSACTION_ERROR)
     }
 
-    const context: TransactionContext = { token: Symbol('memory transaction'), mode }
+    const context: TransactionContext = { token: Symbol('memory transaction'), mode, active: true }
     // Memory adapter snapshots the whole in-memory store instead of only declared tables.
     // This keeps rollback simple for the test adapter; declared-table access is still enforced below.
     const snapshot = this.createSnapshot()
     const allowedTables = new Set(tableNames)
     const transaction: StorageTransaction = {
       table: <R extends StorageRecord>(name: string): StorageTable<R> => {
+        this.assertTransactionIsActive(context)
         if (!allowedTables.has(name)) {
           throw new Error(`table is not part of transaction: ${name}`)
         }
@@ -82,7 +85,10 @@ export class MemoryProjectStorage implements ProjectStoragePort {
       this.restoreSnapshot(snapshot)
       throw error
     } finally {
-      this.activeTransaction = undefined
+      context.active = false
+      if (this.activeTransaction?.token === context.token) {
+        this.activeTransaction = undefined
+      }
     }
   }
 
@@ -103,9 +109,9 @@ export class MemoryProjectStorage implements ProjectStoragePort {
     context?: TransactionContext,
   ): StorageTable<T> {
     return {
-      get: id => this.getRecord<T>(name, id),
-      list: query => this.listRecords<T>(name, query),
-      findOne: query => this.findOneRecord<T>(name, query),
+      get: id => this.getRecord<T>(name, id, context),
+      list: query => this.listRecords<T>(name, query, context),
+      findOne: query => this.findOneRecord<T>(name, query, context),
       add: record => this.addRecord(name, record, context),
       put: record => this.putRecord(name, record, context),
       update: (id, patch) => this.updateRecord<T>(name, id, patch, context),
@@ -118,7 +124,9 @@ export class MemoryProjectStorage implements ProjectStoragePort {
   private async getRecord<T extends StorageRecord>(
     tableName: string,
     id: number,
+    context?: TransactionContext,
   ): Promise<T | undefined> {
+    this.assertTransactionIsActive(context)
     const record = this.tables.get(tableName)?.get(id)
     return record ? structuredClone(record as T) : undefined
   }
@@ -126,7 +134,9 @@ export class MemoryProjectStorage implements ProjectStoragePort {
   private async listRecords<T extends StorageRecord>(
     tableName: string,
     query?: StorageQuery,
+    context?: TransactionContext,
   ): Promise<T[]> {
+    this.assertTransactionIsActive(context)
     const table = this.tables.get(tableName)
     if (!table) {
       return []
@@ -156,8 +166,10 @@ export class MemoryProjectStorage implements ProjectStoragePort {
   private async findOneRecord<T extends StorageRecord>(
     tableName: string,
     query: StorageQuery,
+    context?: TransactionContext,
   ): Promise<T | undefined> {
-    const records = await this.listRecords<T>(tableName, query)
+    this.assertTransactionIsActive(context)
+    const records = await this.listRecords<T>(tableName, query, context)
     return records[0]
   }
 
@@ -278,11 +290,18 @@ export class MemoryProjectStorage implements ProjectStoragePort {
   }
 
   private assertCanWrite(context?: TransactionContext): void {
+    this.assertTransactionIsActive(context)
     if (context?.mode === 'readonly') {
       throw new Error(READONLY_MODIFICATION_ERROR)
     }
     if (this.activeTransaction && this.activeTransaction.token !== context?.token) {
       throw new Error(EXTERNAL_WRITE_ERROR)
+    }
+  }
+
+  private assertTransactionIsActive(context?: TransactionContext): void {
+    if (context && (!context.active || this.activeTransaction?.token !== context.token)) {
+      throw new Error(INACTIVE_TRANSACTION_ERROR)
     }
   }
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type {
   ProjectStoragePort,
   StorageTable,
+  StorageTransaction,
 } from '../../src/lib/storage/ports'
 
 interface ExampleRecord {
@@ -150,6 +151,61 @@ export function runStorageContract(
         order: 1,
       }])
       expect(await storage.getRevision()).toBe(revisionBefore)
+    })
+
+    it('invalidates leaked transaction and table facades after a successful transaction', async () => {
+      let transactionFacade: StorageTransaction | undefined
+      let transactionTable: StorageTable<ExampleRecord> | undefined
+
+      await storage.transaction('readwrite', [TABLE_NAME], async transaction => {
+        transactionFacade = transaction
+        transactionTable = transaction.table<ExampleRecord>(TABLE_NAME)
+        await transactionTable.add({ projectId: 1, name: 'Committed', order: 1 })
+      })
+
+      if (!transactionFacade || !transactionTable) {
+        throw new Error('transaction facade was not captured')
+      }
+
+      const leakedOperations = [
+        () => transactionTable.get(1),
+        () => transactionTable.list(),
+        () => transactionTable.findOne({ where: { projectId: 1 } }),
+        () => transactionTable.add({ projectId: 1, name: 'Leaked add', order: 2 }),
+        () => transactionTable.put({ id: 1, projectId: 1, name: 'Leaked put', order: 2 }),
+        () => transactionTable.update(1, { name: 'Leaked update' }),
+        () => transactionTable.delete(1),
+        () => transactionTable.bulkPut([{ id: 1, projectId: 1, name: 'Leaked bulk put', order: 2 }]),
+        () => transactionTable.bulkDelete([1]),
+      ]
+
+      for (const operation of leakedOperations) {
+        await expect(operation()).rejects.toThrow('transaction is no longer active')
+      }
+      expect(() => transactionFacade.table<ExampleRecord>(TABLE_NAME))
+        .toThrow('transaction is no longer active')
+    })
+
+    it('invalidates leaked transaction and table facades after rollback', async () => {
+      let transactionFacade: StorageTransaction | undefined
+      let transactionTable: StorageTable<ExampleRecord> | undefined
+
+      await expect(storage.transaction('readwrite', [TABLE_NAME], async transaction => {
+        transactionFacade = transaction
+        transactionTable = transaction.table<ExampleRecord>(TABLE_NAME)
+        await transactionTable.add({ projectId: 1, name: 'Rolled back', order: 1 })
+        throw new Error('force rollback')
+      })).rejects.toThrow('force rollback')
+
+      if (!transactionFacade || !transactionTable) {
+        throw new Error('transaction facade was not captured')
+      }
+
+      await expect(transactionTable.get(1)).rejects.toThrow('transaction is no longer active')
+      await expect(transactionTable.add({ projectId: 1, name: 'Leaked add', order: 2 }))
+        .rejects.toThrow('transaction is no longer active')
+      expect(() => transactionFacade.table<ExampleRecord>(TABLE_NAME))
+        .toThrow('transaction is no longer active')
     })
 
     it('rejects every readonly mutator at its entry point, including no-op writes', async () => {

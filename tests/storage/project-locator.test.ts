@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   projectLocatorKey,
   sameProjectLocator,
@@ -6,6 +6,13 @@ import {
 } from '../../src/lib/storage/ports/project-locator'
 
 describe('project locator', () => {
+  it('uses readonly fields for every backend locator variant', () => {
+    expectTypeOf<ProjectLocator>().toEqualTypeOf<
+      | { readonly backend: 'dexie'; readonly projectId: number }
+      | { readonly backend: 'local-folder'; readonly projectUuid: string; readonly projectPath: string }
+    >()
+  })
+
   it('为 Dexie 项目生成由后端与 projectId 组成的 key', () => {
     expect(projectLocatorKey({ backend: 'dexie', projectId: 12 })).toBe('dexie:12')
   })
