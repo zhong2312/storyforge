@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { HistoricalTimelineEvent, HistoricalKeyword } from '../lib/types'
 
 interface HistoricalStore {

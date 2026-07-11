@@ -3,7 +3,7 @@
  * 管理全局故事线（主线+支线）的 CRUD
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { StoryArc } from '../lib/types'
 import { parseStages, stringifyStages, type StoryStage } from '../lib/types/story-arc'
 

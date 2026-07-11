@@ -2,7 +2,7 @@
  * 便签/笔记 Store — Phase H3
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { Note, NoteColor } from '../lib/types'
 
 const now = () => Date.now()

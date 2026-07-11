@@ -7,7 +7,7 @@
  *   绝不自动删事实、绝不动 locked。
  * - 影响分析：列出"引用了该章事实/紧随其后的"后续章节，交作者复核——只提示、不自动改正文。
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import type { TemporalFact } from '../types/temporal-fact'
 import { normalizeChapterText } from '../ai/chapter-memory/text-normalization'
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'

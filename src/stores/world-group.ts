@@ -2,7 +2,7 @@
  * Phase 25.4 — 多世界系统 Store
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { WorldGroup, WorldGroupLink } from '../lib/types'
 import { requireBackupBefore } from '../lib/safety/require-backup-before'
 import { cascadeDeleteGroup, stampPrimaryWorld } from '../lib/registry/lifecycle'

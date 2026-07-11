@@ -1,4 +1,4 @@
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { remapTemporalFactCharacterRefs } from '../fact-ledger/lifecycle'
 import { parseFields, stringifyFields } from '../types/state-card'
 import { PROJECT_TABLES } from './project-tables'
@@ -48,11 +48,12 @@ async function remapSimpleCharacterRefs(projectId: number, fromId: number, toId?
     if (!field || !targetSpec) continue
 
     if (toId == null) {
-      await (targetSpec.table as any).where(field).equals(fromId).delete()
+      await registryTable(targetSpec.name).where(field).equals(fromId).delete()
     } else {
-      const keys = await (targetSpec.table as any).where(field).equals(fromId).primaryKeys()
+      const table = registryTable(targetSpec.name)
+      const keys = await table.where(field).equals(fromId).primaryKeys()
       for (const key of keys as number[]) {
-        await targetSpec.table.update(key, { [field]: toId } as any)
+        await table.update(key, { [field]: toId } as any)
       }
     }
   }
@@ -77,7 +78,8 @@ async function remapRegisteredCharacterArrays(
       ref.kind === 'array' && ref.itemTarget === 'characters' && ref.onDelete === 'removeItem')
     if (!refs.length) continue
 
-    const rows = await (spec.table as any).where('projectId').equals(projectId).toArray()
+    const table = registryTable(spec.name)
+    const rows = await table.where('projectId').equals(projectId).toArray()
     for (const row of rows as any[]) {
       const patch: Record<string, unknown> = {}
       for (const ref of refs) {
@@ -88,7 +90,7 @@ async function remapRegisteredCharacterArrays(
       }
       if (Object.keys(patch).length) {
         patch.updatedAt = Date.now()
-        await spec.table.update(row.id, patch as any)
+        await table.update(row.id, patch as any)
       }
     }
   }
@@ -104,7 +106,8 @@ async function remapRegisteredCharacterJson(
       ref.kind === 'json' && targetTable(ref.target) === 'characters' && ref.onDelete === 'remap')
     if (!refs.length) continue
 
-    const rows = await (spec.table as any).where('projectId').equals(projectId).toArray()
+    const table = registryTable(spec.name)
+    const rows = await table.where('projectId').equals(projectId).toArray()
     for (const row of rows as any[]) {
       const patch: Record<string, unknown> = {}
       for (const ref of refs) {
@@ -115,10 +118,14 @@ async function remapRegisteredCharacterJson(
       }
       if (Object.keys(patch).length) {
         patch.updatedAt = Date.now()
-        await spec.table.update(row.id, patch as any)
+        await table.update(row.id, patch as any)
       }
     }
   }
+}
+
+function registryTable(name: string): any {
+  return (db as unknown as Record<string, unknown>)[name]
 }
 
 function remapIdArray(values: unknown[], fromId: number, toId?: number): { values: number[]; changed: boolean } {

@@ -2,7 +2,7 @@
  * Phase 32 — 世界规则 Store（按 projectId + worldGroupId 维护 profile）
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type {
   WorldRulesProfile,
   WorldRuleEntry,

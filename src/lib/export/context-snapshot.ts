@@ -5,7 +5,7 @@
  * 1. 导出为 .md 文件，可粘贴到任何 AI 聊天中"续写"
  * 2. 导入后自动注入后续 AI 调用，避免重新烧 token
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { htmlToPlainText } from '../utils/html'
 import { buildBestChapterByOutlineMap } from '../chapters/selectors'
 import type { OutlineNode, Chapter } from '../types'

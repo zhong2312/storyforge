@@ -8,7 +8,7 @@
  * 产物与旧手写版**逐字段等价**(R-export-derive-equivalence 锁死),故旧备份格式、Gist
  * 云存档全部兼容。
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { PROJECT_TABLES, REGISTRY_BY_NAME } from '../registry/project-tables'
 import { remapWorldPortalTargets } from '../utils/world-portals'
 import type { TableSpec } from '../registry/types'

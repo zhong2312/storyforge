@@ -9,7 +9,7 @@ import type { OutlineNode } from '../types/outline'
 import { usePromptStore } from '../../stores/prompt'
 import { renderPrompt } from './prompt-engine'
 import { useOutlineStore } from '../../stores/outline'
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { assembleContext } from '../registry/assemble-context'
 import {
   appendSimplifiedChineseOutputConstraint,

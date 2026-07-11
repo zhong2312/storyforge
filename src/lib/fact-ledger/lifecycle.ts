@@ -1,4 +1,4 @@
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import type { FactStatus } from '../types/temporal-fact'
 
 const now = () => Date.now()

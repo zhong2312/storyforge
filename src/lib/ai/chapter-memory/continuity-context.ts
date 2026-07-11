@@ -1,4 +1,4 @@
-import { db } from '../../db/schema'
+import { projectDb as db } from '../../storage/project-db-compat'
 import { formatHandoff } from './handoff-format'
 import { getChapterDerivedMemoryStatus, normalizeChapterText } from './text-normalization'
 import {

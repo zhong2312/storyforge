@@ -11,7 +11,7 @@
 
 import { create } from 'zustand'
 import type { Table, UpdateSpec } from 'dexie'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 
 const now = () => Date.now()
 

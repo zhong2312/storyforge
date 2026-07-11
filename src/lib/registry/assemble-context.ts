@@ -11,6 +11,7 @@ import type { PreparedContinuityContext } from '../ai/chapter-memory/continuity-
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
 import type { Chapter, OutlineNode } from '../types'
 import { htmlToPlainText } from '../utils/html'
+import { getActiveProjectStorage } from '../storage/application-project-storage'
 
 /** 拿不到模型时的保守默认输入预算(原固定 24K 偏紧,放宽避免内部提前裁) */
 const FALLBACK_INPUT_BUDGET = 48_000
@@ -31,24 +32,27 @@ function deriveInputBudget(input: AssembleContextInput): number {
 }
 
 export async function assembleContext(input: AssembleContextInput): Promise<AssembleContextResult> {
-  const selected = selectSources(input)
+  const effectiveInput: AssembleContextInput = input.storage
+    ? input
+    : { ...input, storage: getActiveProjectStorage(input.projectId) }
+  const selected = selectSources(effectiveInput)
   const needsContinuity = selected.some(source => (
     source.key === 'previousChapterEnding'
     || source.key === 'chapterContinuityHandoff'
     || source.key === 'previousPlanReconciliation'
     || source.key === 'recentChapterSummaries'
   ))
-  const resolvedInput: AssembleContextInput = needsContinuity && input.chapterId != null
+  const resolvedInput: AssembleContextInput = needsContinuity && effectiveInput.chapterId != null
     ? {
-        ...input,
-        continuitySnapshot: input.continuitySnapshot ?? (input.storage
-          ? await prepareStorageContinuityContext(input.storage, input.projectId, input.chapterId)
+        ...effectiveInput,
+        continuitySnapshot: effectiveInput.continuitySnapshot ?? (effectiveInput.storage
+          ? await prepareStorageContinuityContext(effectiveInput.storage, effectiveInput.projectId, effectiveInput.chapterId)
           : await prepareContinuityContext({
-              projectId: input.projectId,
-              chapterId: input.chapterId,
+              projectId: effectiveInput.projectId,
+              chapterId: effectiveInput.chapterId,
             })),
       }
-    : input
+    : effectiveInput
   const omitted: string[] = []
   const keyedSegments: { key: string; segment: ContextSegment }[] = []
 

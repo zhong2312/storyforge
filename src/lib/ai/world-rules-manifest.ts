@@ -244,7 +244,7 @@ export function estimateManifestTokens(manifestText: string): number {
 
 // ── 便捷：从 DB 读取并生成完整清单 ────────────────────────────
 
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 
 /**
  * 一站式：从 DB 读取项目的世界规则 + 时间线 + 关键词，生成完整清单。

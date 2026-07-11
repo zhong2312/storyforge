@@ -6,7 +6,7 @@
  * StyleLearningPanel 编排后调 saveProfile 落库,以便 store 可脱离 AI 单测。
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { UserStyleProfile } from '../lib/types/user-style'
 
 interface SaveProfileInput {

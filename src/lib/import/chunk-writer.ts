@@ -8,7 +8,7 @@
 import { useCharacterStore } from '../../stores/character'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useOutlineStore } from '../../stores/outline'
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { adopt } from '../registry/adopt'
 import type { UnifiedParseResult } from '../types'
 import { CHARACTER_DIMENSIONS } from '../character/character-dimensions'

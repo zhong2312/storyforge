@@ -18,7 +18,7 @@ import { propagateChapterEditStale, analyzeEditImpact } from '../../lib/consiste
 import { runChapterMemoryTask } from '../../lib/ai/chapter-memory/run-chapter-memory'
 import { isPlanReconciliationCurrent } from '../../lib/ai/chapter-memory/plan-reconciliation'
 import { findNextCanonicalChapter, findPreviousCanonicalChapter } from '../../lib/ai/chapter-memory/canonical-chapter-sequence'
-import { db } from '../../lib/db/schema'
+import { projectDb as db } from '../../lib/storage/project-db-compat'
 import { assembleContext } from '../../lib/registry/assemble-context'
 import { resolveChapterDisplayMeta } from '../../lib/outline/chapter-display'
 import { pickBestChapterForOutline } from '../../lib/chapters/selectors'

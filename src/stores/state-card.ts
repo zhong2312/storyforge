@@ -2,7 +2,7 @@
  * 状态表 Store — 管理角色/地点/物品/势力的状态卡 CRUD
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { StateCard, StateCategory, StateDiffItem, StateField } from '../lib/types'
 import { parseFields, stringifyFields } from '../lib/types/state-card'
 import { adopt } from '../lib/registry/adopt'

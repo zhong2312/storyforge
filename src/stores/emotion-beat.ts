@@ -2,7 +2,7 @@
  * 情感节拍卡 Store — 管理章节的情感节拍规划
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { EmotionBeatCard, EmotionBeat } from '../lib/types'
 import { stringifyBeats, parseBeats } from '../lib/types/emotion-beat'
 

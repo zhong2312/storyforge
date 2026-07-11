@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import { detachTemporalFactsForDeletedChapters } from '../lib/fact-ledger/lifecycle'
 import { pickBestChapterForOutline } from '../lib/chapters/selectors'
 import { transactionTablesFor } from '../lib/registry/lifecycle'

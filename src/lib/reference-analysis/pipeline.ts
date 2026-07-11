@@ -10,7 +10,7 @@
  *   · 写入 referenceChunkAnalysis 表，关联到 Reference。
  *   · 状态写回 Reference 的 analysisStatus / analysisProgress。
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { chat, type AICallMeta } from '../ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../ai/config-readiness'
 import { useAIConfigStore } from '../../stores/ai-config'

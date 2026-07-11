@@ -13,7 +13,7 @@
  *   - 触发 useCharacterStore.loadAll 让侧栏角色列表刷新
  */
 
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { renderPrompt } from '../ai/prompt-engine'
 import { usePromptStore } from '../../stores/prompt'
 import { useAIConfigStore } from '../../stores/ai-config'

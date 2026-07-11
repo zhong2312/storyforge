@@ -41,7 +41,8 @@ import {
   saveMcpServerConfigs,
   type McpServerConfig,
 } from '../../lib/agent/mcp'
-import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
+import { getActiveProjectStorage, getDexieProjectStorage } from '../../lib/storage/application-project-storage'
+import type { ProjectStoragePort } from '../../lib/storage/ports'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { usePromptStore } from '../../stores/prompt'
 import type {
@@ -95,7 +96,7 @@ interface Props {
 interface AgentResources {
   readonly runtime: AiSdkAgentRuntimeAdapter
   readonly mcp: McpToolProvider
-  readonly storage: DexieProjectStorage
+  readonly storage: ProjectStoragePort
 }
 
 interface AgentRunContext {
@@ -1346,7 +1347,7 @@ function createResources(
   configRef: React.MutableRefObject<McpServerConfig[]>,
   setMcpStatus: React.Dispatch<React.SetStateAction<Record<string, string>>>,
 ): AgentResources {
-  const storage = new DexieProjectStorage({ backend: 'dexie', projectId })
+  const storage = getActiveProjectStorage(projectId) ?? getDexieProjectStorage(projectId)
   const plans = new AdoptionPlanStore()
   const mcp = new McpToolProvider()
   const runtime = new AiSdkAgentRuntimeAdapter({

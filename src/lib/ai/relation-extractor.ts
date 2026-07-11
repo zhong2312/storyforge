@@ -4,7 +4,7 @@
  * 从大纲摘要 + 章节正文中提取角色关系，
  * 返回结构化的关系数组供 UI 预览和写入。
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import type { Character, ChatMessage, RelationType } from '../types'
 import { usePromptStore } from '../../stores/prompt'
 import { renderPrompt } from './prompt-engine'

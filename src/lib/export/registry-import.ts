@@ -8,7 +8,7 @@
  * 必填外键(onUnmapped: 'require')缺失映射 → 抛错整体回滚(完整性保护);孤儿(onUnmapped:
  * 'drop')跳过该行;portals 等 JSON 自引用走两阶段(先建全表映射,再回填重映射)。
  */
-import { db } from '../db/schema'
+import { projectDb as db } from '../storage/project-db-compat'
 import { PROJECT_TABLES } from '../registry/project-tables'
 import { remapWorldPortalTargets } from '../utils/world-portals'
 import { transactionTablesFor } from '../registry/lifecycle'

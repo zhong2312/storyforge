@@ -16,7 +16,7 @@ import { useWorldRulesStore } from '../stores/world-rules'
 import { useAutoBackup } from '../hooks/useAutoBackup'
 import { useGistAutoBackup } from '../hooks/useGistAutoBackup'
 import { useFolderAutoBackup } from '../hooks/useFolderAutoBackup'
-import { Bot, PanelRight } from 'lucide-react'
+import { Bot, FolderOpen, PanelRight } from 'lucide-react'
 import Sidebar, { type SidebarModule } from '../components/layout/Sidebar'
 import PropertiesPanel from '../components/layout/PropertiesPanel'
 import ProjectInfoPanel from '../components/project/ProjectInfoPanel'
@@ -67,6 +67,8 @@ import {
   subscribeAgentIntents,
   type AgentIntent,
 } from '../lib/agent/intents'
+import { activateProjectStorage, deactivateProjectStorage } from '../lib/storage/application-project-storage'
+import { openBoundProjectStorage, ProjectStoragePermissionError } from '../lib/storage/project-storage-binding'
 
 export default function WorkspacePage() {
   const { projectId } = useParams()
@@ -74,6 +76,7 @@ export default function WorkspacePage() {
   const { loadProject, projects, currentProjectId } = useProjectStore()
   const [activeModule, setActiveModule] = useState<SidebarModule>('info')
   const [loading, setLoading] = useState(true)
+  const [storageError, setStorageError] = useState<string | null>(null)
   const [editorNodeId, setEditorNodeId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [rightPanel, setRightPanel] = useState<'agent' | 'properties' | null>('agent')
@@ -110,12 +113,24 @@ export default function WorkspacePage() {
 
   // 加载项目 + 所有关联数据
   useEffect(() => {
+    const numericProjectId = Number(projectId)
     const load = async () => {
       if (!projectId || isNaN(Number(projectId))) {
         navigate('/')
         return
       }
       setLoading(true)
+      setStorageError(null)
+      try {
+        const local = await openBoundProjectStorage(numericProjectId)
+        if (!local) activateProjectStorage(numericProjectId)
+      } catch (error) {
+        setStorageError(error instanceof ProjectStoragePermissionError
+          ? error.message
+          : `无法打开项目存储：${(error as Error).message}`)
+        setLoading(false)
+        return
+      }
       let p
       try {
         p = await loadProject(Number(projectId))
@@ -162,7 +177,35 @@ export default function WorkspacePage() {
       setLoading(false)
     }
     load()
+    return () => {
+      if (Number.isFinite(numericProjectId)) deactivateProjectStorage(numericProjectId)
+    }
   }, [projectId, loadProject, navigate])
+
+  if (storageError) {
+    return (
+      <div className="min-h-screen bg-bg-base flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-lg border border-border bg-bg-surface p-5 text-center">
+          <FolderOpen className="mx-auto mb-3 h-8 w-8 text-accent" />
+          <h1 className="text-base font-semibold text-text-primary">需要访问本地项目文件夹</h1>
+          <p className="mt-2 text-sm text-text-muted">{storageError}</p>
+          <button
+            className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white"
+            onClick={() => void (async () => {
+              try {
+                await openBoundProjectStorage(Number(projectId), true)
+                window.location.reload()
+              } catch (error) {
+                setStorageError((error as Error).message)
+              }
+            })()}
+          >
+            重新授权并打开
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading || !project) {
     return (

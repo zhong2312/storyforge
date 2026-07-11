@@ -1,9 +1,11 @@
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { Project, CreateProjectInput } from '../lib/types'
 import { migrateGenre } from '../lib/types'
 import { requireBackupBefore } from '../lib/safety/require-backup-before'
 import { cascadeDeleteProject } from '../lib/registry/lifecycle'
+import { deactivateProjectStorage, getActiveProjectStorage, syncDexieProjectIndex } from '../lib/storage/application-project-storage'
+import { removeProjectStorageBinding } from '../lib/storage/project-storage-binding'
 
 interface ProjectStore {
   projects: Project[]
@@ -53,7 +55,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateProject: async (id: number, data: Partial<Project>) => {
-    await db.projects.update(id, { ...data, updatedAt: Date.now() })
+    const patch = { ...data, updatedAt: Date.now() }
+    await db.projects.update(id, patch)
+    await syncDexieProjectIndex(id, patch)
     await get().loadProjects()
   },
 
@@ -68,7 +72,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     // Phase 1.1b: 级联删除全部从 PROJECT_TABLES 注册表派生(不再手写表清单)。
     // 加新表 = 注册表加一行,这里自动覆盖。行为与 Phase 0.6 手写版等价(R-05 保证)。
+    const local = getActiveProjectStorage(id)?.locator.backend === 'local-folder'
     await cascadeDeleteProject(id)
+    if (local) {
+      deactivateProjectStorage(id)
+      await removeProjectStorageBinding(id)
+      await cascadeDeleteProject(id)
+    }
 
     if (get().currentProjectId === id) {
       set({ currentProjectId: null })

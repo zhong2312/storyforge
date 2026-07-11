@@ -4,7 +4,7 @@
  * 薄薄地封一层 Dexie 访问，让 pipeline.ts 和 UI 都不用直接摸 db。
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { ImportSession, ImportLog, ChunkState } from '../lib/types/import-session'
 import type { ImportFileBlob } from '../lib/types/import-file'
 

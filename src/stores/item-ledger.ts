@@ -2,7 +2,7 @@
  * 物品流水 store — Phase 25.5.2-b
  */
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { ItemLedgerEntry } from '../lib/types'
 
 interface ItemLedgerStore {

@@ -1,4 +1,4 @@
-import { db } from '../../db/schema'
+import { projectDb as db } from '../../storage/project-db-compat'
 import type { DetailedOutline } from '../../types'
 import type { Chapter } from '../../types'
 import { hashChapterText, sha256Text } from './text-normalization'

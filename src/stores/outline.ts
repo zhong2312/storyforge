@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { db } from '../lib/db/schema'
+import { projectDb as db } from '../lib/storage/project-db-compat'
 import type { OutlineNode } from '../lib/types'
 import { normalizeOutlineNode } from '../lib/outline/normalize'
 import { useChapterStore } from './chapter'
