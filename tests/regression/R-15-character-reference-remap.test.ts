@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { useCharacterStore } from '../../src/stores/character'
 import { applyCharacterReferenceRemap } from '../../src/lib/registry/character-references'
+import { transactionTablesFor } from '../../src/lib/registry/lifecycle'
 import { parseFields, stringifyFields } from '../../src/lib/types/state-card'
 
 describe('R-15: character reference remap', () => {
@@ -97,8 +98,13 @@ describe('R-15: character reference remap', () => {
       sourceType: 'manual', status: 'confirmed', locked: false,
       createdAt: now, updatedAt: now,
     } as any) as number
+    const sessionId = await db.plotSimulationSessions.add({
+      projectId, sessionKey: 'merge-session', title: '角色合并推演', premise: '', goal: '',
+      status: 'draft', selectedCharacterIds: [aliasId], plannedTurns: 1, currentTurn: 0,
+      createdAt: now, updatedAt: now,
+    } as any) as number
 
-    await db.transaction('rw', db.characters, db.characterRelations, db.detailedOutlines, db.stateCards, db.temporalFacts, async () => {
+    await db.transaction('rw', transactionTablesFor('importProject'), async () => {
       await applyCharacterReferenceRemap({
         projectId,
         fromCharacterId: aliasId,
@@ -122,6 +128,7 @@ describe('R-15: character reference remap', () => {
     expect(fact?.objectCharacterId).toBe(primaryId)
     expect(fact?.subjectName).toBe('主角色')
     expect(fact?.status).toBe('confirmed') // 合并是稳定重映射，不降级
+    expect((await db.plotSimulationSessions.get(sessionId))?.selectedCharacterIds).toEqual([primaryId])
   })
 })
 

@@ -1,3 +1,5 @@
+import type { AIModelRef } from './ai'
+
 /** 角色定位（v3 §2.1 — 扩展 npc / extra 两类） */
 export type CharacterRole =
   | 'protagonist'    // 主角
@@ -78,6 +80,11 @@ export interface Character {
   homeWorldGroupId?: number | null
   /** 是否跨世界角色（主角、系统精灵等，在所有世界中可见） */
   isCrossWorld?: boolean
+
+  /** 剧情自动推演时该角色独立决策所使用的模型；未配置则回退到会话默认模型。 */
+  simulationModelRef?: AIModelRef | null
+  /** 角色自主行动的额外约束，例如“绝不主动说谎”。 */
+  simulationInstructions?: string
 
   createdAt: number
   updatedAt: number

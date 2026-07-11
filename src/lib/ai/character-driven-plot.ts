@@ -29,6 +29,18 @@ export interface CharacterArcInput {
   targetState: string
 }
 
+/** 保留给旧工作流和备份恢复使用；新剧情推演面板不再暴露角色弧光表单。 */
+export function applyCharacterArcAutoFill(
+  arc: CharacterArcInput,
+  character: { background?: string; arc?: string },
+): CharacterArcInput {
+  return {
+    ...arc,
+    initialState: arc.initialState || character.background || '',
+    targetState: arc.targetState || character.arc || '',
+  }
+}
+
 /** AI 输出的章节 */
 export interface PlotChapter {
   title: string

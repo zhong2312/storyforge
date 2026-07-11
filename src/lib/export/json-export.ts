@@ -25,6 +25,7 @@ import type {
   WorldGroup, WorldGroupLink, ItemLedgerEntry, StoryTimelineEvent,
   ImportantLocation, WorldRulesProfile, CodexCategory, CodexEntry,
   UserStyleProfile,
+  PlotSimulationSession, PlotSimulationTurn,
 } from '../types'
 import type { TemporalFact } from '../types/temporal-fact'
 
@@ -102,6 +103,8 @@ export interface ProjectExportData {
   worldRulesProfiles?: (Omit<WorldRulesProfile, 'id' | 'projectId' | 'worldGroupId'> & WorldGroupExportRef)[]
   codexCategories?: (Omit<CodexCategory, 'id' | 'projectId' | 'parentId' | 'worldGroupId'> & WorldGroupExportRef & { _exportId: number; _parentExportId: number | null })[]
   codexEntries?: (Omit<CodexEntry, 'id' | 'projectId' | 'categoryId' | 'worldGroupId'> & WorldGroupExportRef & { _categoryExportId: number })[]
+  plotSimulationSessions?: (Omit<PlotSimulationSession, 'id' | 'projectId' | 'worldGroupId' | 'chapterId'> & WorldGroupExportRef & { _chapterExportId?: number | null })[]
+  plotSimulationTurns?: (Omit<PlotSimulationTurn, 'id' | 'projectId' | 'sessionId'> & { _sessionExportId: number })[]
 }
 
 /** 导出项目为 JSON(注册表派生) */

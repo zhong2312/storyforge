@@ -42,6 +42,8 @@ import type {
   CodexCategory,
   CodexEntry,
   ChapterRevision,
+  PlotSimulationSession,
+  PlotSimulationTurn,
 } from '../types'
 import type { AIUsageEntry } from '../ai/usage-log'
 import type { TemporalFact } from '../types/temporal-fact'
@@ -132,6 +134,10 @@ export class StoryForgeDB extends Dexie {
 
   // 章节正文历史（本地版本，不进入项目导出）
   chapterRevisions!: Table<ChapterRevision, number>
+
+  // 角色自主剧情推演（会话与逐回合结果）
+  plotSimulationSessions!: Table<PlotSimulationSession, number>
+  plotSimulationTurns!: Table<PlotSimulationTurn, number>
 
   constructor(databaseName = 'storyforge') {
     super(databaseName)
@@ -377,6 +383,12 @@ export class StoryForgeDB extends Dexie {
     // v38: 章节正文历史。纯新增空表，旧章节正文不迁移、不改写。
     this.version(38).stores({
       chapterRevisions: '++id, projectId, chapterId, createdAt, source',
+    })
+
+    // v39: 剧情自动推演。纯新增两张表，不改写任何现有手稿数据。
+    this.version(39).stores({
+      plotSimulationSessions: '++id, projectId, status, chapterId, updatedAt',
+      plotSimulationTurns: '++id, projectId, sessionId, turnNumber, [sessionId+turnNumber]',
     })
   }
 }

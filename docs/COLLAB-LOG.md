@@ -1352,3 +1352,23 @@ Portable：
 - 真实 Portable：记住 Key 默认勾选；使用非敏感测试 Key 请求 DeepSeek，经本地代理返回明确 `401 API Key 无效`（233ms），不再误报 CORS；页面重载后测试按钮仍可用，证明配置已持久保留。
 
 👉 球在 Claude：请重点审查 Portable 地址识别范围、一次性迁移标记、用户主动关闭持久化后的行为，以及代理/直连错误文案分流。
+
+### [2026-07-12] Codex · REPORT · 创作工作流九项增强 / 分支 `refactor/phase-27-task-3`
+
+作者要求按顺序完成章节历史、审批对比、模型分级配置、对话模型切换、对话框宽度、ZIP 解析、角色全字段采纳、全项目 RAG 和剧情自动推演。本分支按功能拆成独立提交，当前九项均已完成。
+
+本次实现：
+- 章节正文保存前自动建立本地修订记录，可浏览并恢复历史版本；AI 审批卡增加基于开源 `diff` 的前后差异窗口。
+- AI 配置改为多供应商、多模型目录，并支持正文/大纲/设定/润色/对话场景绑定；右侧对话框可逐次重选模型，宽度在最小/最大边界内拖动调整。
+- 文档解析支持 ZIP，递归遍历多级目录并复用既有文件解析管线；Agent 角色方案采纳覆盖角色注册表的全部正式字段。
+- RAG 从 `PROJECT_TABLES` 全部可导出项目表派生索引文本，字段由 `FIELD_REGISTRY` 解释；新增 `ragSearch` 上下文源和 `storyforge.rag.search` Agent 工具，兼容 Dexie 与 local-folder，并保留世界/章节隔离。
+- “角色驱动”旧入口替换为剧情自动推演：世界导演先演化环境，每个角色按独立模型、有限视角和角色约束自主行动，旁白模型裁决冲突并形成场景；会话和逐回合结果可续跑、可停止、可回看。
+- 推演上下文统一经 `assembleContext()` 并使用 RAG；会话/回合统一经 `adopt()` 写入。DB v39 新增 `plotSimulationSessions`、`plotSimulationTurns`，两表已进入 `PROJECT_TABLES`、`FIELD_REGISTRY`、AdoptionSchema、导入导出和引用重映射。
+- 推演结果不会直接覆盖手稿；用户点击“生成正文并提交审批”后，才通过 Agent 生成 `chapters/replace` 正式候选并进入现有采纳流程。
+
+验证证据：
+- `npx vitest run`：132 files / 581 tests passed；覆盖 DB v38→v39 迁移、角色独立模型调用顺序、会话/回合持久化、导入导出往返和角色 ID 重映射。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`（45 tables）、AI manual check、`git diff --check` 全部通过。
+- 浏览器实测 `1280×800` 与 `390×844`；移动端侧栏/Agent 默认收起，剧情推演单列显示，`scrollWidth === innerWidth`，无横向溢出。
+
+👉 球在 Claude：请重点审查 v39 数据迁移与引用重映射、推演模型隔离、RAG 的未来章节/跨世界过滤、失败续跑状态，以及“推演草案→Agent 审批→正式正文”的数据主权边界。

@@ -62,10 +62,32 @@ function toExportRow(
     if (rr.kind === 'portals') {
       const map = idMaps.get(rr.remapVia)
       obj[rr.field] = remapWorldPortalTargets(obj[rr.field], (targetId: number) => map?.get(targetId))
+    } else {
+      obj[rr.field] = remapRegisteredReferences(obj[rr.field], rr.kind, rr.itemField, idMaps.get(rr.remapVia))
     }
   }
 
   return obj
+}
+
+function remapRegisteredReferences(
+  value: unknown,
+  kind: 'id-array' | 'object-array-id',
+  itemField: string | undefined,
+  idMap: Map<number, number> | undefined,
+): unknown {
+  if (!Array.isArray(value)) return value
+  if (kind === 'id-array') {
+    return value.flatMap(item => typeof item === 'number' && idMap?.has(item) ? [idMap.get(item)!] : [])
+  }
+  if (!itemField) return value
+  return value.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+    const record = { ...(item as Record<string, unknown>) }
+    const id = record[itemField]
+    record[itemField] = typeof id === 'number' ? idMap?.get(id) ?? null : id
+    return record
+  })
 }
 
 /**

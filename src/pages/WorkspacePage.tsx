@@ -75,8 +75,10 @@ export default function WorkspacePage() {
   const [activeModule, setActiveModule] = useState<SidebarModule>('info')
   const [loading, setLoading] = useState(true)
   const [editorNodeId, setEditorNodeId] = useState<number | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [rightPanel, setRightPanel] = useState<'agent' | 'properties' | null>('agent')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  const [rightPanel, setRightPanel] = useState<'agent' | 'properties' | null>(() => (
+    typeof window !== 'undefined' && window.innerWidth < 1024 ? null : 'agent'
+  ))
   const [pendingAgentIntent, setPendingAgentIntent] = useState<AgentIntent | null>(null)
   const activeWorldGroupId = useWorldGroupStore(state => state.activeGroupId)
 
@@ -198,7 +200,7 @@ export default function WorkspacePage() {
     ])
   }
 
-  const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow'])
+  const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow', 'character-driven-plot'])
   const isImmersiveModule = immersiveModules.has(activeModule)
   const fullHeightModules = new Set<SidebarModule>([
     'worldview-origin',

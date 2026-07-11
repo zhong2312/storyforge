@@ -20,8 +20,8 @@ async function tableCount(name: string, projectId: number): Promise<number> {
 }
 
 /** 断言新项目每张项目级表行数与源一致 */
-async function expectSameCounts(srcId: number, newId: number) {
-  for (const name of EXPORTABLE_PROJECT_TABLES) {
+async function expectSameCounts(srcId: number, newId: number, excluded: ReadonlySet<string> = new Set()) {
+  for (const name of EXPORTABLE_PROJECT_TABLES.filter(name => !excluded.has(name))) {
     const a = await tableCount(name, srcId)
     const b = await tableCount(name, newId)
     expect(b, `表 ${name} 往返后行数应一致`).toBe(a)
@@ -57,6 +57,15 @@ async function expectKeysRemapped(newId: number) {
   const portals = parseWorldPortals(root.portalsJSON)
   expect(portals).toHaveLength(1)
   expect(portals[0].targetWorldId).toBe(mirror.id)
+
+  const characters = await db.characters.where('projectId').equals(newId).toArray()
+  const characterIds = new Set(characters.flatMap(character => character.id == null ? [] : [character.id]))
+  const simulation = await db.plotSimulationSessions.where('projectId').equals(newId).first()
+  if (simulation) {
+    expect(simulation.selectedCharacterIds.every(id => characterIds.has(id))).toBe(true)
+    const turn = await db.plotSimulationTurns.where('sessionId').equals(simulation.id!).first()
+    expect(turn?.characterActions.every(action => characterIds.has(action.characterId))).toBe(true)
+  }
 }
 
 describe('R-export-derive-roundtrip · 派生往返 + 旧格式兼容', () => {
@@ -78,6 +87,7 @@ describe('R-export-derive-roundtrip · 派生往返 + 旧格式兼容', () => {
     await expectKeysRemapped(newId)
     // fixture 即 seedFullProject 的导出,行数应与重新 seed 的源项目一致
     const { projectId: freshSrc } = await seedFullProject()
-    await expectSameCounts(freshSrc, newId)
+    await expectSameCounts(freshSrc, newId, new Set(['plotSimulationSessions', 'plotSimulationTurns']))
+    expect(await db.plotSimulationSessions.where('projectId').equals(newId).count()).toBe(0)
   })
 })

@@ -220,6 +220,32 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   num('characters', 'exitChapterId'),
   num('characters', 'homeWorldGroupId', ['worldGroupId', 'homeWorld']),
   bool('characters', 'isCrossWorld'),
+  object('characters', 'simulationModelRef', ['推演模型']),
+  longtext('characters', 'simulationInstructions', ['推演约束', '自主行动约束']),
+
+  // plotSimulationSessions / plotSimulationTurns
+  text('plotSimulationSessions', 'sessionKey'),
+  text('plotSimulationSessions', 'title', ['标题']),
+  longtext('plotSimulationSessions', 'premise', ['前提', '局面']),
+  longtext('plotSimulationSessions', 'goal', ['推演目标']),
+  enumeration('plotSimulationSessions', 'status', ['draft', 'running', 'completed', 'failed']),
+  num('plotSimulationSessions', 'worldGroupId'),
+  num('plotSimulationSessions', 'chapterId'),
+  arr('plotSimulationSessions', 'selectedCharacterIds', ['参与角色']),
+  object('plotSimulationSessions', 'narratorModelRef', ['旁白模型']),
+  object('plotSimulationSessions', 'defaultCharacterModelRef', ['默认角色模型']),
+  num('plotSimulationSessions', 'plannedTurns', ['计划回合']),
+  num('plotSimulationSessions', 'currentTurn', ['当前回合']),
+  longtext('plotSimulationSessions', 'error', ['错误']),
+
+  num('plotSimulationTurns', 'sessionId'),
+  num('plotSimulationTurns', 'turnNumber', ['回合']),
+  object('plotSimulationTurns', 'worldState', ['世界状态']),
+  arr('plotSimulationTurns', 'characterActions', ['角色行动']),
+  longtext('plotSimulationTurns', 'narration', ['旁白正文']),
+  longtext('plotSimulationTurns', 'summary', ['回合摘要']),
+  arr('plotSimulationTurns', 'worldChanges', ['世界变化']),
+  arr('plotSimulationTurns', 'unresolvedHooks', ['未决钩子']),
 
   // creativeRules
   longtext('creativeRules', 'writingStyle', ['style', '文风']),

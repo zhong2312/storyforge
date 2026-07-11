@@ -26,6 +26,8 @@ export const REQUIRED_TABLES = [
   'narrativeSummaryNodes',
   'outlineNodes',
   'powerSystems',
+  'plotSimulationSessions',
+  'plotSimulationTurns',
   'projects',
   'promptTemplates',
   'promptWorkflows',

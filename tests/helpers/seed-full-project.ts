@@ -77,7 +77,21 @@ export async function seedFullProject() {
   // ── NS-4 时序事实账本（带分类型 FK，供全表往返覆盖） ──
   await db.temporalFacts.add({ projectId, worldGroupId: wgA, characterId: char1, subjectName: '林惊羽', predicate: 'powerStage', factKind: 'state', value: '炼气一层', sourceType: 'chapter', sourceChapterId: chapter, validFromChapterId: chapter, status: 'confirmed', locked: false, createdAt: now, updatedAt: now } as any)
 
-  return { projectId, wgA, wgB, char1, char2, vol, chapNode, chapter, ref1, cat, subCat, rootWorld, mirrorWorld, locParent }
+  // ── 剧情自动推演（会话 + 回合） ──
+  const simulationSession = await db.plotSimulationSessions.add({
+    projectId, sessionKey: 'full-project-simulation', title: '青云山推演', premise: '山门遇袭', goal: '守住山门',
+    status: 'completed', worldGroupId: wgA, chapterId: chapter, selectedCharacterIds: [char1, char2],
+    plannedTurns: 1, currentTurn: 1, createdAt: now, updatedAt: now,
+  } as any) as number
+  await db.plotSimulationTurns.add({
+    projectId, sessionId: simulationSession, turnNumber: 1,
+    worldState: { pressure: '山门将破', events: ['敌军压境'], constraints: ['不可瞬移'] },
+    characterActions: [{ characterId: char1, characterName: '林惊羽', action: '迎敌' }],
+    narration: '林惊羽拔剑守住山门。', summary: '守山', worldChanges: ['山门暂保'], unresolvedHooks: [],
+    createdAt: now, updatedAt: now,
+  } as any)
+
+  return { projectId, wgA, wgB, char1, char2, vol, chapNode, chapter, ref1, cat, subCat, rootWorld, mirrorWorld, locParent, simulationSession }
 }
 
 /** 所有 exportable 的项目级表名(可按 projectId 查;排除 projects 与 direct-child referenceChunkAnalysis) */

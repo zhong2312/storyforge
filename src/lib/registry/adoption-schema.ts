@@ -15,6 +15,23 @@ export const ADOPTION_SCHEMAS: CollectionAdoptionSpec[] = [
     autoStamps: ['projectId', 'homeWorldGroupId', 'createdAt', 'updatedAt'],
   },
   {
+    target: 'plotSimulationSessions',
+    identity: { kind: 'composite', fields: ['sessionKey'] },
+    duplicatePolicy: 'update',
+    required: ['sessionKey', 'title', 'premise', 'goal', 'status', 'selectedCharacterIds', 'plannedTurns', 'currentTurn'],
+    autoStamps: ['projectId', 'worldGroupId', 'createdAt', 'updatedAt'],
+    fkChecks: [{ field: 'chapterId', target: 'chapters' }],
+    arrayMemberChecks: [{ field: 'selectedCharacterIds', itemTarget: 'characters' }],
+  },
+  {
+    target: 'plotSimulationTurns',
+    identity: { kind: 'composite', fields: ['sessionId', 'turnNumber'] },
+    duplicatePolicy: 'update',
+    required: ['sessionId', 'turnNumber', 'worldState', 'characterActions', 'narration', 'summary'],
+    autoStamps: ['projectId', 'createdAt', 'updatedAt'],
+    fkChecks: [{ field: 'sessionId', target: 'plotSimulationSessions' }],
+  },
+  {
     target: 'foreshadows',
     identity: 'name',
     duplicatePolicy: 'merge',

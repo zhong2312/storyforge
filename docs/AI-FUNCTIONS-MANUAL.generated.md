@@ -104,7 +104,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | 目标表 | 可写字段 |
 |---|---|
 | `chapters` | `content` `continuityHandoff` `notes` `order` `outlineNodeId` `planReconciliation` `status` `summary` `summarySourceTextHash` `summaryTextNormalizationVersion` `title` `wordCount` |
-| `characters` | `abilities` `activeChapterRange` `alignment` `appearance` `arc` `background` `ending` `exitChapterId` `fears` `firstAppearChapterId` `firstAppearance` `goals` `habits` `homeWorldGroupId` `identity` `innerConflict` `isCrossWorld` `keyEvents` `location` `moralAxis` `motivation` `name` `orderAxis` `personality` `powerLevel` `profile` `relationships` `role` `roleWeight` `shortDescription` `signatureItem` `speechStyle` `storyRole` `strengths` `values` `weaknesses` |
+| `characters` | `abilities` `activeChapterRange` `alignment` `appearance` `arc` `background` `ending` `exitChapterId` `fears` `firstAppearChapterId` `firstAppearance` `goals` `habits` `homeWorldGroupId` `identity` `innerConflict` `isCrossWorld` `keyEvents` `location` `moralAxis` `motivation` `name` `orderAxis` `personality` `powerLevel` `profile` `relationships` `role` `roleWeight` `shortDescription` `signatureItem` `simulationInstructions` `simulationModelRef` `speechStyle` `storyRole` `strengths` `values` `weaknesses` |
 | `codexCategories` | `builtInKey` `domain` `fieldSchema` `hidden` `icon` `name` `order` `parentId` `worldGroupId` |
 | `codexEntries` | `categoryId` `description` `fields` `icon` `importance` `name` `order` `refs` `summary` `tags` `worldGroupId` |
 | `creativeRules` | `atmosphere` `citedInsightIds` `citedReferenceIds` `consistencyRules` `narrativePOV` `prohibitions` `referenceWorksV2` `specialRequirements` `writingStyle` |
@@ -113,6 +113,8 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `importantLocations` | `description` `name` `parentId` `significance` `sortOrder` `tags` |
 | `itemLedger` | `action` `chapterId` `chapterTitle` `itemName` `note` `quantity` |
 | `outlineNodes` | `order` `parentId` `summary` `title` `type` `worldGroupId` |
+| `plotSimulationSessions` | `chapterId` `currentTurn` `defaultCharacterModelRef` `error` `goal` `narratorModelRef` `plannedTurns` `premise` `selectedCharacterIds` `sessionKey` `status` `title` `worldGroupId` |
+| `plotSimulationTurns` | `characterActions` `narration` `sessionId` `summary` `turnNumber` `unresolvedHooks` `worldChanges` `worldState` |
 | `stateCards` | `category` `entityName` `fields` `lastChapterId` |
 | `storyArcs` | `description` `name` `stages` `type` |
 | `storyCores` | `centralConflict` `concept` `logline` `mainPlot` `plotPattern` `subPlots` `theme` |
@@ -121,7 +123,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 34 个 category。
+共 36 个 category。
 未分类调用: 0 个。动态 category 调用: 3 个。
 
 | category | 触发文件 |
@@ -140,7 +142,6 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `inventory.extract` | `src/components/items/InventoryPanel.tsx:85` |
 | `location.extract` | `src/components/location/LocationPanel.tsx:105` |
 | `outline.chapter` | `src/components/outline/OutlinePanel.tsx:423`<br/>`src/lib/ai/batch-outline-runner.ts:123` |
-| `outline.character-driven` | `src/components/outline/CharacterDrivenPlotPanel.tsx:113` |
 | `outline.volume` | `src/components/outline/OutlinePanel.tsx:375` |
 | `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:106` |
 | `reference.characters` | `src/components/project/AnalysisReportViewer.tsx:139` |
@@ -151,6 +152,9 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `review.readability` | `src/components/editor/ReviewPanel.tsx:96` |
 | `rules.generate` | `src/components/rules/CreativeRulesPanel.tsx:80` |
 | `scene.verify` | `src/components/scene/SceneVerifyPanel.tsx:81` |
+| `simulation.character` | `src/lib/simulation/plot-simulation-engine.ts:192` |
+| `simulation.narrator` | `src/lib/simulation/plot-simulation-engine.ts:226` |
+| `simulation.world` | `src/lib/simulation/plot-simulation-engine.ts:159` |
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
 | `story.generate` | `src/components/worldview/StoryCorePanel.tsx:193` |
 | `story.timeline` | `src/components/timeline/StoryTimelinePanel.tsx:84` |
@@ -169,4 +173,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `0e60e57`
+生成时间基准:commit `4121cf0`

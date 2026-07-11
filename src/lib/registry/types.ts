@@ -103,7 +103,9 @@ export interface ExportRemapField {
 export interface ExportRefRemap {
   field: string
   remapVia: string
-  kind: 'portals'
+  kind: 'portals' | 'id-array' | 'object-array-id'
+  /** object-array-id 时，每个对象内需要重映射的 ID 字段。 */
+  itemField?: string
 }
 
 /**

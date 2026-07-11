@@ -173,6 +173,12 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
             const remapped = remapWorldPortalTargets(p.stashed[rr.field], (exportId: number) => refMap.get(exportId))
             if (remapped) await (db as any)[spec.name].update(p.newId, { [rr.field]: remapped, updatedAt: now })
           }
+        } else {
+          const refMap = rr.remapVia === spec.name ? newIdMap : newIdMaps.get(rr.remapVia)
+          for (const p of pendingRefRemap) {
+            const remapped = remapImportedReferences(p.stashed[rr.field], rr.kind, rr.itemField, refMap)
+            await (db as any)[spec.name].update(p.newId, { [rr.field]: remapped, updatedAt: now })
+          }
         }
       }
 
@@ -187,5 +193,25 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
     }
 
     return newProjectId
+  })
+}
+
+function remapImportedReferences(
+  value: unknown,
+  kind: 'id-array' | 'object-array-id',
+  itemField: string | undefined,
+  idMap: Map<number, number> | undefined,
+): unknown {
+  if (!Array.isArray(value)) return value
+  if (kind === 'id-array') {
+    return value.flatMap(item => typeof item === 'number' && idMap?.has(item) ? [idMap.get(item)!] : [])
+  }
+  if (!itemField) return value
+  return value.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+    const record = { ...(item as Record<string, unknown>) }
+    const exportId = record[itemField]
+    record[itemField] = typeof exportId === 'number' ? idMap?.get(exportId) ?? null : exportId
+    return record
   })
 }

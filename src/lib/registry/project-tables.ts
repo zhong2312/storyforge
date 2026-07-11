@@ -114,6 +114,24 @@ export const PROJECT_TABLES: TableSpec[] = [
   { table: db.chapterRevisions, name: 'chapterRevisions', owner: 'project', exportable: false,
     note: '章节正文的本地版本历史；随章节/项目删除，不进入项目导出' },
 
+  { table: db.plotSimulationSessions, name: 'plotSimulationSessions', owner: 'project',
+    worldScoped: true, exportable: true,
+    refs: [
+      { kind: 'simple', field: 'id', target: 'plotSimulationTurns[sessionId]', onDelete: 'cascade' },
+      { kind: 'array', field: 'selectedCharacterIds', itemTarget: 'characters', onDelete: 'removeItem' },
+    ],
+    exportRemap: [
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
+      { field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId' },
+    ],
+    exportRefRemap: [{ field: 'selectedCharacterIds', remapVia: 'characters', kind: 'id-array' }],
+    note: '剧情自动推演会话；正文采纳仍走 chapters 审批' },
+
+  { table: db.plotSimulationTurns, name: 'plotSimulationTurns', owner: 'project', exportable: true,
+    exportRemap: [{ field: 'sessionId', remapVia: 'plotSimulationSessions', exportAs: '_sessionExportId', onUnmapped: 'require' }],
+    exportRefRemap: [{ field: 'characterActions', remapVia: 'characters', kind: 'object-array-id', itemField: 'characterId' }],
+    note: '剧情自动推演逐回合世界状态、角色行动与旁白结果' },
+
   { table: db.detailedOutlines, name: 'detailedOutlines', owner: 'project', exportable: true,
     refs: [
       { kind: 'array', field: 'appearingCharacterIds', itemTarget: 'characters', onDelete: 'removeItem' },
