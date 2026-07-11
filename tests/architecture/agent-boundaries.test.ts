@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-function runAgentImportProbe(source: string) {
-  return spawnSync(process.execPath, ['scripts/check-architecture.mjs', '--agent-import-probe'], {
+function runAgentImportProbe(source: string, fileName = 'agent.ts') {
+  return spawnSync(process.execPath, ['scripts/check-architecture.mjs', '--agent-import-probe', fileName], {
     cwd: root,
     encoding: 'utf8',
     input: source,
@@ -59,5 +59,17 @@ describe('Agent architecture boundaries', () => {
 
     expect(result.status).toBe(0)
     expect(output).not.toContain('[⑧Agent越层]')
+  })
+
+  it('parses generic arrow functions in .ts files before checking imports', () => {
+    const result = runAgentImportProbe(`
+      const identity = <T>(value: T) => value
+      import { db } from '../../db/schema'
+      identity(db)
+    `, 'generic-agent.ts')
+    const output = `${result.stdout}\n${result.stderr}`
+
+    expect(result.status).toBe(1)
+    expect(output).toContain('[⑧Agent越层]')
   })
 })

@@ -42,9 +42,10 @@ function literalModuleSpecifier(expression) {
     : null
 }
 
-function moduleSpecifiers(source) {
+function moduleSpecifiers(source, fileName = 'agent.ts') {
   const specifiers = []
-  const sourceFile = ts.createSourceFile('agent.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const scriptKind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, scriptKind)
 
   const visit = (node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -80,8 +81,10 @@ function isForbiddenAgentImport(specifier) {
 }
 
 if (process.argv.includes('--agent-import-probe')) {
+  const probeIndex = process.argv.indexOf('--agent-import-probe')
+  const fileName = process.argv[probeIndex + 1] ?? 'agent.ts'
   const source = fs.readFileSync(0, 'utf8')
-  const forbiddenSpecifiers = moduleSpecifiers(source).filter(isForbiddenAgentImport)
+  const forbiddenSpecifiers = moduleSpecifiers(source, fileName).filter(isForbiddenAgentImport)
   for (const specifier of forbiddenSpecifiers) {
     console.error(`[⑧Agent越层] Agent 层不得导入 ${specifier},应通过 Tool/Storage/Registry port`)
   }
@@ -266,7 +269,7 @@ const agentDir = path.join(root, 'src/lib/agent')
 if (fs.existsSync(agentDir)) {
   for (const file of walk('src/lib/agent', [], true)) {
     const src = read(file)
-    for (const specifier of moduleSpecifiers(src)) {
+    for (const specifier of moduleSpecifiers(src, file)) {
       if (isForbiddenAgentImport(specifier)) {
         violations.push(`[⑧Agent越层] ${file}: Agent 层不得导入 ${specifier},应通过 Tool/Storage/Registry port`)
       }
