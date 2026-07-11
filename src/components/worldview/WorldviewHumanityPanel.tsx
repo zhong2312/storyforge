@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useWorldGroupStore } from '../../stores/world-group'
 import WorldGroupSwitcher from '../world-group/WorldGroupSwitcher'
-import { InlineTextarea } from '../shared/InlineEdit'
 import { useAIStream } from '../../hooks/useAIStream'
 import { createAISessionKey } from '../../stores/ai-generation-session'
 import { buildWorldviewPrompt } from '../../lib/ai/adapters/worldview-adapter'
@@ -13,6 +12,8 @@ import PromptRunPanel from '../shared/PromptRunPanel'
 import AIFieldModeTabs from '../shared/AIFieldModeTabs'
 import type { Project } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
+import WorldviewCodexSection from '../shared/WorldviewCodexSection'
 
 async function buildRulesSourceContext(projectId: number, worldGroupId: number | null): Promise<string> {
   return (await assembleContext({ projectId, worldGroupId, sourceKeys: ['worldRules'] })).text
@@ -184,20 +185,20 @@ export default function WorldviewHumanityPanel({ project }: Props) {
                 project={project}
                 contextSummary={buildCtx(f.key)}
                 onStreamingChange={streaming => handleStreamingChange(f.key, streaming)}
+                codexContent={HUMANITY_CODEX_KEYS[f.key] ? (
+                  <WorldviewCodexSection
+                    title={`${f.label} · 具体词条`}
+                    description={`把“${f.label}”逐条细化登记，可自定义字段、标记重要度，并进入 AI 生成上下文。`}
+                  >
+                    <CodexPanel
+                      project={project}
+                      fixedCategoryKeys={HUMANITY_CODEX_KEYS[f.key]}
+                      extractionSourceText={values[f.key] || ''}
+                      embedded
+                    />
+                  </WorldviewCodexSection>
+                ) : undefined}
               />
-              {/* 词条（下）：在全貌之下,把"本方面"细化为一个个具体条目(只显示对应那一类,可打星) */}
-              {HUMANITY_CODEX_KEYS[f.key] && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-text-primary mb-1">📚 {f.label} · 具体词条</h3>
-                  <p className="text-xs text-text-muted mb-3">在上面写完整体「全貌」后，这里把「{f.label}」逐条细化登记，可自定义字段、打重要度星级，并进入 AI 生成上下文。</p>
-                  <CodexPanel
-                    project={project}
-                    fixedCategoryKeys={HUMANITY_CODEX_KEYS[f.key]}
-                    extractionSourceText={values[f.key] || ''}
-                    embedded
-                  />
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -209,7 +210,7 @@ export default function WorldviewHumanityPanel({ project }: Props) {
 // ── 单字段编辑器（各自独立的 AI 流） ──────────────────────────
 
 function HumanityFieldEditor({
-  meta, value, onChange, project, contextSummary, onStreamingChange,
+  meta, value, onChange, project, contextSummary, onStreamingChange, codexContent,
 }: {
   meta: FieldMeta
   value: string
@@ -217,6 +218,7 @@ function HumanityFieldEditor({
   project: Project
   contextSummary: string
   onStreamingChange: (streaming: boolean) => void
+  codexContent?: ReactNode
 }) {
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
@@ -253,7 +255,7 @@ function HumanityFieldEditor({
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold text-text-primary">{meta.emoji} {meta.label}</h3>
         <p className="mt-1 text-sm text-text-muted">{meta.description}</p>
@@ -264,11 +266,9 @@ function HumanityFieldEditor({
         )}
       </div>
 
-      <div className="bg-bg-surface border border-border rounded-xl p-4">
-        <InlineTextarea value={value} onChange={onChange} placeholder={meta.description} />
-      </div>
+      {codexContent}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
@@ -292,6 +292,13 @@ function HumanityFieldEditor({
           onAccept={(text: string) => { onChange(text); ai.reset() }}
           onRetry={handleGenerate} moduleKey="worldview.dimension" />
       )}
+
+      <MarkdownFieldEditor
+        value={value}
+        onChange={onChange}
+        placeholder={meta.description}
+        label={`${meta.label}正文`}
+      />
     </div>
   )
 }

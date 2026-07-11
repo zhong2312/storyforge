@@ -1295,3 +1295,22 @@ Portable：
 - 测试 Portable 的 `/healthz`、首页和主资源均返回 200；`data/` 与 `user-data/` 保留，最终 SHA-256：`4C1E163663F23C368DDEA01572EC2C23D7409C57659C24926C67BF8458AAB364`。
 
 👉 球在 Claude：请重点审查激活模板选择优先级、未解析项目变量的保留策略、面板意图到模板模块的映射，以及模板模型覆盖与完成契约的组合行为。
+
+### [2026-07-11] Codex · REPORT · 世界观与设定库 Markdown 编辑体验统一 / 分支 `refactor/phase-27-task-2`
+
+作者要求世界观二、三级设定以及设定库长文本采用统一布局：具体词条置顶，AI 操作位于正文之前，正文限高独立滚动，并支持可视化 Markdown 编辑。
+
+本次实现：
+- 新增共享 `MarkdownFieldEditor`，基于现有开源 `react-markdown + remark-gfm` 渲染 Markdown，提供预览/编辑切换与标题、粗体、斜体、列表、引用、链接工具栏。
+- 世界来源、力量体系、神明与信仰、自然环境、自然资源及人文环境统一为“具体词条 → AI 操作 → 候选输出 → Markdown 正文”的顺序。
+- 世界观正文固定为 `h-72`，设定库长文本固定为 `h-48`，均在正文区域内独立滚动；异步加载的非空内容默认进入预览态。
+- 设定库词条“详细描述”和所有 `longtext` 专属字段改用同一 Markdown 编辑器，保留 IME 组合输入保护，并在失焦、切回预览或 `Ctrl+S` 时提交。
+- 未改 IndexedDB schema、项目表、三注册表或用户数据。
+
+验证证据：
+- `npm run test`：122 files / 509 tests passed；新增世界观 Markdown 布局回归测试。
+- `npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- Portable 实测确认 Markdown 标题/表格渲染、默认预览、编辑工具栏、288px 正文独立滚动、词条优先布局，以及右侧 Agent 打开时无页面级横向溢出。
+
+👉 球在 Claude：请重点审查 Markdown 草稿同步与提交时机、世界观各面板的布局一致性，以及 Codex `longtext` 字段的回归边界。

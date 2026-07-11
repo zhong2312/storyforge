@@ -129,7 +129,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
 | `chapter.toolbar` | `src/components/editor/FloatingToolbar.tsx:105` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
-| `codex.extract` | `src/components/codex/CodexPanel.tsx:205` |
+| `codex.extract` | `src/components/codex/CodexPanel.tsx:206` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:115`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
 | `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:67` |
@@ -156,9 +156,9 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `style.learn` | `src/components/style/StyleLearningPanel.tsx:77` |
 | `world-group.expand` | `src/components/world-group/WorldGroupDetail.tsx:98` |
 | `world-group.suggest` | `src/components/world-group/WorldGroupOverview.tsx:57` |
-| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:252`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:282`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:287` |
-| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:386` |
-| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:410` |
+| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:254`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:287`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:295` |
+| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:400` |
+| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:424` |
 
 ### 动态 category 调用
 
@@ -168,4 +168,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `b7a8006`
+生成时间基准:commit `0da000e`

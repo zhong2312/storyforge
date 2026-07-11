@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
 import { useWorldviewStore } from '../../stores/worldview'
 import { useWorldGroupStore } from '../../stores/world-group'
 import { useAIConfigStore } from '../../stores/ai-config'
 import WorldGroupSwitcher from '../world-group/WorldGroupSwitcher'
-import { InlineTextarea } from '../shared/InlineEdit'
 import { useAIStream } from '../../hooks/useAIStream'
 import { createAISessionKey } from '../../stores/ai-generation-session'
 import { buildWorldviewPrompt } from '../../lib/ai/adapters/worldview-adapter'
@@ -15,6 +14,8 @@ import CodexPanel from '../codex/CodexPanel'
 import CodexSearchBar from '../codex/CodexSearchBar'
 import PromptRunPanel from '../shared/PromptRunPanel'
 import AIFieldModeTabs from '../shared/AIFieldModeTabs'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
+import WorldviewCodexSection from '../shared/WorldviewCodexSection'
 import type { Project, DivineDesign } from '../../lib/types'
 import type { FieldGenerationMode } from '../../lib/ai/field-generation-context'
 
@@ -190,17 +191,20 @@ export default function WorldviewOriginPanel({ project }: Props) {
               project={project}
               contextSummary={buildCtx('power')}
               onStreamingChange={streaming => handleStreamingChange('power', streaming)}
+              codexContent={(
+                <WorldviewCodexSection
+                  title="力量层级 · 具体词条"
+                  description="把各等级或层级逐条登记，可自定义字段、标记重要度，并进入 AI 生成上下文。"
+                >
+                  <CodexPanel
+                    project={project}
+                    fixedCategoryKeys={['originPower']}
+                    extractionSourceText={powerHierarchy}
+                    embedded
+                  />
+                </WorldviewCodexSection>
+              )}
             />
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold text-text-primary mb-1">📚 力量层级 · 具体词条</h3>
-              <p className="text-xs text-text-muted mb-3">在上面写完力量体系「全貌」后，这里把各等级/层级逐条登记，可自定义字段、打重要度星级，并进入 AI 生成上下文。</p>
-              <CodexPanel
-                project={project}
-                fixedCategoryKeys={['originPower']}
-                extractionSourceText={powerHierarchy}
-                embedded
-              />
-            </div>
           </div>
 
           {/* 神明与信仰:全貌(上) + 具体词条(下) */}
@@ -215,21 +219,24 @@ export default function WorldviewOriginPanel({ project }: Props) {
               project={project}
               contextSummary={buildCtx('divine')}
               onStreamingChange={streaming => handleStreamingChange('divine', streaming)}
+              codexContent={(
+                <WorldviewCodexSection
+                  title="神明信仰 · 具体词条"
+                  description="把神明、教派与信仰规则逐条登记，可自定义字段、标记重要度，并进入 AI 生成上下文。"
+                >
+                  <CodexPanel
+                    project={project}
+                    fixedCategoryKeys={['originDeity']}
+                    extractionSourceText={[
+                      divineDesign.divineNames,
+                      divineDesign.divineRank,
+                      divineDesign.divineRules,
+                    ].filter(Boolean).join('\n\n')}
+                    embedded
+                  />
+                </WorldviewCodexSection>
+              )}
             />
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold text-text-primary mb-1">📚 神明信仰 · 具体词条</h3>
-              <p className="text-xs text-text-muted mb-3">在上面写完信仰体系「全貌」后，这里把各神明/信仰逐条登记，可自定义字段、打重要度星级，并进入 AI 生成上下文。</p>
-              <CodexPanel
-                project={project}
-                fixedCategoryKeys={['originDeity']}
-                extractionSourceText={[
-                  divineDesign.divineNames,
-                  divineDesign.divineRank,
-                  divineDesign.divineRules,
-                ].filter(Boolean).join('\n\n')}
-                embedded
-              />
-            </div>
           </div>
         </div>
       </div>
@@ -240,7 +247,7 @@ export default function WorldviewOriginPanel({ project }: Props) {
 // ── 文本字段编辑器（世界来源 / 力量体系） ────────────────────────
 
 function TextFieldEditor({
-  field, value, onChange, project, contextSummary, onStreamingChange,
+  field, value, onChange, project, contextSummary, onStreamingChange, codexContent,
 }: {
   field: typeof FIELDS[number]
   value: string
@@ -248,6 +255,7 @@ function TextFieldEditor({
   project: Project
   contextSummary: string
   onStreamingChange: (streaming: boolean) => void
+  codexContent?: ReactNode
 }) {
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
@@ -296,11 +304,9 @@ function TextFieldEditor({
         <p className="text-xs text-text-muted mt-0.5">{field.desc}</p>
       </div>
 
-      <div className="bg-bg-surface border border-border rounded-lg p-4">
-        <InlineTextarea value={value} onChange={onChange} placeholder={field.desc} />
-      </div>
+      {codexContent}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
@@ -324,6 +330,13 @@ function TextFieldEditor({
           onAccept={(text: string) => { onChange(text); ai.reset() }}
           onRetry={handleGenerate} moduleKey="worldview.dimension" />
       )}
+
+      <MarkdownFieldEditor
+        value={value}
+        onChange={onChange}
+        placeholder={field.desc}
+        label={`${field.label}正文`}
+      />
     </div>
   )
 }
@@ -331,7 +344,7 @@ function TextFieldEditor({
 // ── 神明与信仰编辑器（独立 AI 流） ─────────────────────────────────
 
 function DivineFieldEditor({
-  field, divineDesign, onDivineChange, project, contextSummary, onStreamingChange,
+  field, divineDesign, onDivineChange, project, contextSummary, onStreamingChange, codexContent,
 }: {
   field: typeof FIELDS[number]
   divineDesign: DivineDesign
@@ -339,6 +352,7 @@ function DivineFieldEditor({
   project: Project
   contextSummary: string
   onStreamingChange: (streaming: boolean) => void
+  codexContent?: ReactNode
 }) {
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
@@ -443,56 +457,10 @@ function DivineFieldEditor({
         <p className="text-xs text-text-muted mt-0.5">{field.desc}</p>
       </div>
 
-      {/* 存在神明/信仰 checkbox */}
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <input
-          type="checkbox"
-          checked={divineDesign.hasDivinity}
-          onChange={e => {
-            onDivineChange({ ...divineDesign, hasDivinity: e.target.checked })
-          }}
-          className="accent-accent"
-        />
-        <span className="text-text-secondary">存在神明或宗教信仰</span>
-      </label>
-
-      {divineDesign.hasDivinity && (
-        <div className="space-y-0 divide-y divide-border/40">
-          <div className="flex gap-4 py-3 first:pt-0">
-            <span className="w-24 shrink-0 text-xs text-text-muted pt-0.5 text-right">信仰层级</span>
-            <div className="flex-1 min-w-0">
-              <InlineTextarea
-                value={divineDesign.divineRank}
-                onChange={v => onDivineChange({ ...divineDesign, divineRank: v })}
-                placeholder="例：主神 / 次神 / 半神 / 国教 / 民间信仰 ..."
-              />
-            </div>
-          </div>
-          <div className="flex gap-4 py-3">
-            <span className="w-24 shrink-0 text-xs text-text-muted pt-0.5 text-right">名号与职司</span>
-            <div className="flex-1 min-w-0">
-              <InlineTextarea
-                value={divineDesign.divineNames}
-                onChange={v => onDivineChange({ ...divineDesign, divineNames: v })}
-                placeholder="例：天帝 · 创世神；关帝信仰；妈祖信仰 ..."
-              />
-            </div>
-          </div>
-          <div className="flex gap-4 py-3">
-            <span className="w-24 shrink-0 text-xs text-text-muted pt-0.5 text-right">规则与禁忌</span>
-            <div className="flex-1 min-w-0">
-              <InlineTextarea
-                value={divineDesign.divineRules}
-                onChange={v => onDivineChange({ ...divineDesign, divineRules: v })}
-                placeholder="例：不可直接干涉凡间 / 避讳字 / 祭祀风俗 ..."
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {codexContent}
 
       {/* AI 生成 */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <AIFieldModeTabs value={mode} onChange={setMode} />
         <input
           value={hint} onChange={e => setHint(e.target.value)}
@@ -522,6 +490,45 @@ function DivineFieldEditor({
           tokenUsage={ai.tokenUsage} onStop={ai.stop}
           onAccept={handleAccept}
           onRetry={handleGenerate} moduleKey="worldview.dimension" />
+      )}
+
+      {/* 存在神明/信仰 checkbox */}
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input
+          type="checkbox"
+          checked={divineDesign.hasDivinity}
+          onChange={e => {
+            onDivineChange({ ...divineDesign, hasDivinity: e.target.checked })
+          }}
+          className="accent-accent"
+        />
+        <span className="text-text-secondary">存在神明或宗教信仰</span>
+      </label>
+
+      {divineDesign.hasDivinity && (
+        <div className="grid gap-3">
+              <MarkdownFieldEditor
+                value={divineDesign.divineRank}
+                onChange={v => onDivineChange({ ...divineDesign, divineRank: v })}
+                placeholder="例：主神 / 次神 / 半神 / 国教 / 民间信仰 ..."
+                label="信仰层级"
+                compact
+              />
+              <MarkdownFieldEditor
+                value={divineDesign.divineNames}
+                onChange={v => onDivineChange({ ...divineDesign, divineNames: v })}
+                placeholder="例：天帝 · 创世神；关帝信仰；妈祖信仰 ..."
+                label="名号与职司"
+                compact
+              />
+              <MarkdownFieldEditor
+                value={divineDesign.divineRules}
+                onChange={v => onDivineChange({ ...divineDesign, divineRules: v })}
+                placeholder="例：不可直接干涉凡间 / 避讳字 / 祭祀风俗 ..."
+                label="规则与禁忌"
+                compact
+              />
+        </div>
       )}
     </div>
   )
