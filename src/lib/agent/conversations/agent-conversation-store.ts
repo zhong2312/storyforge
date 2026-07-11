@@ -5,10 +5,7 @@ const STORAGE_PREFIX = 'storyforge:agent-conversations:v1:'
 const STATE_VERSION = 1
 const MAX_GROUPS = 30
 const MAX_CONVERSATIONS = 60
-const MAX_TURNS_PER_CONVERSATION = 30
 const MAX_EVENTS_PER_TURN = 200
-const DEFAULT_HISTORY_MAX_TURNS = 12
-const DEFAULT_HISTORY_MAX_CHARACTERS = 32_000
 
 export interface AgentConversationTurn {
   readonly id: string
@@ -153,29 +150,24 @@ export function conversationTitle(message: string): string {
 
 export function buildAgentConversationHistory(
   turns: readonly AgentConversationTurn[],
-  options: { maxTurns?: number; maxCharacters?: number } = {},
 ): AgentHistoryMessage[] {
-  const maxTurns = positiveInteger(options.maxTurns, DEFAULT_HISTORY_MAX_TURNS)
-  const maxCharacters = positiveInteger(options.maxCharacters, DEFAULT_HISTORY_MAX_CHARACTERS)
-  const selected: AgentConversationTurn[] = []
-  let characters = 0
-
-  for (let index = turns.length - 1; index >= 0 && selected.length < maxTurns; index -= 1) {
-    const turn = turns[index]
+  return turns.flatMap(turn => {
     const userMessage = turn.userMessage.trim()
-    const assistantMessage = turn.assistantMessage.trim()
-    if (!userMessage || !assistantMessage || turn.error) continue
-    const turnCharacters = userMessage.length + assistantMessage.length
-    if (selected.length > 0 && characters + turnCharacters > maxCharacters) break
-    if (turnCharacters > maxCharacters) continue
-    selected.push(turn)
-    characters += turnCharacters
-  }
-
-  return selected.reverse().flatMap(turn => [
-    { role: 'user' as const, content: turn.userMessage.trim() },
-    { role: 'assistant' as const, content: turn.assistantMessage.trim() },
-  ])
+    const assistantParts = [
+      ...turn.events.flatMap(event => event.type === 'tool.completed' && event.payload.output !== undefined
+        ? [`【工具输出：${event.payload.toolName}】\n${serializeToolOutput(event.payload.output)}`]
+        : []),
+      ...turn.events.flatMap(event => event.type === 'approval.requested' && event.payload.preview
+        ? [`【正式候选方案】\n${serializeToolOutput(event.payload.preview)}`]
+        : []),
+      turn.assistantMessage.trim(),
+    ].filter(Boolean)
+    if (!userMessage || !assistantParts.length || turn.error) return []
+    return [
+      { role: 'user' as const, content: userMessage },
+      { role: 'assistant' as const, content: assistantParts.join('\n\n') },
+    ]
+  })
 }
 
 function normalizeConversation(
@@ -194,7 +186,6 @@ function normalizeConversation(
     ? value.turns
       .map(turn => normalizeTurn(turn, forStorage))
       .filter((turn): turn is AgentConversationTurn => turn != null)
-      .slice(-MAX_TURNS_PER_CONVERSATION)
     : []
   return {
     id: value.id,
@@ -206,10 +197,6 @@ function normalizeConversation(
     updatedAt: finiteNumber(value.updatedAt, Date.now()),
     turns,
   }
-}
-
-function positiveInteger(value: number | undefined, fallback: number): number {
-  return Number.isInteger(value) && value! > 0 ? value! : fallback
 }
 
 function normalizeTurn(value: unknown, forStorage: boolean): AgentConversationTurn | null {
@@ -233,6 +220,21 @@ function normalizeTurn(value: unknown, forStorage: boolean): AgentConversationTu
     error: restoredPending
       ? '页面已重新加载，原审批运行已失效，请重新发起任务。'
       : typeof value.error === 'string' ? value.error : undefined,
+  }
+}
+
+function serializeToolOutput(value: unknown): string {
+  const seen = new WeakSet<object>()
+  try {
+    return JSON.stringify(value, (_key, item) => {
+      if (typeof item === 'object' && item !== null) {
+        if (seen.has(item)) return '[循环引用]'
+        seen.add(item)
+      }
+      return item
+    }, 2) ?? String(value)
+  } catch {
+    return String(value)
   }
 }
 

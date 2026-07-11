@@ -45,6 +45,9 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       'run.completed',
     ]))
     expect(events.map(event => event.sequence)).toEqual(events.map((_, index) => index + 1))
+    const completedTool = events.find(event => event.type === 'tool.completed')
+    expect(completedTool?.type === 'tool.completed' ? completedTool.payload.output : undefined)
+      .toEqual({ readSources: ['worldview'] })
     const preparation = events.find(event => (
       event.type === 'phase.completed' && event.payload.phase === 'prepare'
     ))
@@ -584,6 +587,47 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(parts).toContainEqual({ type: 'text', text: '第二章继续山门试炼。' })
   })
 
+  it('compresses earlier history at the configured model-window threshold', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+      return requests.length === 1
+        ? completionResponse('摘要：工具读取确认林川已进入山门。')
+        : sseResponse(textChunks('继续处理第二章。'))
+    }))
+
+    const parts: AgentLoopPart[] = []
+    for await (const part of streamAiSdkAgentLoop({
+      config: {
+        provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'test-model',
+        contextWindow: 2_000, compressionThreshold: 0.8, maxTokens: 200,
+      },
+      instructions: 'Continue the project conversation.',
+      prompt: '继续第二章',
+      conversationHistory: [
+        { role: 'user', content: `第一轮问题${'设定'.repeat(300)}` },
+        { role: 'assistant', content: `【工具输出：storyforge.context.read】${'林川进入山门'.repeat(180)}` },
+      ],
+      descriptors: [],
+      maxSteps: 1,
+      signal: new AbortController().signal,
+      execute: async () => ({}),
+      shouldStop: () => false,
+    })) parts.push(part)
+
+    expect(requests).toHaveLength(2)
+    expect(parts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'history-compression-start' }),
+      expect.objectContaining({ type: 'history-compressed', compressedMessages: 2 }),
+      expect.objectContaining({ type: 'text', text: '继续处理第二章。' }),
+    ]))
+    expect(requests[1].messages).toEqual([
+      { role: 'system', content: 'Continue the project conversation.' },
+      { role: 'assistant', content: '【此前会话压缩摘要】\n摘要：工具读取确认林川已进入山门。' },
+      { role: 'user', content: '继续第二章' },
+    ])
+  })
+
   it('keeps tools required and forces the proposal tool after required context is ready', async () => {
     const requests: Array<Record<string, unknown>> = []
     const responses = [
@@ -891,6 +935,17 @@ function sseResponse(chunks: readonly Record<string, unknown>[]): Response {
   return new Response(body, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
+  })
+}
+
+function completionResponse(text: string): Response {
+  return new Response(JSON.stringify({
+    id: 'chatcmpl-summary', object: 'chat.completion', created: 1, model: 'test-model',
+    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
   })
 }
 

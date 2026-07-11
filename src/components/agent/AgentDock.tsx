@@ -1360,6 +1360,8 @@ function createResources(
         model: config.model,
         temperature: config.temperature,
         maxTokens: config.maxTokens,
+        contextWindow: config.contextWindow,
+        compressionThreshold: config.contextCompressionThreshold,
       }
     },
     grantedScopes: () => [

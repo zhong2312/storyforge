@@ -5,11 +5,15 @@ import {
   jsonSchema,
   stepCountIs,
   type ModelMessage,
+  type LanguageModel,
   type ToolSet,
+  generateText,
 } from 'ai'
 import type { ToolDescriptor } from '../../tools/tool-types'
 import type { AgentHistoryMessage } from '../agent-runtime-port'
 import { buildOpenAIEndpoint } from '../../../ai/openai-endpoint'
+import { estimateTokens, getModelPreset } from '../../../ai/context-budget'
+import type { AIProvider } from '../../../types'
 
 export interface AgentModelConfig {
   readonly provider: string
@@ -18,6 +22,8 @@ export interface AgentModelConfig {
   readonly model: string
   readonly temperature?: number
   readonly maxTokens?: number
+  readonly contextWindow?: number
+  readonly compressionThreshold?: number
 }
 
 export type AgentLoopPart =
@@ -30,6 +36,8 @@ export type AgentLoopPart =
   | { readonly type: 'tool-error'; readonly toolCallId: string; readonly toolName: string; readonly error: unknown }
   | { readonly type: 'abort'; readonly reason?: string }
   | { readonly type: 'error'; readonly error: unknown }
+  | { readonly type: 'history-compression-start'; readonly inputTokens: number; readonly thresholdTokens: number }
+  | { readonly type: 'history-compressed'; readonly summary: string; readonly compressedMessages: number }
 
 export interface AgentLoopRequest {
   readonly config: AgentModelConfig
@@ -54,17 +62,7 @@ export type AgentLoopStreamer = (request: AgentLoopRequest) => AsyncIterable<Age
 export async function* streamAiSdkAgentLoop(
   request: AgentLoopRequest,
 ): AsyncIterable<AgentLoopPart> {
-  const provider = createOpenAICompatible({
-    name: request.config.provider || 'storyforge',
-    baseURL: normalizeBaseUrl(request.config.baseUrl),
-    apiKey: request.config.apiKey || undefined,
-    includeUsage: true,
-    fetch: async (_input, init) => await fetch(buildOpenAIEndpoint(
-      request.config.baseUrl,
-      'chat/completions',
-      {},
-    ), init),
-  })
+  const provider = createAgentProvider(request.config)
   const toolNames = createToolNameMap(request.descriptors)
   const completionToolName = request.requiredCompletionTool
     ? toolNames.toSdk.get(request.requiredCompletionTool)
@@ -77,6 +75,25 @@ export async function* streamAiSdkAgentLoop(
   }
   if (request.requiredContextTool && !contextToolName) {
     throw new Error(`[agent-loop] required context tool is unavailable: ${request.requiredContextTool}`)
+  }
+  const preparedHistory = prepareHistoryCompression(request)
+  let conversationHistory = request.conversationHistory ?? []
+  if (preparedHistory) {
+    yield {
+      type: 'history-compression-start',
+      inputTokens: preparedHistory.inputTokens,
+      thresholdTokens: preparedHistory.thresholdTokens,
+    }
+    const summary = await summarizeHistory(provider(request.config.model), preparedHistory.olderMessages)
+    conversationHistory = [
+      { role: 'assistant', content: `【此前会话压缩摘要】\n${summary}` },
+      ...preparedHistory.recentMessages,
+    ]
+    yield {
+      type: 'history-compressed',
+      summary,
+      compressedMessages: preparedHistory.olderMessages.length,
+    }
   }
   const autoOnlyToolChoice = usesAutoOnlyToolChoice(request.config)
   const tools: ToolSet = {}
@@ -93,9 +110,9 @@ export async function* streamAiSdkAgentLoop(
 
   let step = 0
   let consumedOutputTokens = 0
-  let messages: ModelMessage[] | undefined = request.conversationHistory?.length
+  let messages: ModelMessage[] | undefined = conversationHistory.length
     ? [
-        ...request.conversationHistory.map(message => ({
+        ...conversationHistory.map(message => ({
           role: message.role,
           content: message.content,
         } satisfies ModelMessage)),
@@ -213,6 +230,93 @@ export async function* streamAiSdkAgentLoop(
         : `宿主完成契约尚未满足。继续调用 ${request.requiredContextTool} 读取尚缺上下文：${request.remainingContextSources?.().join('、') || '按宿主清单继续读取'}。不要重复读取已完成源，不要停止或只输出说明。`,
     })
   }
+}
+
+interface PreparedHistoryCompression {
+  readonly inputTokens: number
+  readonly thresholdTokens: number
+  readonly olderMessages: readonly AgentHistoryMessage[]
+  readonly recentMessages: readonly AgentHistoryMessage[]
+}
+
+function prepareHistoryCompression(request: AgentLoopRequest): PreparedHistoryCompression | undefined {
+  const history = request.conversationHistory ?? []
+  if (!history.length) return undefined
+  const preset = getModelPreset(request.config.provider as AIProvider, request.config.model)
+  const maxContext = request.config.contextWindow && request.config.contextWindow > 0
+    ? request.config.contextWindow
+    : preset.maxContext
+  const threshold = clamp(request.config.compressionThreshold ?? 0.8, 0.5, 0.95)
+  const thresholdTokens = Math.floor(maxContext * threshold)
+  const outputReserve = request.config.maxTokens && request.config.maxTokens > 0
+    ? request.config.maxTokens
+    : Math.min(preset.maxOutput, Math.floor(maxContext * 0.5))
+  const fixedTokens = estimateTokens(request.instructions)
+    + estimateTokens(request.prompt)
+    + estimateTokens(JSON.stringify(request.descriptors.map(descriptor => ({
+      name: descriptor.name,
+      description: descriptor.description,
+      inputSchema: descriptor.inputSchema,
+    }))))
+    + outputReserve
+  const historyTokens = history.reduce((sum, message) => sum + estimateTokens(message.content), 0)
+  const inputTokens = fixedTokens + historyTokens
+  if (inputTokens < thresholdTokens) return undefined
+
+  const recentBudget = Math.max(512, Math.floor(thresholdTokens * 0.35))
+  const recentMessages: AgentHistoryMessage[] = []
+  let recentTokens = 0
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index]
+    const tokens = estimateTokens(message.content)
+    if (recentMessages.length > 0 && recentTokens + tokens > recentBudget) break
+    if (tokens > recentBudget && recentMessages.length === 0) break
+    recentMessages.unshift(message)
+    recentTokens += tokens
+  }
+  const olderCount = history.length - recentMessages.length
+  const olderMessages = history.slice(0, Math.max(1, olderCount))
+  const retained = olderCount > 0 ? recentMessages : history.slice(1)
+  return { inputTokens, thresholdTokens, olderMessages, recentMessages: retained }
+}
+
+async function summarizeHistory(
+  model: LanguageModel,
+  messages: readonly AgentHistoryMessage[],
+): Promise<string> {
+  const transcript = messages.map(message => (
+    `${message.role === 'user' ? '用户' : '助手'}：\n${message.content}`
+  )).join('\n\n')
+  const result = await generateText({
+    model,
+    system: [
+      '你负责压缩 StoryForge Agent 的历史上下文。',
+      '必须保留用户目标、已确认决策、人物与世界设定事实、章节连续性、工具读取到的项目事实、正式候选内容及未完成事项。',
+      '删除寒暄、重复过程描述和无效尝试。不得添加历史中不存在的事实。使用紧凑 Markdown。',
+    ].join('\n'),
+    prompt: transcript,
+    temperature: 0.2,
+    maxOutputTokens: 4096,
+  })
+  return result.text.trim() || '无可保留的历史信息。'
+}
+
+function createAgentProvider(config: AgentModelConfig) {
+  return createOpenAICompatible({
+    name: config.provider || 'storyforge',
+    baseURL: normalizeBaseUrl(config.baseUrl),
+    apiKey: config.apiKey || undefined,
+    includeUsage: true,
+    fetch: async (_input, init) => await fetch(buildOpenAIEndpoint(
+      config.baseUrl,
+      'chat/completions',
+      {},
+    ), init),
+  })
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value))
 }
 
 function normalizeBaseUrl(value: string): string {

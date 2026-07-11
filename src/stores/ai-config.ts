@@ -35,6 +35,7 @@ const DEFAULT_CONFIG: AIConfig = {
   baseUrl: 'https://api.deepseek.com/v1',
   temperature: 0.7,
   maxTokens: 0,
+  contextCompressionThreshold: 0.8,
 }
 
 /** NS-5 默认：关闭；隐私首选本地 Ollama + bge-m3（手稿不出本机）。 */

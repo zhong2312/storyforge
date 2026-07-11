@@ -59,6 +59,7 @@ export type ToolCompletedAgentEvent = BaseAgentEvent<'tool.completed', {
   readonly toolCallId: string
   readonly toolName: string
   readonly summary: string
+  readonly output?: unknown
 }>
 
 export type ToolFailedAgentEvent = BaseAgentEvent<'tool.failed', {

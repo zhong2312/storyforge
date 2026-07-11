@@ -246,6 +246,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         toolCallId,
         toolName: COMMIT_TOOL,
         summary: summarizeOutput(descriptor, output),
+        output,
       })
       yield this.append(runId, input.conversationId, 'phase.completed', {
         phase: 'commit',
@@ -320,6 +321,19 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           toolCallId: part.toolCallId,
           toolName: part.toolName,
           summary: summarizeOutput(registry.get(part.toolName), part.output),
+          output: part.output,
+        })
+        break
+      case 'history-compression-start':
+        yield this.append(runId, conversationId, 'phase.started', {
+          phase: 'compress-history',
+          label: `压缩历史上下文（${part.inputTokens}/${part.thresholdTokens} token）`,
+        })
+        break
+      case 'history-compressed':
+        yield this.append(runId, conversationId, 'phase.completed', {
+          phase: 'compress-history',
+          summary: `已压缩 ${part.compressedMessages} 条历史消息`,
         })
         break
       case 'tool-error':

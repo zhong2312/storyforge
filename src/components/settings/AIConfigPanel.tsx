@@ -423,6 +423,24 @@ export default function AIConfigPanel() {
             <p className="text-[11px] text-text-muted mt-1">
               识别不到的模型默认按 8K 计算,会误报「上下文超出窗口」。本地模型(LM Studio / Ollama)请在此填真实窗口,如 128000 / 262144。
             </p>
+            <div className="mt-3">
+              <label className="mb-1.5 block text-sm text-text-secondary">
+                Agent 上下文压缩阈值
+                <span className="ml-1 text-accent">{Math.round((config.contextCompressionThreshold ?? 0.8) * 100)}%</span>
+              </label>
+              <input
+                type="range"
+                min={50}
+                max={95}
+                step={5}
+                value={Math.round((config.contextCompressionThreshold ?? 0.8) * 100)}
+                onChange={(event) => setConfig({ contextCompressionThreshold: Number(event.target.value) / 100 })}
+                className="w-full accent-accent"
+              />
+              <p className="mt-1 text-[11px] text-text-muted">
+                会话、工具结果、系统指令和输出预留达到模型上下文窗口的该比例后，自动把较早内容压缩为摘要。
+              </p>
+            </div>
           </div>
 
           {/* 测试连接 */}

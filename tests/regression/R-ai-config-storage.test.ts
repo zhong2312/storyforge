@@ -23,6 +23,7 @@ afterEach(() => {
 describe('R-AI-CONFIG · API Key 存储策略', () => {
   it('默认只把 API Key 存入 sessionStorage,localStorage 配置不落 key', async () => {
     const useAIConfigStore = await freshStore()
+    expect(useAIConfigStore.getState().config.contextCompressionThreshold).toBe(0.8)
     useAIConfigStore.getState().setConfig({ apiKey: 'sk-session' })
 
     expect(useAIConfigStore.getState().rememberApiKey).toBe(false)

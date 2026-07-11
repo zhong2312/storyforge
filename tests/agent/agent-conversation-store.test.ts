@@ -69,7 +69,7 @@ describe('Agent conversation store', () => {
     expect(loaded.conversations[0].turns[0].error).toContain('审批运行已失效')
   })
 
-  it('restores a bounded model history using only completed visible messages', () => {
+  it('restores model history with tool outputs but without hidden reasoning or other conversations', () => {
     const storage = new MemoryStorage()
     const state = createAgentConversationState(9)
     const current = createAgentConversation({ id: 'current', projectId: 9, module: 'chapters' })
@@ -91,21 +91,26 @@ describe('Agent conversation store', () => {
 
     expect(buildAgentConversationHistory(restoredCurrent.turns)).toEqual([
       { role: 'user', content: '第一章写了什么？' },
-      { role: 'assistant', content: '第一章写了林川进入山门。' },
+      {
+        role: 'assistant',
+        content: '【工具输出：storyforge.context.read】\n{\n  "secret": true\n}\n\n第一章写了林川进入山门。',
+      },
     ])
-    expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('secret')
+    expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).toContain('secret')
     expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('隐藏的阶段推理')
     expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('另一个会话')
   })
 
-  it('keeps the newest complete turn pairs within the history budget', () => {
+  it('does not discard complete turns before the runtime token budget is evaluated', () => {
     const turns = [
       turn('旧问题', '旧回答'),
       turn('较新问题', '较新回答'),
       turn('最新问题', '最新回答'),
     ]
 
-    expect(buildAgentConversationHistory(turns, { maxTurns: 2, maxCharacters: 100 })).toEqual([
+    expect(buildAgentConversationHistory(turns)).toEqual([
+      { role: 'user', content: '旧问题' },
+      { role: 'assistant', content: '旧回答' },
       { role: 'user', content: '较新问题' },
       { role: 'assistant', content: '较新回答' },
       { role: 'user', content: '最新问题' },

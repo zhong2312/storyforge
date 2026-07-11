@@ -32,6 +32,8 @@ export interface AIConfig {
    * 设了就以它为准,否则按内置预设、再否则 8K 兜底。0/undefined = 用预设。
    */
   contextWindow?: number
+  /** Agent 会话达到上下文窗口的该比例时生成压缩摘要。默认 0.8。 */
+  contextCompressionThreshold?: number
 }
 
 /**
