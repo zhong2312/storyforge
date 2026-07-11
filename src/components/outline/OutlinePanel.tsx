@@ -16,7 +16,6 @@ import {
   type ParsedVolume, type ParsedChapter,
 } from '../../lib/ai/parse-outline-output'
 import { useAIConfigStore } from '../../stores/ai-config'
-import { runBatchOutlineGeneration, type BatchOutlineProgress } from '../../lib/ai/batch-outline-runner'
 import { adopt } from '../../lib/registry/adopt'
 import { getTopLevelVolumes, estimateChaptersPerVolume, DEFAULT_WORDS_PER_CHAPTER } from '../../lib/outline/selectors'
 import { normalizeOutlineNode } from '../../lib/outline/normalize'
@@ -30,6 +29,7 @@ import { useDialog } from '../shared/Dialog'
 import { useToast } from '../shared/Toast'
 import type { Project, StoryStructure } from '../../lib/types'
 import { STORY_STRUCTURES } from '../../lib/types/outline'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 interface Props {
   project: Project
@@ -76,15 +76,9 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const [pendingGeneration, setPendingGeneration] = useState<OutlineGenerationRequest | null>(null)
   const [promptPanelOpen, setPromptPanelOpen] = useState(false)
 
-  // 采纳预览
   const [previewVolumes, setPreviewVolumes] = useState<ParsedVolume[] | null>(null)
   const [previewChapters, setPreviewChapters] = useState<ParsedChapter[] | null>(null)
   const [previewTargetId, setPreviewTargetId] = useState<number | null>(null)
-
-  // D1: 批量生成状态
-  const [batchProgress, setBatchProgress] = useState<BatchOutlineProgress | null>(null)
-  const [batchRunning, setBatchRunning] = useState(false)
-  const batchAbortRef = useRef<AbortController | null>(null)
 
   const addOutlineNodeByAdopt = useCallback(async (node: {
     parentId: number | null
@@ -104,7 +98,6 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     const id = result.written[0]?.id ?? null
     return { id, reason: id == null ? (result.skipped[0]?.reason ?? '未知原因') : undefined }
   }, [project.id])
-  const [batchResult, setBatchResult] = useState<Map<number, ParsedChapter[]> | null>(null)
 
   const ai = useAIStream(createAISessionKey(project.id!, 'outline.generate'))
   const sessionModuleKey: 'outline.volume' | 'outline.chapter' =
@@ -261,11 +254,62 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
       ? 'outline.volume'
       : 'outline.chapter'
     setActiveModuleKey(moduleKey)
-    setPendingGeneration(request)
-    setPromptPanelOpen(true)
-    setPreviewVolumes(null)
-    setPreviewChapters(null)
-    setPreviewTargetId(null)
+    const targetNode = request.kind === 'single-volume'
+      ? nodes.find(node => node.id === request.volumeId)
+      : request.kind === 'single-chapter'
+        ? nodes.find(node => node.id === request.chapterId)
+        : request.kind === 'chapters'
+          ? nodes.find(node => node.id === request.volumeId)
+          : null
+    const targetVolume = request.kind === 'single-chapter'
+      ? findVolumeForChapter(request.chapterId)
+      : targetNode?.type === 'volume' ? targetNode : null
+    const title = request.kind === 'volumes'
+      ? 'Agent 生成卷级大纲'
+      : request.kind === 'chapters'
+        ? 'Agent 生成本卷章纲'
+        : request.kind === 'single-volume'
+          ? 'Agent 补全当前卷纲'
+          : 'Agent 补全当前章纲'
+    const instruction = request.kind === 'volumes'
+      ? '根据项目目标字数、故事核心、角色和现有大纲，设计全书卷级结构。保留已有卷，调用变更提案批量新增缺少的卷节点。'
+      : request.kind === 'chapters'
+        ? '读取当前卷纲和相邻卷信息，把当前卷展开为完整章节大纲。调用变更提案批量新增章节节点，parentId 必须是当前卷 ID。'
+        : request.kind === 'single-volume'
+          ? '读取故事核心、角色、现有卷和当前卷内容，补全当前卷的标题与摘要。调用变更提案更新当前卷记录，不要新增重复卷。'
+          : '读取当前卷纲、同级章节和相关设定，补全当前章节的标题与摘要。调用变更提案更新当前章节记录，不要新增重复章节。'
+
+    dispatchAgentIntent({
+      type: moduleKey,
+      title,
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'outline',
+        worldGroupId: targetVolume?.worldGroupId ?? targetNode?.worldGroupId ?? null,
+        outlineNodeId: targetNode?.id,
+        entityId: targetNode?.id,
+      },
+      instruction,
+      payload: {
+        requestKind: request.kind,
+        targetNode: targetNode ? {
+          id: targetNode.id,
+          type: targetNode.type,
+          title: targetNode.title,
+          summary: targetNode.summary,
+          parentId: targetNode.parentId,
+        } : undefined,
+        targetVolumeId: targetVolume?.id,
+        userHint: hint.trim() || undefined,
+        methodologyId: project.methodologyId,
+        targetWordCount: project.targetWordCount,
+        generationParameters: parameterValues,
+        promptOverrides: {
+          system: systemOverride || undefined,
+          user: userOverride || undefined,
+        },
+      },
+    })
   }
 
   const findVolumeForChapter = (chapterId: number) => {
@@ -382,6 +426,29 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const handleAIChapters = () => {
     if (selectedVol?.id) prepareGeneration({ kind: 'chapters', volumeId: selectedVol.id })
   }
+  const handleAgentBatchChapters = () => {
+    if (!volumes.length) return
+    dispatchAgentIntent({
+      type: 'outline.chapter.batch',
+      title: 'Agent 生成全部卷章纲',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'outline',
+      },
+      instruction: '依次读取每一卷的卷纲、所属世界、角色和规则，为所有卷补齐章节大纲。保留已有章节；调用一次变更提案，以 add-many 批量新增 outlineNodes，并确保每章 parentId 和 worldGroupId 对应所属卷。',
+      payload: {
+        volumes: volumes.map(volume => ({
+          id: volume.id,
+          title: volume.title,
+          summary: volume.summary,
+          worldGroupId: volume.worldGroupId,
+          existingChapterCount: nodes.filter(node => node.type === 'chapter' && node.parentId === volume.id).length,
+        })),
+        userHint: hint.trim() || undefined,
+        generationParameters: parameterValues,
+      },
+    })
+  }
   const handleConfirmGeneration = () => {
     if (!pendingGeneration) return
     const request = pendingGeneration
@@ -392,87 +459,6 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
     const request = decodeGenerationOperation(ai.operation)
     if (request) void executeGeneration(request)
   }
-
-  // ── D1: 批量生成 ──
-
-  const handleBatchGenerate = useCallback(async () => {
-    if (volumes.length === 0) return
-    setBatchRunning(true)
-    setBatchResult(null)
-    setBatchProgress(null)
-
-    const controller = new AbortController()
-    batchAbortRef.current = controller
-
-    const assembled = await buildOutlineAssembledContext(null)
-    const worldCtx = assembled.text
-    const charCtx = contextPart(assembled, 'characters')
-    const rulesCtx = contextPart(assembled, 'worldRules')
-
-    try {
-      const result = await runBatchOutlineGeneration({
-        volumes,
-        worldContext: worldCtx,
-        // 多世界：逐卷用本卷所属世界的上下文
-        worldContextResolver: project.enableMultiWorld
-          ? async (volId) => {
-            const vol = nodes.find(n => n.id === volId)
-            const resolved = await buildOutlineAssembledContext(vol?.worldGroupId ?? null, volId)
-            return resolved.text
-          }
-          : undefined,
-        worldRulesContextResolver: project.enableMultiWorld
-          ? async (volId) => {
-            const vol = nodes.find(n => n.id === volId)
-            const resolved = await buildOutlineAssembledContext(vol?.worldGroupId ?? null, volId)
-            return contextPart(resolved, 'worldRules')
-          }
-          : undefined,
-        userHint: hint || undefined,
-        characterContext: charCtx,
-        worldRulesContext: rulesCtx,
-        signal: controller.signal,
-        onProgress: setBatchProgress,
-      })
-      if (!result.cancelled) {
-        setBatchResult(result.chaptersByVolume)
-      }
-    } catch (err) {
-      console.error('[BatchOutline] 失败:', err)
-    } finally {
-      setBatchRunning(false)
-      batchAbortRef.current = null
-    }
-  }, [volumes, nodes, project.enableMultiWorld, hint, buildOutlineAssembledContext])
-
-  const handleBatchCancel = useCallback(() => {
-    batchAbortRef.current?.abort()
-    batchAbortRef.current = null
-    setBatchRunning(false)
-  }, [])
-
-  const handleBatchConfirm = useCallback(async () => {
-    if (!batchResult) return
-    try {
-      for (const [volId, chapters] of batchResult) {
-        const existingCount = nodes.filter(n => n.parentId === volId && n.type === 'chapter').length
-        for (let i = 0; i < chapters.length; i++) {
-          await addOutlineNodeByAdopt({
-            parentId: volId, type: 'chapter',
-            title: chapters[i].title, summary: chapters[i].summary,
-            order: existingCount + i,
-          })
-        }
-      }
-    } catch (err) {
-      console.error('[Outline] 批量写入章节失败:', err)
-      toast.error(`批量写入章节时出错：${err instanceof Error ? err.message : '未知错误'}。请查看控制台获取详情。`)
-      return
-    }
-    await loadAll(project.id!)
-    setBatchResult(null)
-    setBatchProgress(null)
-  }, [batchResult, nodes, addOutlineNodeByAdopt, loadAll, project.id])
 
   // ── 采纳预览 + 确认 ──
 
@@ -653,61 +639,17 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">
           <Plus className="w-3.5 h-3.5" /> 添加卷
         </button>
-        <button onClick={handleAIVolumes} disabled={ai.isStreaming || batchRunning}
+        <button onClick={handleAIVolumes}
           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
-          <Sparkles className="w-3.5 h-3.5" /> 批量生成卷级大纲
+          <Sparkles className="w-3.5 h-3.5" /> Agent 生成卷级大纲
         </button>
         {volumes.length >= 2 && (
-          <button onClick={handleBatchGenerate} disabled={ai.isStreaming || batchRunning}
+          <button onClick={handleAgentBatchChapters}
             className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs bg-bg-elevated text-accent rounded-md hover:bg-accent/10 border border-accent/30 disabled:opacity-50 transition-colors">
-            <Layers className="w-3.5 h-3.5" /> 批量生成所有卷的章节
+            <Layers className="w-3.5 h-3.5" /> Agent 生成所有卷章节
           </button>
         )}
       </div>
-
-      {/* 批量生成进度 */}
-      {(batchRunning || batchResult) && (
-        <div className="px-2 pb-2">
-          <div className="bg-bg-surface border border-border rounded-lg p-2 space-y-1.5">
-            {batchRunning && batchProgress && (
-              <>
-                <div className="flex items-center gap-1.5 text-xs text-accent">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>{batchProgress.completedVolumes}/{batchProgress.totalVolumes} 卷</span>
-                </div>
-                <div className="w-full bg-border rounded-full h-1.5">
-                  <div
-                    className="bg-accent h-1.5 rounded-full transition-all"
-                    style={{ width: `${(batchProgress.completedVolumes / batchProgress.totalVolumes) * 100}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-text-muted truncate">{batchProgress.stage}</p>
-                <button onClick={handleBatchCancel}
-                  className="w-full px-2 py-1 text-[10px] text-error border border-error/30 rounded hover:bg-error/10 transition-colors">
-                  取消
-                </button>
-              </>
-            )}
-            {!batchRunning && batchResult && (
-              <>
-                <p className="text-xs text-success">
-                  批量生成完成：{Array.from(batchResult.values()).reduce((s, chs) => s + chs.length, 0)} 章
-                </p>
-                <div className="flex gap-1">
-                  <button onClick={handleBatchConfirm}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-accent text-white rounded hover:bg-accent-hover transition-colors">
-                    <Check className="w-3 h-3" /> 全部写入
-                  </button>
-                  <button onClick={() => { setBatchResult(null); setBatchProgress(null) }}
-                    className="px-2 py-1 text-[10px] text-text-muted border border-border rounded hover:text-text-primary transition-colors">
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 卷列表 */}
       <div className="flex-1 overflow-y-auto px-1">
@@ -866,15 +808,14 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
                 {!selectedVol.summary.trim() && (
                   <button
                     onClick={() => prepareGeneration({ kind: 'single-volume', volumeId: selectedVol.id! })}
-                    disabled={ai.isStreaming}
                     className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-bg-elevated text-accent rounded-md hover:bg-accent/10 border border-accent/30 disabled:opacity-50 transition-colors"
                   >
-                    <Sparkles className="w-3.5 h-3.5" /> AI 生成本卷卷纲
+                    <Sparkles className="w-3.5 h-3.5" /> Agent 补全本卷卷纲
                   </button>
                 )}
-                <button onClick={handleAIChapters} disabled={ai.isStreaming}
+                <button onClick={handleAIChapters}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
-                  <Sparkles className="w-3.5 h-3.5" /> 生成本卷所有章节
+                  <Sparkles className="w-3.5 h-3.5" /> Agent 生成本卷章节
                 </button>
                 <button onClick={() => handleAddChapter()}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">

@@ -62,6 +62,11 @@ const WorldGroupOverview = lazy(() => import('../components/world-group/WorldGro
 const AgentDock = lazy(() => import('../components/agent/AgentDock'))
 import { useLocationStore } from '../stores/location'
 import { useWorldGroupStore } from '../stores/world-group'
+import {
+  isIntentForDexieProject,
+  subscribeAgentIntents,
+  type AgentIntent,
+} from '../lib/agent/intents'
 
 export default function WorkspacePage() {
   const { projectId } = useParams()
@@ -72,7 +77,15 @@ export default function WorkspacePage() {
   const [editorNodeId, setEditorNodeId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [rightPanel, setRightPanel] = useState<'agent' | 'properties' | null>('agent')
+  const [pendingAgentIntent, setPendingAgentIntent] = useState<AgentIntent | null>(null)
   const activeWorldGroupId = useWorldGroupStore(state => state.activeGroupId)
+
+  useEffect(() => subscribeAgentIntents(intent => {
+    const currentId = Number(projectId)
+    if (!Number.isFinite(currentId) || !isIntentForDexieProject(intent, currentId)) return
+    setPendingAgentIntent(intent)
+    setRightPanel('agent')
+  }), [projectId])
 
   // 从 Zustand Store 中动态获取当前项目，实现全局响应式更新
   const project = useMemo(() => {
@@ -354,6 +367,10 @@ export default function WorkspacePage() {
             projectId={project.id!}
             activeModule={activeModule}
             worldGroupId={activeWorldGroupId}
+            intent={pendingAgentIntent}
+            onIntentConsumed={intentId => {
+              setPendingAgentIntent(current => current?.id === intentId ? null : current)
+            }}
             onClose={() => setRightPanel(null)}
             onOpenProperties={() => setRightPanel('properties')}
             onOpenSettings={() => { setActiveModule('settings'); setRightPanel(null) }}

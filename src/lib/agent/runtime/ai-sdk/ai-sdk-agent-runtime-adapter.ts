@@ -333,12 +333,20 @@ function proposalSummary(output: Record<string, unknown>): string {
 }
 
 function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentRunInput): string {
+  const scope = [
+    input.scope.worldGroupId != null ? `世界ID=${input.scope.worldGroupId}` : '',
+    input.scope.outlineNodeId != null ? `大纲节点ID=${input.scope.outlineNodeId}` : '',
+    input.scope.chapterId != null ? `章节ID=${input.scope.chapterId}` : '',
+    input.scope.entityId != null ? `实体ID=${input.scope.entityId}` : '',
+  ].filter(Boolean).join('；')
   return [
     '你是 StoryForge 项目副驾。优先使用工具获取事实，不得猜测项目设定。',
     '读取设定前先用 storyforge.settings.catalog 了解可用源，再用 storyforge.context.read 获取需要的上下文。',
+    '如果任务来自项目面板，宿主消息中给出的记录 ID、世界、章节、字段和选区是权威目标；不得改写为其它记录，也不得自行切换作用域。',
     '任何修改必须调用 storyforge.change.propose 生成方案；提案后立即停止并等待用户批准，不得声称已经写入。',
     '回答使用中文，清楚说明已读取的事实、当前阶段和下一步。只输出简短的阶段性推理摘要。',
     `当前界面模块：${input.scope.module || '未知'}。`,
+    `当前宿主作用域：${scope || '项目级'}。`,
     `可用工具：${descriptors.map(tool => tool.name).join(', ') || '无'}。`,
   ].join('\n')
 }

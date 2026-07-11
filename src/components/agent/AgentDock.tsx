@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   Check,
@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
-import type { AgentEvent } from '../../lib/agent/events/agent-events'
+import { isTerminalAgentEvent, type AgentEvent } from '../../lib/agent/events/agent-events'
 import { AiSdkAgentRuntimeAdapter } from '../../lib/agent/runtime/ai-sdk'
 import { ToolRegistry } from '../../lib/agent/tools/tool-registry'
 import { AdoptionPlanStore, createStoryForgeTools } from '../../lib/agent/tools/internal'
@@ -33,11 +33,20 @@ import {
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
 import { useAIConfigStore } from '../../stores/ai-config'
+import type { AgentScope } from '../../lib/agent/runtime/agent-runtime-port'
+import {
+  agentScopeFromIntent,
+  buildAgentIntentPrompt,
+  dispatchAgentProjectCommit,
+  type AgentIntent,
+} from '../../lib/agent/intents'
 
 interface Props {
   projectId: number
   activeModule: string
   worldGroupId?: number | null
+  intent?: AgentIntent | null
+  onIntentConsumed?: (intentId: string) => void
   onClose: () => void
   onOpenProperties: () => void
   onOpenSettings: () => void
@@ -64,6 +73,8 @@ export default function AgentDock({
   projectId,
   activeModule,
   worldGroupId,
+  intent,
+  onIntentConsumed,
   onClose,
   onOpenProperties,
   onOpenSettings,
@@ -81,6 +92,8 @@ export default function AgentDock({
   const resources = useMemo<AgentResources>(() => createResources(projectId, configRef, setMcpStatus), [projectId])
   const conversationId = useMemo(() => `project-${projectId}-${nanoid(8)}`, [projectId])
   const currentRunIdRef = useRef<string | null>(null)
+  const handledIntentIdsRef = useRef(new Set<string>())
+  const runContextRef = useRef(new Map<string, { scope: AgentScope; intentType?: string }>())
   const bottomRef = useRef<HTMLDivElement>(null)
   const pendingApproval = turns.find(turn => turn.waitingApproval)?.waitingApproval
 
@@ -92,6 +105,8 @@ export default function AgentDock({
   useEffect(() => {
     setTurns([])
     currentRunIdRef.current = null
+    handledIntentIdsRef.current.clear()
+    runContextRef.current.clear()
   }, [projectId])
 
   useEffect(() => () => {
@@ -104,34 +119,7 @@ export default function AgentDock({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [turns, busy])
 
-  const send = async () => {
-    const message = input.trim()
-    if (!message || busy || pendingApproval) return
-    const turnId = nanoid()
-    setInput('')
-    setBusy(true)
-    setTurns(current => [...current, {
-      id: turnId,
-      userMessage: message,
-      assistantMessage: '',
-      events: [],
-    }])
-
-    try {
-      const stream = resources.runtime.run({
-        conversationId,
-        project: { backend: 'dexie', projectId },
-        scope: { module: activeModule, worldGroupId },
-        userMessage: message,
-      })
-      await consumeEvents(turnId, stream)
-    } finally {
-      setBusy(false)
-      currentRunIdRef.current = null
-    }
-  }
-
-  const consumeEvents = async (turnId: string, stream: AsyncIterable<AgentEvent>) => {
+  const consumeEvents = useCallback(async (turnId: string, stream: AsyncIterable<AgentEvent>) => {
     for await (const event of stream) {
       currentRunIdRef.current = event.runId
       setTurns(current => current.map(turn => turn.id === turnId
@@ -140,9 +128,69 @@ export default function AgentDock({
       if (event.type === 'tool.completed'
         && event.payload.toolName === 'storyforge.change.commit') {
         await onProjectChanged()
+        const runContext = runContextRef.current.get(turnId)
+        if (runContext) {
+          dispatchAgentProjectCommit({
+            project: { backend: 'dexie', projectId },
+            scope: runContext.scope,
+            intentType: runContext.intentType,
+          })
+          runContextRef.current.delete(turnId)
+        }
       }
+      if (isTerminalAgentEvent(event)) runContextRef.current.delete(turnId)
     }
+  }, [onProjectChanged, projectId])
+
+  const runMessage = useCallback(async (
+    rawMessage: string,
+    scope: AgentScope,
+    displayMessage = rawMessage,
+    intentType?: string,
+  ) => {
+    const message = rawMessage.trim()
+    if (!message || busy || pendingApproval) return
+    const turnId = nanoid()
+    setInput('')
+    setBusy(true)
+    runContextRef.current.set(turnId, { scope, intentType })
+    setTurns(current => [...current, {
+      id: turnId,
+      userMessage: displayMessage,
+      assistantMessage: '',
+      events: [],
+    }])
+
+    try {
+      const stream = resources.runtime.run({
+        conversationId,
+        project: { backend: 'dexie', projectId },
+        scope,
+        userMessage: message,
+      })
+      await consumeEvents(turnId, stream)
+    } finally {
+      setBusy(false)
+      currentRunIdRef.current = null
+    }
+  }, [busy, consumeEvents, conversationId, pendingApproval, projectId, resources.runtime])
+
+  const send = async () => {
+    await runMessage(input, { module: activeModule, worldGroupId })
   }
+
+  useEffect(() => {
+    if (!intent || busy || pendingApproval || handledIntentIdsRef.current.has(intent.id)) return
+    handledIntentIdsRef.current.add(intent.id)
+    onIntentConsumed?.(intent.id)
+    setView('chat')
+    void runMessage(
+      buildAgentIntentPrompt(intent),
+      agentScopeFromIntent(intent),
+      intent.title,
+      intent.type,
+    )
+  }, [busy, intent, onIntentConsumed, pendingApproval, runMessage])
 
   const resolveApproval = async (turn: ConversationTurn, decision: 'approved' | 'rejected') => {
     if (!turn.runId || !turn.waitingApproval || busy) return
@@ -153,6 +201,7 @@ export default function AgentDock({
         decision,
       }))
     } finally {
+      if (decision === 'rejected') runContextRef.current.delete(turn.id)
       setBusy(false)
       currentRunIdRef.current = null
     }

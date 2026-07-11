@@ -5,12 +5,10 @@ import { useOutlineStore } from '../../stores/outline'
 import { useStateCardStore } from '../../stores/state-card'
 import { useCharacterStore } from '../../stores/character'
 import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
 import { CInput } from '../shared/CompositionInput'
 import { useAutoSave } from '../../hooks/useAutoSave'
 import { useBeforeUnload } from '../../hooks/useBeforeUnload'
-import { buildChapterContentPrompt, buildContinuePrompt, buildPolishPrompt, buildExpandPrompt, buildDeAIPrompt } from '../../lib/ai/adapters/chapter-adapter'
-import { buildReviewRevisePrompt, type ReviewResult } from '../../lib/ai/adapters/review-adapter'
+import type { ReviewResult } from '../../lib/ai/adapters/review-adapter'
 import { buildStateExtractPrompt, parseStateDiffs } from '../../lib/ai/adapters/state-extract-adapter'
 import { buildFactExtractPrompt, parseFactExtractResult } from '../../lib/ai/adapters/fact-extract-adapter'
 import { useFactLedgerStore } from '../../stores/fact-ledger'
@@ -18,26 +16,17 @@ import { rebuildChapterChunks, ensureChunkEmbeddings, rebuildProjectNarrativeSum
 import { isEmbeddingReady } from '../../lib/ai/adapters/embedding-adapter'
 import { propagateChapterEditStale, analyzeEditImpact } from '../../lib/consistency/impact-analysis'
 import { runChapterMemoryTask } from '../../lib/ai/chapter-memory/run-chapter-memory'
-import { prepareContinuityContext } from '../../lib/ai/chapter-memory/continuity-context'
 import { isPlanReconciliationCurrent } from '../../lib/ai/chapter-memory/plan-reconciliation'
 import { findNextCanonicalChapter, findPreviousCanonicalChapter } from '../../lib/ai/chapter-memory/canonical-chapter-sequence'
-import { chat } from '../../lib/ai/client'
 import { db } from '../../lib/db/schema'
-import { buildGenreConstraintContext } from '../../lib/ai/genre-metadata'
-import { buildStylePromptInjection } from '../../lib/ai/writing-styles'
 import { assembleContext } from '../../lib/registry/assemble-context'
 import { resolveChapterDisplayMeta } from '../../lib/outline/chapter-display'
 import { pickBestChapterForOutline } from '../../lib/chapters/selectors'
-import { useCreativeRulesStore } from '../../stores/project-singletons'
 import { useStoryArcStore } from '../../stores/story-arc'
 import { useForeshadowStore } from '../../stores/foreshadow'
-import { htmlToPlainText, plainTextToHtml, countWords } from '../../lib/utils/html'
-import AIStreamOutput from '../shared/AIStreamOutput'
-import ContextBudgetBar from '../shared/ContextBudgetBar'
+import { htmlToPlainText, countWords } from '../../lib/utils/html'
 import { useDialog } from '../shared/Dialog'
-import { useReviewResultStore } from '../../stores/review-result'
 import { useAIConfigStore } from '../../stores/ai-config'
-import { analyzeContextSegments, calculateBudget, getModelPreset, type ContextBudget } from '../../lib/ai/context-budget'
 import StateDiffModal from '../state/StateDiffModal'
 import RichEditor, { type RichEditorHandle } from './RichEditor'
 import EmotionBeatCard from './EmotionBeatCard'
@@ -46,9 +35,10 @@ import ReviewPanel from './ReviewPanel'
 import NotePanel from './NotePanel'
 import FloatingToolbar from './FloatingToolbar'
 import type { ChapterStatus, Project, StateDiffItem } from '../../lib/types'
-
-/** 生成任务类型(原 memory-builder 三层记忆已被 assembleContext 取代,此类型仅用于调试日志标签) */
-type MemoryTaskType = 'write' | 'plan' | 'review'
+import {
+  dispatchAgentIntent,
+  subscribeAgentProjectCommits,
+} from '../../lib/agent/intents'
 
 const CHAPTER_STATUS_OPTIONS: { value: ChapterStatus; label: string }[] = [
   { value: 'outline', label: '仅大纲' },
@@ -84,7 +74,6 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const { nodes, updateNode } = useOutlineStore()
   const { cards: stateCards, loadAll: loadStateCards, buildStateContext, buildSelectiveStateContext, applyDiffs } = useStateCardStore()
   const { characters, loadAll: loadCharacters } = useCharacterStore()
-  const { creativeRules } = useCreativeRulesStore()
   const { loadAll: loadArcs } = useStoryArcStore()
   const { buildForeshadowContext, loadAll: loadForeshadows } = useForeshadowStore()
 
@@ -102,24 +91,16 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   // A2: 按需召回 — 手动额外勾选/取消的状态卡 ID
   const [extraStateIds, setExtraStateIds] = useState<number[]>([])
   const [showStatePreview, setShowStatePreview] = useState(false)
-  const ai = useAIStream(createAISessionKey(
-    project.id!,
-    'chapter.content',
-    currentChapter?.id ?? outlineNodeId ?? 'unselected',
-  ))
   const stateAI = useAIStream()
   const memoryAI = useAIStream()
   const factAI = useAIStream()
   const editorRef = useRef<RichEditorHandle>(null)
-  const memoryRebuildInFlightRef = useRef(new Set<number>())
   const creatingChapterForOutlineRef = useRef(new Set<number>())
-  const reviseReportRef = useRef<ReviewResult | null>(null)  // G8：记住上次"按报告修改"的报告，供重试
   // Phase A1: 自动流程标记
   const [autoProcessing, setAutoProcessing] = useState<'idle' | 'extracting' | 'memory'>('idle')
   const [showOutlinePreview, setShowOutlinePreview] = useState(false)
   const [showReviewPanel, setShowReviewPanel] = useState(false)
   const [showNotePanel, setShowNotePanel] = useState(false)
-  const [contextBudget, setContextBudget] = useState<ContextBudget | null>(null)
   const [planReconciliationCurrent, setPlanReconciliationCurrent] = useState(false)
   const aiConfig = useAIConfigStore(s => s.config)
   const dialog = useDialog()
@@ -270,222 +251,109 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
   // AI 操作 —— 所有 AI 交互都基于纯文本
   // Phase A2: 使用三层记忆构建器生成完整上下文
-  const rebuildChapterMemoryById = async (chapterId: number): Promise<void> => {
-    if (memoryRebuildInFlightRef.current.has(chapterId)) return
-    const chapter = await db.chapters.get(chapterId)
-    if (!chapter?.content?.trim()) return
-    const chapterTitle = nodes.find(node => node.id === chapter.outlineNodeId)?.title || chapter.title
-    memoryRebuildInFlightRef.current.add(chapterId)
-    try {
-      const result = await runChapterMemoryTask({
-        projectId: project.id!,
-        chapterId,
-        chapterTitle,
-        chapterContent: chapter.content,
-        call: messages => chat(messages, aiConfig, {
-          category: 'chapter.memory',
-          projectId: project.id!,
-        }),
-      })
-      if (result.status === 'written') await refreshChapter(chapterId)
-    } catch (error) {
-      console.warn('[ChapterMemory] 惰性重建失败，继续使用 tail 降级:', error)
-    } finally {
-      memoryRebuildInFlightRef.current.delete(chapterId)
-    }
-  }
-
-  const prepareContinuityBeforeGeneration = async (): Promise<number[]> => {
-    if (!currentChapter?.id) return []
-    const snapshot = await prepareContinuityContext({
-      projectId: project.id!,
-      chapterId: currentChapter.id,
+  const dispatchChapterIntent = (
+    type: string,
+    title: string,
+    instruction: string,
+    selection?: string,
+    payload: Record<string, unknown> = {},
+  ) => {
+    if (!outlineNode || !currentChapter?.id) return
+    dispatchAgentIntent({
+      type,
+      title,
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'editor',
+        worldGroupId: chapterWorldGroupId,
+        outlineNodeId: outlineNode.id,
+        chapterId: currentChapter.id,
+        entityId: currentChapter.id,
+        selection: selection ? { text: selection } : undefined,
+      },
+      instruction,
+      payload: {
+        chapterTitle: outlineNode.title || currentChapter.title,
+        chapterSummary: outlineNode.summary,
+        customInstruction: customInstruction.trim() || undefined,
+        ...payload,
+      },
     })
-    if (snapshot.anomalies.length) {
-      console.warn('[ChapterMemory] 规范章节序列 anomalies:', snapshot.anomalies)
-    }
-    const predecessorId = snapshot.predecessor?.chapter.id
-    if (predecessorId != null && snapshot.memoryRebuildCandidateIds.includes(predecessorId)) {
-      // 直接前驱优先且同步补建；失败仍由真实 tail 保底。
-      await rebuildChapterMemoryById(predecessorId)
-    }
-    return snapshot.memoryRebuildCandidateIds
-      .filter(id => id !== predecessorId)
-      .slice(-4)
   }
 
-  const scheduleRecentMemoryRebuild = (chapterIds: number[]) => {
-    if (!chapterIds.length) return
-    void (async () => {
-      for (const chapterId of chapterIds) await rebuildChapterMemoryById(chapterId)
-    })()
-  }
-
-  const buildFullWorldCtx = async (taskType: MemoryTaskType = 'write') => {
-    // 引用手法注入（Phase 20）
-    let citedIds: number[] = []
-    try {
-      citedIds = JSON.parse(creativeRules?.citedReferenceIds || '[]')
-    } catch { /* ignore */ }
-
-    const stateRef = [
-      outlineNode?.title,
-      outlineNode?.summary,
-      currentChapter?.title,
-      plainText.slice(-2000),
-    ].filter(Boolean).join(' ')
-
-    const assembled = await assembleContext({
-      projectId: project.id!,
-      worldGroupId: chapterWorldGroupId ?? null,
-      outlineNodeId: outlineNode?.id ?? null,
-      chapterId: currentChapter?.id ?? null,
-      currentChapterOrder: currentChapter?.order ?? 0,
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      citedReferenceIds: citedIds,
-      stateReferenceText: stateRef,
-      extraStateIds,
-      // 注意:不含 'characters' —— 角色由 charCtx 单独注入(见 handleGenerate / handleContinue),
-      // 此前 fullCtx(含characters)+charCtx 双传导致角色内容被注入两遍、白白吃掉一大块 token。
-      sourceKeys: [
-        'contextMemo',
-        'chapterOutline',
-        'detailedOutline', // FB-9:正文生成读入本章场景细纲
-        'chapterContinuityHandoff',
-        'previousPlanReconciliation',
-        'previousChapterEnding',
-        'recentChapterSummaries',
-        'worldview',
-        'storyCore',
-        'powerSystem',
-        'codex',
-        'creativeRules',
-        'worldRules',
-        'historical',
-        'locations',
-        'foreshadows',
-        'storyArcs',
-        'emotionBeats',
-        'stateCards',
-        'currentFacts', // NS-4:当前章生效的已确认事实，回注生成防止前后矛盾
-        'heldItems', // CONSISTENCY-1:当前已持有物品，避免新章重复写首次获得
-        'retrievedPassages', // NS-5:相关前文召回，防远距离细节/伏笔矛盾
-        'references',
-        'userStyleProfile',
-      ],
-    })
-
-    console.log(`[assembleContext] ${taskType} 模式 — included:${assembled.included.join(',')} trimmed:${assembled.trimmed.join(',') || 'none'} tokens:${assembled.totalInputTokens}`)
-
-    // Phase E: 题材约束 + 写作风格注入
-    const genreCtx = buildGenreConstraintContext(project.genres?.length ? project.genres : project.genre)
-    const styleCtx = project.writingStyleId ? buildStylePromptInjection(project.writingStyleId) : ''
-
-    const segmentFor = (key: string) => {
-      const index = assembled.included.indexOf(key)
-      return index >= 0 ? assembled.segments[index]?.content ?? '' : ''
-    }
-    const continuityKeys = new Set([
+  const buildAgentChapterContextPlan = async () => ({
+    sourceKeys: [
+      'contextMemo',
+      'chapterOutline',
+      'detailedOutline',
       'chapterContinuityHandoff',
       'previousPlanReconciliation',
       'previousChapterEnding',
       'recentChapterSummaries',
-    ])
-    const assembledSegmentsWithoutContinuity = assembled.segments
-      .filter((_, index) => !continuityKeys.has(assembled.included[index]))
-    const assembledWithoutContinuity = assembledSegmentsWithoutContinuity
-      .map(segment => segment.content)
-      .join('\n\n')
-    const parts = [assembledWithoutContinuity]
-    if (genreCtx) parts.push(genreCtx)
-    if (styleCtx) parts.push(styleCtx)
-    const worldRulesIdx = assembled.included.indexOf('worldRules')
-    const maxContext = aiConfig.contextWindow && aiConfig.contextWindow > 0
-      ? aiConfig.contextWindow
-      : getModelPreset(aiConfig.provider, aiConfig.model).maxContext
-    const continuityBudgetTokens = maxContext <= 8_192 ? 3000 : maxContext <= 32_768 ? 6000 : 10_000
-    return {
-      text: parts.filter(Boolean).join('\n\n'),
-      segments: assembledSegmentsWithoutContinuity,
-      worldRulesContext: worldRulesIdx >= 0 ? assembled.segments[worldRulesIdx]?.content ?? '' : '',
-      continuity: {
-        handoff: segmentFor('chapterContinuityHandoff'),
-        planReconciliation: segmentFor('previousPlanReconciliation'),
-        previousTail: segmentFor('previousChapterEnding'),
-        recentSummaries: segmentFor('recentChapterSummaries'),
-      },
-      continuityBudgetTokens,
-    }
-  }
+      'worldview',
+      'storyCore',
+      'powerSystem',
+      'codex',
+      'characters',
+      'creativeRules',
+      'worldRules',
+      'historical',
+      'locations',
+      'foreshadows',
+      'storyArcs',
+      'emotionBeats',
+      'stateCards',
+      'currentFacts',
+      'heldItems',
+      'retrievedPassages',
+      'references',
+      'userStyleProfile',
+    ],
+  })
 
   const handleGenerate = async () => {
-    if (!outlineNode) return
-    const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
-    const {
-      text: fullCtx,
-      segments: assembledSegments,
-      worldRulesContext,
-      continuity,
-      continuityBudgetTokens,
-    } = await buildFullWorldCtx('write')
-    const messages = buildChapterContentPrompt(
-      outlineNode.title,
-      outlineNode.summary,
-      fullCtx,
-      charCtx,
-      continuity.previousTail,
-      worldRulesContext,
-      customInstruction.trim() || undefined,
-      { continuity, continuityBudgetTokens },
+    const contextPlan = await buildAgentChapterContextPlan()
+    dispatchChapterIntent(
+      'chapter.content',
+      'Agent 生成本章正文',
+      '按 requiredContextSources 读取本章大纲、细纲、角色、世界规则、连续性交接、当前事实、已持有物品和相关前文，生成完整章节正文。调用变更提案替换当前章节 content，并同步合理的状态、字数和摘要字段；不要直接输出一篇无法写入的正文。',
+      undefined,
+      { requiredContextSources: contextPlan.sourceKeys },
     )
-
-    // Phase 21.3: 计算上下文预算
-    const segments = analyzeContextSegments([
-      { label: 'System Prompt', content: messages.find(m => m.role === 'system')?.content || '', layer: 'L0' },
-      { label: '章节大纲', content: outlineNode.summary || '', layer: 'L1' },
-      ...assembledSegments,
-      { label: 'User Prompt', content: messages.find(m => m.role === 'user')?.content || '', layer: 'L1' },
-    ])
-    setContextBudget(calculateBudget(aiConfig.provider, aiConfig.model, segments, aiConfig.contextWindow))
-
-    ai.setOperation('generate')
-    void ai.start(messages, undefined, { category: 'chapter.content', projectId: project.id! })
-    scheduleRecentMemoryRebuild(backgroundMemoryIds)
   }
 
   const handleContinue = async () => {
-    if (!plainText || !outlineNode) return
-    const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
-    const { text: fullCtx, continuity, continuityBudgetTokens } = await buildFullWorldCtx('write')
-    // fullCtx 已不含角色(见 buildFullWorldCtx),续写也要角色 → 把 charCtx 一并带上(只此一次,不重复)
-    const ctxWithChars = charCtx ? `${fullCtx}\n\n【角色设定】\n${charCtx}` : fullCtx
-    const messages = buildContinuePrompt(
-      plainText,
-      outlineNode.summary,
-      ctxWithChars,
-      customInstruction.trim() || undefined,
-      { continuity, continuityBudgetTokens },
+    if (!plainText) return
+    const contextPlan = await buildAgentChapterContextPlan()
+    dispatchChapterIntent(
+      'chapter.continue',
+      'Agent 续写本章',
+      '读取当前正文及连续性上下文，从现有结尾自然续写。调用变更提案更新当前章节完整 content，保留原文并追加新内容。',
+      undefined,
+      { existingWordCount: wordCount, requiredContextSources: contextPlan.sourceKeys },
     )
-    ai.setOperation('continue')
-    void ai.start(messages, undefined, { category: 'chapter.continue', projectId: project.id! })
-    scheduleRecentMemoryRebuild(backgroundMemoryIds)
   }
 
   const handlePolish = () => {
     const selected = editorRef.current?.getSelectedText() || plainText.slice(-1000)
     if (!selected) return
-    const messages = buildPolishPrompt(selected, customInstruction || '优化文笔，使表达更生动')
-    ai.setOperation('polish')
-    ai.start(messages, undefined, { category: 'chapter.polish', projectId: project.id! })
+    dispatchChapterIntent(
+      'chapter.polish',
+      'Agent 润色本章',
+      '润色指定选区；读取当前章节完整正文，保持情节事实不变，将润色后的选区放回原位置，并对当前章节完整 content 生成变更提案。',
+      selected,
+    )
   }
 
   const handleExpand = () => {
     const selected = editorRef.current?.getSelectedText() || plainText.slice(-500)
     if (!selected) return
-    const messages = buildExpandPrompt(selected, customInstruction.trim() || undefined)
-    ai.setOperation('expand')
-    ai.start(messages, undefined, { category: 'chapter.expand', projectId: project.id! })
+    dispatchChapterIntent(
+      'chapter.expand',
+      'Agent 扩写本章',
+      '扩写指定选区，增加必要的动作、感官和人物反应但不改变情节走向；读取完整正文后将结果放回原位置，并对当前章节完整 content 生成变更提案。',
+      selected,
+    )
   }
 
   const handleDeAI = async () => {
@@ -503,9 +371,15 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       confirmText: '开始改写',
     })
     if (!ok) return
-    const messages = buildDeAIPrompt(target)
-    ai.setOperation(isFull ? 'deai-full' : 'deai')
-    ai.start(messages, undefined, { category: 'chapter.deai', projectId: project.id! })
+    dispatchChapterIntent(
+      isFull ? 'chapter.deai.full' : 'chapter.deai.selection',
+      isFull ? 'Agent 去除整章 AI 味' : 'Agent 去除选区 AI 味',
+      isFull
+        ? '在不改变剧情事实、人设和篇幅的前提下重写整章，清理模板腔、机械工整和不自然表达，并对当前章节完整 content 生成变更提案。'
+        : '仅重写指定选区以清理 AI 味，保持上下文衔接；读取完整正文后把结果放回原位置，并对当前章节完整 content 生成变更提案。',
+      isFull ? undefined : target,
+      { fullChapter: isFull },
+    )
   }
 
   // G8：按审校报告让 AI 改全文 —— 走和「生成正文」相同的预览→采纳/关闭流程
@@ -517,10 +391,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       confirmText: '开始修改',
     })
     if (!ok) return
-    reviseReportRef.current = report
-    const messages = buildReviewRevisePrompt(plainText, report, worldCtx, charCtx)
-    ai.setOperation('revise-full')
-    ai.start(messages, undefined, { category: 'review.revise', projectId: project.id! })
+    dispatchChapterIntent(
+      'review.revise',
+      'Agent 按审校报告修改本章',
+      '根据审校报告修改整章正文。读取当前正文、角色和世界设定，逐项处理报告中的可执行问题，不改变未被报告要求修改的事实，并对当前章节完整 content 生成变更提案。',
+      undefined,
+      { reviewReport: report },
+    )
   }
 
   // ── 状态提取 ──
@@ -638,6 +515,79 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     }
   }
 
+  const handleAutoPostGenerate = async (task: {
+    chapterId: number
+    chapterTitle: string
+    chapterContent: string
+    chapterPlainText: string
+  }) => {
+    try {
+      const chapter = await db.chapters.get(task.chapterId)
+      if (chapter) {
+        await rebuildChapterChunks({
+          projectId: project.id!,
+          chapter,
+          worldGroupId: chapterWorldGroupId ?? null,
+          knownEntities: characters.map(character => character.name),
+        })
+        await rebuildProjectNarrativeSummaries({ projectId: project.id! })
+        const embedding = useAIConfigStore.getState().embedding
+        if (isEmbeddingReady(embedding)) {
+          void ensureChunkEmbeddings({ projectId: project.id!, cfg: embedding })
+            .catch(error => console.warn('[AgentPostCommit] 语义索引补建失败（不影响）:', error))
+        }
+      }
+    } catch (error) {
+      console.error('[AgentPostCommit] 检索块重建失败:', error)
+    }
+
+    setAutoProcessing('extracting')
+    try {
+      const stateCtx = buildSelectiveStateContext(task.chapterPlainText, extraStateIds).text
+      const characterNames = characters.map(character => character.name)
+      const messages = buildStateExtractPrompt(stateCtx, task.chapterTitle, task.chapterPlainText, characterNames)
+      const raw = await stateAI.start(messages, undefined, { category: 'state.extract', projectId: project.id! })
+      const { diffs, error } = parseStateDiffs(raw, characterNames)
+      if (error) console.error('[AgentPostCommit] 状态提取解析失败:', error)
+      if (diffs.length > 0) setPendingDiffs(diffs as StateDiffItem[])
+    } catch (error) {
+      console.error('[AgentPostCommit] 状态提取失败:', error)
+    }
+
+    await handleChapterMemory({
+      chapterId: task.chapterId,
+      chapterTitle: task.chapterTitle,
+      chapterContent: task.chapterContent,
+    })
+  }
+
+  const outlineNodesRef = useRef(nodes)
+  const autoPostGenerateRef = useRef(handleAutoPostGenerate)
+  outlineNodesRef.current = nodes
+  autoPostGenerateRef.current = handleAutoPostGenerate
+
+  useEffect(() => subscribeAgentProjectCommits(commit => {
+    if (commit.project.backend !== 'dexie'
+      || commit.project.projectId !== project.id
+      || commit.scope.chapterId == null
+      || commit.scope.chapterId !== currentChapter?.id
+      || !['chapter.content', 'chapter.continue'].includes(commit.intentType ?? '')) return
+
+    void (async () => {
+      const chapter = await db.chapters.get(commit.scope.chapterId!)
+      if (!chapter) return
+      const chapterTitle = outlineNodesRef.current.find(node => node.id === chapter.outlineNodeId)?.title
+        || chapter.title
+        || '未知章节'
+      await autoPostGenerateRef.current({
+        chapterId: chapter.id!,
+        chapterTitle,
+        chapterContent: chapter.content,
+        chapterPlainText: htmlToPlainText(chapter.content),
+      })
+    })()
+  }), [currentChapter?.id, project.id])
+
   const handleManualMemory = async () => {
     if (!currentChapter?.id || !plainText.trim() || autoProcessing === 'memory') return
     const chapterId = currentChapter.id
@@ -681,116 +631,6 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
   // ── Phase A1: 生成正文完成后的自动流程 ──
   // 接受 AI 生成的文本后，自动触发状态提取 → 一次统一章节记忆抽取。
-  const handleAutoPostGenerate = async (task: {
-    chapterId: number
-    chapterTitle: string
-    chapterContent: string
-    chapterPlainText: string
-  }) => {
-    // 0. NS-5：重建本章检索块（非 AI，hash 守卫，便宜；供「相关前文召回」用）
-    try {
-      if (currentChapter) {
-        await rebuildChapterChunks({
-          projectId: project.id!,
-          chapter: { ...currentChapter, content: task.chapterContent },
-          worldGroupId: chapterWorldGroupId ?? null,
-          knownEntities: characters.map(c => c.name),
-        })
-        await rebuildProjectNarrativeSummaries({ projectId: project.id! })
-        // NS-5：若启用 embedding，后台为新块补语义向量（best-effort，不阻塞、失败退回关键词）
-        const embCfg = useAIConfigStore.getState().embedding
-        if (isEmbeddingReady(embCfg)) {
-          void ensureChunkEmbeddings({ projectId: project.id!, cfg: embCfg })
-            .catch(e => console.warn('[AutoPost] 语义索引补建失败（不影响）:', e))
-        }
-      }
-    } catch (e) { console.error('[AutoPost] 检索块重建失败:', e) }
-
-    // 1. 自动提取状态
-    setAutoProcessing('extracting')
-    try {
-      const stateCtx = buildSelectiveStateContext(task.chapterPlainText, extraStateIds).text
-      const characterNames = characters.map(character => character.name)
-      const messages = buildStateExtractPrompt(stateCtx, task.chapterTitle, task.chapterPlainText, characterNames)
-      console.log('[AutoPost] 自动提取状态:', task.chapterTitle)
-      const raw = await stateAI.start(messages, undefined, { category: 'state.extract', projectId: project.id! })
-      const { diffs, error } = parseStateDiffs(raw, characterNames)
-      if (error) {
-        console.error('[AutoPost] 状态提取解析失败:', error)
-      }
-      if (diffs.length > 0) {
-        setPendingDiffs(diffs as StateDiffItem[])
-      } else {
-        console.log('[AutoPost] 本章无状态变更')
-      }
-    } catch (err) {
-      console.error('[AutoPost] 状态提取失败:', err)
-    }
-
-    // 2. summary + handoff 只发起这一轮统一调用，不增加第三次正文读取。
-    await handleChapterMemory({
-      chapterId: task.chapterId,
-      chapterTitle: task.chapterTitle,
-      chapterContent: task.chapterContent,
-    })
-  }
-
-  const handleAcceptAI = async (text: string) => {
-    if (!editorRef.current || !currentChapter?.id) return
-    const acceptedChapterId = currentChapter.id
-    const acceptedChapterTitle = outlineNode?.title || currentChapter.title || '未知章节'
-    const aiAction = ai.operation
-    if (
-      (aiAction === 'polish' || aiAction === 'expand' || aiAction === 'deai')
-      && !editorRef.current.getSelectedText()
-    ) {
-      await dialog.alert({
-        title: '请重新选中原文',
-        message: '切换页面后原选区无法安全恢复。请在正文中重新选中要替换的文字，再点击“采纳”。生成结果会继续保留。',
-      })
-      return
-    }
-    // G6：去掉段落之间的多余空行——丢弃纯空行，每个非空行成一段，段间距交给 CSS（不要空段落）
-    const normalizeProse = (t: string) =>
-      t.split(/\r?\n/).map(l => l.trimEnd()).filter(l => l.trim().length > 0).join('\n')
-    const html = plainTextToHtml(normalizeProse(text))
-    const shouldAutoProcess = aiAction === 'generate' || aiAction === 'continue'
-
-    if (aiAction === 'continue') {
-      editorRef.current.appendContent(html)
-    } else if (aiAction === 'generate' || aiAction === 'deai-full' || aiAction === 'revise-full') {
-      // generate / 整章去AI味 / 按报告修改：替换全文
-      editorRef.current.setContent(html)
-      // setContent 不触发 onChange，这里手动同步
-      const newHtml = editorRef.current.getHTML()
-      setContent(newHtml)
-      setPlainText(editorRef.current.getPlainText())
-    } else {
-      // polish/expand/deai（选区）：替换选区（若无选区则插入在光标处）
-      editorRef.current.replaceSelection(html)
-    }
-    ai.reset()
-
-    // 先把完整正文落库，再启动带 hash CAS 的异步后处理。
-    if (shouldAutoProcess) {
-      const fullHtml = editorRef.current.getHTML()
-      const fullText = editorRef.current.getPlainText()
-      await updateChapter(acceptedChapterId, {
-        content: fullHtml,
-        wordCount: countWords(fullText),
-      })
-      setContent(fullHtml)
-      setPlainText(fullText)
-      setSavedContent(fullHtml)
-      void handleAutoPostGenerate({
-        chapterId: acceptedChapterId,
-        chapterTitle: acceptedChapterTitle,
-        chapterContent: fullHtml,
-        chapterPlainText: fullText,
-      })
-    }
-  }
-
   // 没有选中章节
   if (!currentChapter) {
     if (outlineNodeId) {
@@ -933,27 +773,27 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
 
       {/* AI 工具栏 */}
       <div className="flex flex-wrap gap-2 border-t border-border/60 bg-bg-surface/35 px-6 py-3">
-        <button onClick={handleGenerate} disabled={ai.isStreaming}
+        <button onClick={handleGenerate}
           className="rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors">
           ✨ 生成正文
         </button>
-        <button onClick={handleContinue} disabled={ai.isStreaming || !plainText}
+        <button onClick={handleContinue} disabled={!plainText}
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           📝 续写
         </button>
-        <button onClick={handleExpand} disabled={ai.isStreaming}
+        <button onClick={handleExpand}
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           📖 扩写
         </button>
-        <button onClick={handlePolish} disabled={ai.isStreaming}
+        <button onClick={handlePolish}
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           💎 润色
         </button>
-        <button onClick={handleDeAI} disabled={ai.isStreaming}
+        <button onClick={handleDeAI}
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           🔥 去AI味
         </button>
-        <button onClick={handleExtractState} disabled={ai.isStreaming || extracting || !plainText}
+        <button onClick={handleExtractState} disabled={extracting || !plainText}
           title="AI 分析本章内容，提取角色/地点/物品等状态变更"
           className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 text-xs rounded-md hover:bg-emerald-500/20 disabled:opacity-50 transition-colors">
           <ClipboardList className="w-3 h-3" />
@@ -1090,35 +930,6 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         />
       )}
 
-      {/* Phase 21.3: 上下文预算条 */}
-      {contextBudget && (
-        <div className="mb-2">
-          <ContextBudgetBar budget={contextBudget} compact={ai.isStreaming} />
-        </div>
-      )}
-
-      {(ai.output || ai.isStreaming || ai.error) && (
-        <div className="mb-3">
-          <AIStreamOutput output={ai.output} isStreaming={ai.isStreaming} error={ai.error} tokenUsage={ai.tokenUsage}
-            onStop={ai.stop} onAccept={handleAcceptAI}
-            onDismiss={ai.reset}
-            onRetry={() => {
-              if (ai.operation === 'generate') handleGenerate()
-              else if (ai.operation === 'continue') handleContinue()
-              else if (ai.operation === 'polish') handlePolish()
-              else if (ai.operation === 'expand') handleExpand()
-              else if (ai.operation === 'deai' || ai.operation === 'deai-full') handleDeAI()
-              else if (ai.operation === 'revise-full') {
-                const cachedReport = currentChapter?.id
-                  ? useReviewResultStore.getState().byChapter[currentChapter.id]?.review
-                  : null
-                const report = reviseReportRef.current ?? cachedReport
-                if (report) handleReviseByReport(report)
-              }
-            }} />
-        </div>
-      )}
-
       {/* Phase A1/A3: 自动后处理状态指示 */}
       {autoProcessing !== 'idle' && (
         <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
@@ -1244,7 +1055,6 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         replaceSelectedText={(text) => {
           editorRef.current?.replaceSelection(text)
         }}
-        disabled={ai.isStreaming}
       />
 
       {/* 作者笔记 */}

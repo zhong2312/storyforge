@@ -10,23 +10,17 @@ import {
   Globe, BookOpen, UserCircle, ArrowDownToLine, Download,
 } from 'lucide-react'
 import { useWorldGroupStore } from '../../stores/world-group'
-import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
 import {
-  buildInspirationReversePrompt,
-  parseReverseOutput,
-  buildInspirationReverseMultiWorldPrompt,
-  parseReverseMultiWorldOutput,
   type ReverseResult,
   type ReverseCharacter,
   type ReverseMultiWorldResult,
 } from '../../lib/ai/inspiration-reverse'
 import { adopt } from '../../lib/registry/adopt'
 import { CHARACTER_DIMENSIONS } from '../../lib/character/character-dimensions'
-import AIStreamOutput from '../shared/AIStreamOutput'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
 import type { Project } from '../../lib/types'
 import { characterAxesLabel } from '../../lib/character/character-axes'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 interface Props {
   project: Project
@@ -34,7 +28,6 @@ interface Props {
 
 export default function InspirationPanel({ project }: Props) {
   const wgStore = useWorldGroupStore()
-  const ai = useAIStream(createAISessionKey(project.id!, 'inspiration.reverse'))
   const isMW = !!project.enableMultiWorld
 
   const draftKey = `sf-inspiration-draft-${project.id}`
@@ -78,33 +71,25 @@ export default function InspirationPanel({ project }: Props) {
     return () => clearTimeout(t)
   }, [draftKey, inspiration, userHint, result, mwResult, mwAdopted])
 
-  // 解析 AI 输出（多世界 / 单世界两条路径）
-  useEffect(() => {
-    if (ai.isStreaming || !ai.output) return
-    if (isMW) {
-      const parsed = parseReverseMultiWorldOutput(ai.output)
-      if (parsed) setMwResult(parsed)
-    } else {
-      const parsed = parseReverseOutput(ai.output)
-      if (parsed) {
-        setResult(parsed)
-        setSelectedChars(new Set(parsed.characters.map((_, i) => i)))
-      }
-    }
-  }, [ai.isStreaming, ai.output, isMW])
-
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     if (!inspiration.trim()) return
-    setResult(null)
-    setMwResult(null)
-    setMwAdopted(false)
-    setAdoptedSections(new Set())
-
-    const genres = project.genres?.join('/') || project.genre || ''
-    const messages = isMW
-      ? buildInspirationReverseMultiWorldPrompt(project.name, genres, inspiration, userHint || undefined)
-      : buildInspirationReversePrompt(project.name, genres, inspiration, userHint || undefined)
-    await ai.start(messages, undefined, { category: 'inspiration.reverse', projectId: project.id! })
+    dispatchAgentIntent({
+      type: isMW ? 'inspiration.reverse.multiworld' : 'inspiration.reverse',
+      title: isMW ? 'Agent 多世界灵感反推' : 'Agent 灵感反推',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'inspiration',
+        worldGroupId: isMW ? undefined : useWorldGroupStore.getState().activeGroupId,
+      },
+      instruction: isMW
+        ? '根据灵感反推故事核心、多个世界及初始角色。先读取已有故事和世界设定，避免重复；分别生成可审批的设定变更方案。'
+        : '根据灵感反推世界观、故事核心和初始角色。先读取已有设定，生成结构化结果，并为需要落库的内容生成可审批变更方案。',
+      payload: {
+        inspiration: inspiration.trim(),
+        userHint: userHint.trim() || undefined,
+        genres: project.genres?.length ? project.genres : [project.genre].filter(Boolean),
+      },
+    })
   }
 
   // ── 多世界：一键采纳（创建世界组 + 各世界世界观 + 故事核心 + 角色归属）──
@@ -424,51 +409,16 @@ export default function InspirationPanel({ project }: Props) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleGenerate}
-            disabled={!inspiration.trim() || ai.isStreaming}
+            disabled={!inspiration.trim()}
             className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {ai.isStreaming ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            {ai.isStreaming ? '推演中...' : '开始反推'}
+            <Sparkles className="w-4 h-4" />
+            交给 Agent 反推
           </button>
-          {ai.isStreaming && (
-            <button onClick={ai.stop} className="text-xs text-text-muted hover:text-red-500 transition-colors">
-              停止
-            </button>
-          )}
         </div>
 
-        {/* ── AI 流式输出 ────────────────────────── */}
-        {(ai.output || ai.isStreaming || ai.error) && (
-          <AIStreamOutput
-            output={ai.output}
-            isStreaming={ai.isStreaming}
-            error={ai.error}
-            tokenUsage={ai.tokenUsage}
-            onStop={ai.stop}
-            onAccept={() => {
-              if (isMW) {
-                const parsed = parseReverseMultiWorldOutput(ai.output)
-                if (parsed) setMwResult(parsed)
-              } else {
-                const parsed = parseReverseOutput(ai.output)
-                if (parsed) {
-                  setResult(parsed)
-                  setSelectedChars(new Set(parsed.characters.map((_, i) => i)))
-                }
-              }
-            }}
-            onRetry={handleGenerate}
-            placeholder="等待 AI 反推故事框架..."
-            moduleKey={isMW ? 'inspiration.reverse.multiworld' : 'inspiration.reverse'}
-          />
-        )}
-
         {/* ── 多世界反推结果预览 ─────────────────────── */}
-        {isMW && mwResult && !ai.isStreaming && (
+        {isMW && mwResult && (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-text-primary">多世界反推结果（{mwResult.worlds.length} 个世界）</h3>
@@ -527,7 +477,7 @@ export default function InspirationPanel({ project }: Props) {
         )}
 
         {/* ── 结构化结果预览 ─────────────────────── */}
-        {result && !ai.isStreaming && (
+        {result && (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-text-primary">反推结果</h3>

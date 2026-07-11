@@ -6,15 +6,6 @@ import { InlineInput, InlineTextarea } from '../shared/InlineEdit'
 import { CInput } from '../shared/CompositionInput'
 import { useCharacterStore } from '../../stores/character'
 import { useWorldGroupStore } from '../../stores/world-group'
-import { useAIConfigStore } from '../../stores/ai-config'
-import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
-import { buildCharacterPrompt } from '../../lib/ai/adapters/character-adapter'
-import { parseCharacterOutput } from '../../lib/ai/parse-character-output'
-import { adopt } from '../../lib/registry/adopt'
-import { assembleContext } from '../../lib/registry/assemble-context'
-import AIStreamOutput from '../shared/AIStreamOutput'
-import PromptRunPanel from '../shared/PromptRunPanel'
 import type {
   Project, Character, CharacterMoralAxis, CharacterOrderAxis, CharacterRoleWeight,
 } from '../../lib/types'
@@ -30,6 +21,7 @@ import {
   ROLE_WEIGHT_LABELS,
   filterCharactersByRoleWeight,
 } from '../../lib/character/character-axes'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 // ── 常量 ───────────────────────────────────────────────────────
 
@@ -53,30 +45,19 @@ interface Props {
 export default function CharacterPanel({ project, view = 'generator' }: Props) {
   const { characters, loadAll, addCharacter, updateCharacter, deleteCharacter } = useCharacterStore()
   const { groups, activeGroupId } = useWorldGroupStore()
-  const { config: aiConfig } = useAIConfigStore()
   const [selected, setSelected] = useState<number | null>(null)
   const [hint, setHint] = useState('')
-  const [parsing, setParsing] = useState(false)
   const [showRolePicker, setShowRolePicker] = useState(false)
   const [draftAxes, setDraftAxes] = useState<{
     roleWeight: CharacterRoleWeight | null
     moralAxis: CharacterMoralAxis | null
     orderAxis: CharacterOrderAxis | null
   }>({ roleWeight: null, moralAxis: null, orderAxis: null })
-  const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})
   // B：AI 生成时选哪些维度（默认全选；可按戏份预设/增减）
   const [genDims, setGenDims] = useState<Set<CharacterDimensionKey>>(() => new Set(CHARACTER_DIMENSIONS.map(d => d.key)))
   const [showDimPicker, setShowDimPicker] = useState(false)
-  const [systemOverride, setSystemOverride] = useState<string | null>(null)
-  const [userOverride, setUserOverride] = useState<string | null>(null)
   // 多世界：角色世界过滤器（'all' | 'cross' | 世界组 id）
   const [worldFilter, setWorldFilter] = useState<'all' | 'cross' | number>('all')
-  const ai = useAIStream(createAISessionKey(
-    project.id!,
-    'character.generate',
-    project.enableMultiWorld ? String(worldFilter) : 'project',
-  ))
-
   useEffect(() => { loadAll(project.id!) }, [project.id, loadAll])
 
   // 多世界过滤：跨世界角色在任意世界都显示
@@ -120,16 +101,13 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
     if (selectedChar?.id) updateCharacter(selectedChar.id, { [field]: value })
   }
 
-  const handleAIGenerate = async () => {
+  const handleAIGenerate = () => {
     // 统计阵容缺口
     const weightCounts: Record<CharacterRoleWeight, number> = {
       main: 0, secondary: 0, npc: 0, extra: 0,
     }
     characters.forEach(c => { weightCounts[c.roleWeight]++ })
     const rosterGap = `当前阵容：主要 ${weightCounts.main}、次要 ${weightCounts.secondary}、NPC ${weightCounts.npc}、路人 ${weightCounts.extra}`
-    const existing = characters.map(c =>
-      `${c.name}（${ROLE_WEIGHT_LABELS[c.roleWeight]} · ${ORDER_AXIS_LABELS[c.orderAxis]}${MORAL_AXIS_LABELS[c.moralAxis]}）`,
-    ).join('、')
     // B：维度指令——始终告诉 AI 要设计哪些维度(基础提示词只覆盖老字段,新维度靠这里点名才会生成)。
     // 全选→"完整设计全部"；部分→"只设计这些、其余留空"。走 CHARACTER_DIMENSIONS 单源,不动脆弱的基础模板。
     const allKeys = CHARACTER_DIMENSIONS.map(d => d.key)
@@ -139,28 +117,27 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
       : genDims.size < allKeys.length
         ? `本次只需设计以下维度，其余维度一律留空：${selectedLabels}`
         : `请尽量完整设计以下全部维度（有内容才写，没有的留空，不要编造硬凑）：${selectedLabels}`
-    const enrichedHint = [hint, rosterGap, dimInstruction].filter(Boolean).join('\n')
-    // 多世界：按当前选中/活跃世界读取上下文（此前写死单世界）
     const targetWorld = project.enableMultiWorld
       ? (typeof worldFilter === 'number' ? worldFilter : activeGroupId)
       : null
-    const assembled = await assembleContext({
-      projectId: project.id!,
-      worldGroupId: targetWorld,
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      sourceKeys: ['worldview', 'storyCore', 'powerSystem', 'codex', 'characters', 'creativeRules', 'worldRules', 'historical', 'locations'],
+    dispatchAgentIntent({
+      type: 'character.generate',
+      title: 'Agent 设计角色',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'characters',
+        worldGroupId: targetWorld,
+      },
+      instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。',
+      payload: {
+        userHint: hint.trim() || undefined,
+        rosterGap,
+        requestedDimensions: selectedLabels,
+        dimensionInstruction: dimInstruction,
+        homeWorldGroupId: targetWorld,
+        crossWorld: project.enableMultiWorld && worldFilter === 'cross',
+      },
     })
-    const worldCtx = assembled.text
-    const opts = {
-      parameterValues: Object.keys(parameterValues).length > 0 ? parameterValues : undefined,
-      overrides: (systemOverride != null || userOverride != null) ? {
-        systemPrompt: systemOverride ?? undefined,
-        userPromptTemplate: userOverride ?? undefined,
-      } : undefined,
-    }
-    const messages = buildCharacterPrompt(project.name, project.genre ?? '', worldCtx, existing, enrichedHint, opts)
-    ai.start(messages, undefined, { category: 'character.generate', projectId: project.id! })
   }
 
   return (
@@ -218,10 +195,9 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
               </div>
               <button
                 onClick={handleAIGenerate}
-                disabled={ai.isStreaming}
                 className="flex items-center gap-1.5 px-3 py-2 bg-bg-elevated text-text-secondary text-sm rounded-md hover:text-accent disabled:opacity-50 transition-colors border border-border hover:border-accent/50"
               >
-                <Sparkles className="w-3.5 h-3.5" /> AI 设计角色
+                <Sparkles className="w-3.5 h-3.5" /> Agent 设计角色
               </button>
             </div>
           </>
@@ -268,69 +244,6 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
             🌐 跨世界
           </button>
         </div>
-      )}
-
-      {/* 调参浮窗 */}
-      {view === 'generator' && (
-        <PromptRunPanel
-          moduleKey="character.generate"
-          parameterValues={parameterValues}
-          onParamChange={setParameterValues}
-          systemOverride={systemOverride}
-          onSystemOverrideChange={setSystemOverride}
-          userOverride={userOverride}
-          onUserOverrideChange={setUserOverride}
-        />
-      )}
-
-      {/* AI 解析中提示 */}
-      {view === 'generator' && parsing && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-accent/5 border border-accent/20 rounded-lg text-sm text-accent animate-pulse">
-          <Sparkles className="w-4 h-4 shrink-0" />
-          AI 正在将角色内容分字段整理，请稍候…
-        </div>
-      )}
-
-      {/* AI 输出 */}
-      {view === 'generator' && (ai.output || ai.isStreaming || ai.error) && (
-        <AIStreamOutput
-          output={ai.output}
-          isStreaming={ai.isStreaming}
-          error={ai.error} tokenUsage={ai.tokenUsage}
-          onStop={ai.stop}
-          onAccept={async (text: string) => {
-            ai.reset()
-            setParsing(true)
-            const parsed = await parseCharacterOutput(text, aiConfig)
-            setParsing(false)
-            const nameMatch = text.match(/(?:\*\*|#{1,3}\s*|【)([^*#\n【】]{1,20})(?:\*\*|】)/)
-            const fallbackName = nameMatch?.[1]?.trim() || 'AI 生成角色'
-            // 落库全部维度（含 A 扩充的 13 维）：维度字段从 CHARACTER_DIMENSIONS 统一回填，
-            // 否则 B 维度勾选器选了新维度、AI 也生成了，却在这里丢失。空串会被 adopt 跳过、不覆盖。
-            const dimData = Object.fromEntries(
-              CHARACTER_DIMENSIONS.map(d => [d.key, (parsed?.[d.key] as string) || '']),
-            )
-            const result = await adopt({
-              projectId: project.id!,
-              worldGroupId: newCharHomeWorld(),
-              target: 'characters',
-              mode: 'add',
-              data: {
-                name:          parsed?.name          || fallbackName,
-                roleWeight:    parsed?.roleWeight    || 'main',
-                moralAxis:     parsed?.moralAxis     || 'neutral',
-                orderAxis:     parsed?.orderAxis     || 'neutral',
-                relationships: parsed?.relationships || '',
-                ...dimData,
-                background:    parsed?.background     || text,  // 兜底：解析失败也保住全文
-              },
-            })
-            await loadAll(project.id!)
-            if (result.written[0]?.id != null) setSelected(result.written[0].id)
-          }}
-          onRetry={handleAIGenerate}
-          moduleKey="character.generate"
-        />
       )}
 
       {/* 主体：左侧列表 + 右侧详情 */}
