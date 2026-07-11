@@ -55,10 +55,11 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 33 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 34 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
+| `chapterIndex` | 章节索引（规范章序与真实记录 ID） | project | L0 | 4000 |
 | `manualText` | 用户指定内容 | manual | L0 | 100 |
 | `chapterContent` | 章节正文 | chapter | L0 | 100 |
 | `contextMemo` | 上下文快照 | project | L3 | 1500 |
@@ -167,4 +168,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `14baa64`
+生成时间基准:commit `292bcea`

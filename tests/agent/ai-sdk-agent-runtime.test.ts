@@ -17,6 +17,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     const execute = vi.fn(async () => ({ readSources: ['worldview'] }))
     const registry = registryWithCatalog(execute)
     const streamer: AgentLoopStreamer = async function* (request) {
+      expect(request.instructions).toContain('chapterIndex')
       yield { type: 'phase-start', step: 1 }
       yield { type: 'reasoning', text: '先查看可用设定。' }
       yield { type: 'tool-call', toolCallId: 'call-1', toolName: 'storyforge.settings.catalog', input: {} }

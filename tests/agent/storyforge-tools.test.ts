@@ -53,6 +53,7 @@ describe('registry-driven StoryForge tools', () => {
     }
 
     expect(output.readSources.some(source => source.key === 'worldview')).toBe(true)
+    expect(output.readSources.some(source => source.key === 'chapterIndex')).toBe(true)
     expect(output.writeTargets.find(target => target.target === 'worldviews')?.fields)
       .toContainEqual(expect.objectContaining({ field: 'worldOrigin' }))
   })
@@ -81,6 +82,70 @@ describe('registry-driven StoryForge tools', () => {
 
     expect(output.included).toContain('worldview')
     expect(output.text).toContain('天地由九重炉火锻成')
+  })
+
+  it('resolves a chapter ordinal to real IDs before reading chapter-scoped context', async () => {
+    const now = 100
+    const volumeId = await db.outlineNodes.add({
+      projectId: 1,
+      parentId: null,
+      type: 'volume',
+      title: '第一卷',
+      summary: '启程',
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+    const outlineNodeId = await db.outlineNodes.add({
+      projectId: 1,
+      parentId: volumeId,
+      type: 'chapter',
+      title: '第一章 山雨欲来',
+      summary: '林默在雨夜发现炉火异动。',
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+    const chapterId = await db.chapters.add({
+      projectId: 1,
+      outlineNodeId,
+      title: '第一章 山雨欲来',
+      content: '',
+      wordCount: 0,
+      status: 'outline',
+      order: 99,
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    }) as number
+
+    const index = await registry.execute(
+      'storyforge.context.read',
+      context(['project:read']),
+      { sourceKeys: ['chapterIndex'], chapterOrdinal: 1 },
+    ) as { text: string; resolvedScope: { chapterOrdinal: number } }
+
+    expect(index.text).toContain('→ 第1章')
+    expect(index.text).toContain(`outlineNodeId=${outlineNodeId}`)
+    expect(index.text).toContain(`chapterId=${chapterId}`)
+    expect(index.resolvedScope.chapterOrdinal).toBe(1)
+
+    const scoped = await registry.execute(
+      'storyforge.context.read',
+      context(['project:read']),
+      { sourceKeys: ['chapterOutline'], outlineNodeId, chapterId },
+    ) as { text: string; resolvedScope: { outlineNodeId: number; chapterId: number } }
+
+    expect(scoped.text).toContain('林默在雨夜发现炉火异动。')
+    expect(scoped.resolvedScope).toMatchObject({ outlineNodeId, chapterId })
+  })
+
+  it('does not let a context read override host-locked chapter scope', async () => {
+    await expect(registry.execute(
+      'storyforge.context.read',
+      context(['project:read'], { chapterId: 7, outlineNodeId: 8 }),
+      { sourceKeys: ['chapterOutline'], chapterId: 9, outlineNodeId: 8 },
+    )).rejects.toThrow('chapterId is locked by host scope')
   })
 
   it('proposes an alias-aware plan without writing, then commits only with matching approval', async () => {

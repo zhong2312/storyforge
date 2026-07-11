@@ -57,6 +57,10 @@ function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unkn
 function createContextReadTool(): StoryForgeTool<{
   sourceKeys: string[]
   manualSourceText?: string
+  worldGroupId?: number | null
+  outlineNodeId?: number
+  chapterId?: number
+  chapterOrdinal?: number
 }, unknown> {
   return {
     name: 'storyforge.context.read',
@@ -67,6 +71,10 @@ function createContextReadTool(): StoryForgeTool<{
       properties: {
         sourceKeys: { type: 'array', items: { type: 'string' }, minItems: 1 },
         manualSourceText: { type: 'string' },
+        worldGroupId: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+        outlineNodeId: { type: 'number', minimum: 1 },
+        chapterId: { type: 'number', minimum: 1 },
+        chapterOrdinal: { type: 'number', minimum: 1 },
       },
       required: ['sourceKeys'],
       additionalProperties: false,
@@ -80,16 +88,35 @@ function createContextReadTool(): StoryForgeTool<{
       const projectId = requireDexieProject(context)
       const unknown = input.sourceKeys.filter(key => !CONTEXT_SOURCES.some(source => source.key === key))
       if (unknown.length) throw new Error(`[storyforge.context.read] unknown sources: ${unknown.join(', ')}`)
-      return await assembleContext({
+      const worldGroupId = resolveReadScope('worldGroupId', context.worldGroupId, input.worldGroupId)
+      const outlineNodeId = resolveReadScope('outlineNodeId', context.outlineNodeId, input.outlineNodeId)
+      const chapterId = resolveReadScope('chapterId', context.chapterId, input.chapterId)
+      const assembled = await assembleContext({
         projectId,
-        worldGroupId: context.worldGroupId,
-        outlineNodeId: context.outlineNodeId,
-        chapterId: context.chapterId,
+        worldGroupId,
+        outlineNodeId,
+        chapterId,
+        chapterOrdinal: input.chapterOrdinal,
         sourceKeys: input.sourceKeys,
         manualSourceText: input.manualSourceText,
       })
+      return {
+        ...assembled,
+        resolvedScope: { worldGroupId, outlineNodeId, chapterId, chapterOrdinal: input.chapterOrdinal },
+      }
     },
   }
+}
+
+function resolveReadScope<T extends number | null>(
+  field: string,
+  hostValue: T | undefined,
+  requestedValue: T | undefined,
+): T | undefined {
+  if (hostValue !== undefined && requestedValue !== undefined && hostValue !== requestedValue) {
+    throw new Error(`[storyforge.context.read] ${field} is locked by host scope`)
+  }
+  return hostValue !== undefined ? hostValue : requestedValue
 }
 
 function createChangeProposeTool(

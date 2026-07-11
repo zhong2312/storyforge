@@ -19,6 +19,7 @@
 - MCP Streamable HTTP / SSE 工具映射到同一个 `ToolRegistry`；只读和写入工具按 scope 隔离，外部写工具默认不开放。
 - Workspace 右侧 Agent Dock 已显示阶段、推理摘要、工具调用、错误和审批卡片；批准写入后刷新现有面板 store。
 - `dispatchAgentIntent` 已把灵感反推、角色新建/补全、大纲卷章生成和章节生成/改写主入口接到 Agent Dock；宿主传入的项目、世界、章节、实体与选区作用域会进入同一次工具运行，面板不再为这些入口显示重复的流式输出和采纳卡。
+- 自由对话中的“第 N 章”先通过注册源 `chapterIndex` 解析规范章序、真实 `outlineNodeId/chapterId` 与正文状态，再携带解析后的作用域读取章纲和连续性上下文；面板锁定的章节作用域不可被模型改写。
 - 当前边界：会话/事件仅保留在当前页面会话；其余 AI 入口仍需逐模块迁移；不支持 tool calling 的 provider 降级、Tauri stdio MCP、编辑审批方案、多 Agent 编排和后台 Agent 尚未实施。
 
 ---
