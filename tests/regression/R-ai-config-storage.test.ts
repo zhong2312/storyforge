@@ -5,6 +5,7 @@ import { PROVIDER_MODELS, PROVIDER_PRESETS } from '../../src/lib/types'
 const CONFIG_KEY = 'storyforge-ai-config'
 const SESSION_KEY = 'storyforge-ai-api-key-session'
 const REMEMBER_KEY = 'storyforge-ai-api-key-remember'
+const PORTABLE_MIGRATION_KEY = 'storyforge-ai-portable-key-migration-v1'
 
 async function freshStore() {
   vi.resetModules()
@@ -15,6 +16,7 @@ async function freshStore() {
 afterEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  vi.unstubAllGlobals()
   vi.resetModules()
 })
 
@@ -38,6 +40,24 @@ describe('R-AI-CONFIG · API Key 存储策略', () => {
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull()
     expect(JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}').apiKey).toBe('sk-local')
     expect(localStorage.getItem(REMEMBER_KEY)).toBe('true')
+  })
+
+  it('Portable 首次升级时把会话 Key 迁移为独立配置目录中的持久 Key', async () => {
+    sessionStorage.setItem(SESSION_KEY, 'sk-portable-session')
+    vi.stubGlobal('location', {
+      hostname: '127.0.0.1',
+      port: '17831',
+      pathname: '/storyforge/settings',
+    })
+
+    const useAIConfigStore = await freshStore()
+
+    expect(useAIConfigStore.getState().rememberApiKey).toBe(true)
+    expect(useAIConfigStore.getState().config.apiKey).toBe('sk-portable-session')
+    expect(JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}').apiKey).toBe('sk-portable-session')
+    expect(localStorage.getItem(REMEMBER_KEY)).toBe('true')
+    expect(localStorage.getItem(PORTABLE_MIGRATION_KEY)).toBe('done')
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull()
   })
 
   it('兼容旧版 localStorage 配置:已有 apiKey 初始化为已记住状态', async () => {

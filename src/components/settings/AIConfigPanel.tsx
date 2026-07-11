@@ -106,7 +106,7 @@ export default function AIConfigPanel() {
       <div className="bg-bg-surface border border-border rounded-xl p-5 mb-6">
         <h3 className="text-base font-semibold text-text-primary mb-4">AI 模型配置</h3>
         <p className="text-[11px] text-text-muted mb-4 rounded-lg border border-border bg-bg-base px-3 py-2">
-          API Key 默认仅保存在本次浏览器会话；勾选“记住在本机”才会写入 localStorage。发起 AI 生成、测试连接或使用自定义 baseUrl 时，相关提示词和上下文会发送到你配置的模型服务。
+          Web/PWA 中 API Key 默认仅保存在本次浏览器会话；Portable 的独立本机配置默认记住 Key，仍可手动关闭。发起 AI 生成、测试连接或使用自定义 baseUrl 时，相关提示词和上下文会发送到你配置的模型服务。
         </p>
 
         {/* ── API 配置预设（多套一键切换） ── */}

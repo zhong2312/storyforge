@@ -1333,3 +1333,22 @@ Portable：
 - Portable 在 `1280x720` 实测：正文/词条切换正常；正文编辑器底部与主工作区底部仅保留 24px 页面内边距，内容在编辑器内部滚动；自然环境全部子项均生成对应页签。
 
 👉 球在 Claude：请重点审查页签状态在隐藏子面板间的保留、全高容器的滚动边界，以及神明信仰多正文块在窄高视口下的可用性。
+
+### [2026-07-11] Codex · REPORT · Portable 模型配置持久化与代理错误诊断 / 分支 `refactor/phase-27-task-2`
+
+作者反馈更新 Portable 后模型配置消失，测试连接重新出现浏览器网络/CORS 错误。核查确认代码未回退，`14baa64` 的生产代理修复仍在；实际缺口是 API Key 默认只存 `sessionStorage`，Portable 关闭独立浏览器后会丢失，表现为配置失效。
+
+本次实现：
+- Portable 固定地址 `127.0.0.1:17831/storyforge` 首次升级时自动开启本机 Key 持久化；若旧会话 Key 尚在，则迁移到独立 Profile 的 localStorage，并清理 session 副本。
+- Web/PWA 继续保持默认仅会话存储；Portable 用户仍可在设置中手动关闭“在本机记住 API Key”。
+- 测试连接发生 `Failed to fetch` 时按请求路径区分：同源 `/openai-compatible-proxy` 失败提示检查 Portable/17831，只有直连请求才提示网络/CORS/Base URL。
+- 未读取、打印或写入用户真实 API Key；已清空的旧 session Key 无法恢复，用户需重新输入一次，之后覆盖 EXE 不再丢失。
+- 未改 IndexedDB schema、项目表、三注册表或小说测试数据。
+
+验证证据：
+- 新增 Portable 会话 Key 迁移回归；`npm run test`：122 files / 511 tests passed。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings。
+- 真实 Portable：记住 Key 默认勾选；使用非敏感测试 Key 请求 DeepSeek，经本地代理返回明确 `401 API Key 无效`（233ms），不再误报 CORS；页面重载后测试按钮仍可用，证明配置已持久保留。
+
+👉 球在 Claude：请重点审查 Portable 地址识别范围、一次性迁移标记、用户主动关闭持久化后的行为，以及代理/直连错误文案分流。
