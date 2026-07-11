@@ -7,6 +7,10 @@ import { estimateTokens, getModelPreset, type ContextLayer, type ContextSegment 
 import { CONTEXT_SOURCES, CONTEXT_SOURCE_BY_KEY } from './context-sources'
 import type { AssembleContextInput, AssembleContextResult, ContextSource } from './types'
 import { prepareContinuityContext } from '../ai/chapter-memory/continuity-context'
+import type { PreparedContinuityContext } from '../ai/chapter-memory/continuity-context'
+import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
+import type { Chapter, OutlineNode } from '../types'
+import { htmlToPlainText } from '../utils/html'
 
 /** 拿不到模型时的保守默认输入预算(原固定 24K 偏紧,放宽避免内部提前裁) */
 const FALLBACK_INPUT_BUDGET = 48_000
@@ -37,10 +41,12 @@ export async function assembleContext(input: AssembleContextInput): Promise<Asse
   const resolvedInput: AssembleContextInput = needsContinuity && input.chapterId != null
     ? {
         ...input,
-        continuitySnapshot: input.continuitySnapshot ?? await prepareContinuityContext({
-          projectId: input.projectId,
-          chapterId: input.chapterId,
-        }),
+        continuitySnapshot: input.continuitySnapshot ?? (input.storage
+          ? await prepareStorageContinuityContext(input.storage, input.projectId, input.chapterId)
+          : await prepareContinuityContext({
+              projectId: input.projectId,
+              chapterId: input.chapterId,
+            })),
       }
     : input
   const omitted: string[] = []
@@ -90,6 +96,42 @@ export async function assembleContext(input: AssembleContextInput): Promise<Asse
     inputBudget,
     overBudgetBeforeTrim,
     overBudgetAfterTrim: totalInputTokens > inputBudget,
+  }
+}
+
+async function prepareStorageContinuityContext(
+  storage: NonNullable<AssembleContextInput['storage']>,
+  projectId: number,
+  chapterId: number,
+): Promise<PreparedContinuityContext> {
+  const [outlineNodes, chapters] = await Promise.all([
+    storage.table<OutlineNode>('outlineNodes').list({ where: { projectId } }),
+    storage.table<Chapter>('chapters').list({ where: { projectId } }),
+  ])
+  const resolved = resolveCanonicalChapterSequence(outlineNodes, chapters)
+  const currentIndex = resolved.sequence.findIndex(entry => entry.chapter.id === chapterId)
+  const current = currentIndex >= 0 ? resolved.sequence[currentIndex] : null
+  const predecessor = currentIndex > 0 ? resolved.sequence[currentIndex - 1] : null
+  const previousTail = predecessor?.chapter.content
+    ? htmlToPlainText(predecessor.chapter.content).slice(-1200)
+    : ''
+  const handoff = predecessor?.chapter.continuityHandoff
+  const reconciliation = predecessor?.chapter.planReconciliation
+  const recent = current
+    ? resolved.sequence.slice(0, currentIndex)
+      .filter(entry => entry.worldGroupId === current.worldGroupId && entry.chapter.summary)
+      .slice(-5)
+      .map(entry => `- ${entry.outlineNode?.title ?? entry.chapter.title}：${entry.chapter.summary}`)
+    : []
+  return {
+    current,
+    predecessor,
+    previousTailText: previousTail ? `【全局叙事直接前驱原文尾部】\n${previousTail}` : '',
+    handoffText: handoff ? `【全局叙事直接前驱交接】\n${JSON.stringify(handoff, null, 2)}` : '',
+    planReconciliationText: reconciliation ? `【前章计划—正文对账】\n${JSON.stringify(reconciliation, null, 2)}` : '',
+    recentSummariesText: recent.length ? `【当前世界最近章节摘要 · 旧→新】\n${recent.join('\n')}` : '',
+    memoryRebuildCandidateIds: [],
+    anomalies: resolved.anomalies,
   }
 }
 

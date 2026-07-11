@@ -19,7 +19,7 @@ export function createStoryForgeTools(
   const plans = dependencies.plans ?? new AdoptionPlanStore()
   return Object.freeze([
     createSettingsCatalogTool(),
-    createContextReadTool(),
+    createContextReadTool(dependencies.storage),
     createChangeProposeTool(dependencies.storage, plans),
     createChangeCommitTool(dependencies.storage, plans),
   ])
@@ -55,7 +55,7 @@ function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unkn
   }
 }
 
-function createContextReadTool(): StoryForgeTool<{
+function createContextReadTool(storage: ProjectStoragePort): StoryForgeTool<{
   sourceKeys: string[]
   manualSourceText?: string
   worldGroupId?: number | null
@@ -86,7 +86,8 @@ function createContextReadTool(): StoryForgeTool<{
     summarizeInput: input => `读取设定：${input.sourceKeys.join('、')}`,
     summarizeOutput: output => `已读取 ${(output as { included?: string[] }).included?.length ?? 0} 个设定源`,
     async execute(context, input) {
-      const projectId = requireDexieProject(context)
+      assertStorageBinding(storage, context)
+      const projectId = await resolveStorageProjectId(storage)
       const unknown = input.sourceKeys.filter(key => !CONTEXT_SOURCES.some(source => source.key === key))
       if (unknown.length) throw new Error(`[storyforge.context.read] unknown sources: ${unknown.join(', ')}`)
       const worldGroupId = resolveReadScope('worldGroupId', context.worldGroupId, input.worldGroupId)
@@ -100,6 +101,7 @@ function createContextReadTool(): StoryForgeTool<{
         chapterOrdinal: input.chapterOrdinal,
         sourceKeys: input.sourceKeys,
         manualSourceText: input.manualSourceText,
+        storage,
       })
       return {
         ...assembled,
@@ -136,7 +138,7 @@ function createChangeProposeTool(
     summarizeOutput: output => `已生成变更计划 ${(output as { planId?: string }).planId ?? ''}`,
     async execute(context, input) {
       assertStorageBinding(storage, context)
-      const projectId = requireDexieProject(context)
+      const projectId = await resolveStorageProjectId(storage)
       const adoptionInput = normalizeDerivedFields({
         ...structuredClone(input),
         projectId,
@@ -209,18 +211,20 @@ function createChangeCommitTool(
       if (await storage.getRevision() !== plan.baseRevision) {
         throw new Error('[storyforge.change.commit] project revision changed; create a new plan')
       }
-      const result = await adopt(plan.input)
+      const result = await adopt(plan.input, { storage })
       plans.consume(plan.planId)
       return result
     },
   }
 }
 
-function requireDexieProject(context: ToolExecutionContext): number {
-  if (context.project.backend !== 'dexie') {
-    throw new Error('[storyforge-tools] local-folder registry adapter is not implemented')
+async function resolveStorageProjectId(storage: ProjectStoragePort): Promise<number> {
+  if (storage.locator.backend === 'dexie') return storage.locator.projectId
+  const projects = await storage.table('projects').list({ limit: 2 })
+  if (projects.length !== 1 || projects[0].id == null) {
+    throw new Error('[storyforge-tools] local-folder project must contain exactly one project record')
   }
-  return context.project.projectId
+  return projects[0].id
 }
 
 function assertStorageBinding(storage: ProjectStoragePort, context: ToolExecutionContext): void {

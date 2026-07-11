@@ -11,8 +11,16 @@ import { FIELD_BY_TARGET } from './field-registry'
 import { ADOPTION_BY_TARGET } from './adoption-schema'
 import type { AdoptInput, AdoptResult, CollectionAdoptionSpec, FieldSpec, TableSpec } from './types'
 import { normalizeCharacterAxes } from '../character/character-axes'
+import type { ProjectStoragePort, StorageRecord, StorageTable } from '../storage/ports'
 
-export async function adopt(input: AdoptInput): Promise<AdoptResult> {
+export interface AdoptOptions {
+  /** 活动项目存储；未传时保持现有 Dexie 行为。 */
+  storage?: ProjectStoragePort
+}
+
+type AdoptionTable = StorageTable<StorageRecord & Record<string, any>>
+
+export async function adopt(input: AdoptInput, options: AdoptOptions = {}): Promise<AdoptResult> {
   const result = emptyResult()
   const fieldSpecs = FIELD_BY_TARGET.get(input.target) ?? []
   if (!fieldSpecs.length) {
@@ -24,12 +32,12 @@ export async function adopt(input: AdoptInput): Promise<AdoptResult> {
   if (!tableSpec) throw new Error(`[adopt] target ${input.target} 不在 PROJECT_TABLES`)
 
   if (input.recordId != null) {
-    return adoptCollectionRecord(input, fieldSpecs, tableSpec, result)
+    return adoptCollectionRecord(input, fieldSpecs, tableSpec, result, options.storage)
   }
 
   const isCollection = input.mode === 'add' || input.mode === 'add-many' || input.mode === 'merge-diffs'
-  if (isCollection) return adoptCollection(input, fieldSpecs, tableSpec, result)
-  return adoptSingleton(input, fieldSpecs, tableSpec, result)
+  if (isCollection) return adoptCollection(input, fieldSpecs, tableSpec, result, options.storage)
+  return adoptSingleton(input, fieldSpecs, tableSpec, result, options.storage)
 }
 
 function emptyResult(): AdoptResult {
@@ -41,6 +49,7 @@ async function adoptCollectionRecord(
   fieldSpecs: FieldSpec[],
   tableSpec: TableSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<AdoptResult> {
   if (!ADOPTION_BY_TARGET.has(input.target)) {
     result.skipped.push({ reason: `target ${input.target} 不是已登记的集合写回目标`, data: input.data })
@@ -51,9 +60,10 @@ async function adoptCollectionRecord(
     return result
   }
   if (input.compareAndSet) {
-    return adoptChapterMemoryRecordWithCas(input, fieldSpecs, tableSpec, result)
+    return adoptChapterMemoryRecordWithCas(input, fieldSpecs, tableSpec, result, storage)
   }
-  const target = await tableSpec.table.get(input.recordId!)
+  const table = adoptionTable(tableSpec, storage)
+  const target = await table.get(input.recordId!)
   if (!target || target.projectId !== input.projectId) {
     result.skipped.push({ reason: `record ${input.recordId} 不存在或不属于当前项目`, data: input.data })
     return result
@@ -73,7 +83,7 @@ async function adoptCollectionRecord(
   }
 
   patch.updatedAt = Date.now()
-  await tableSpec.table.update(input.recordId!, patch as any)
+  await table.update(input.recordId!, patch as any)
   result.written.push({ id: input.recordId!, fields: Object.keys(patch) })
   return result
 }
@@ -83,6 +93,7 @@ async function adoptChapterMemoryRecordWithCas(
   fieldSpecs: FieldSpec[],
   tableSpec: TableSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<AdoptResult> {
   const cas = input.compareAndSet!
   if (
@@ -104,8 +115,8 @@ async function adoptChapterMemoryRecordWithCas(
     return result
   }
 
-  await db.transaction('rw', tableSpec.table, async () => {
-    const target = await tableSpec.table.get(input.recordId!)
+  await adoptionTransaction(storage, tableSpec, async table => {
+    const target = await table.get(input.recordId!)
     if (!target || target.projectId !== input.projectId) {
       result.skipped.push({ reason: `record ${input.recordId} 不存在或不属于当前项目`, data: input.data })
       return
@@ -117,7 +128,7 @@ async function adoptChapterMemoryRecordWithCas(
     }
 
     patch.updatedAt = Date.now()
-    await tableSpec.table.update(input.recordId!, patch as any)
+    await table.update(input.recordId!, patch as any)
     result.written.push({ id: input.recordId!, fields: Object.keys(patch) })
   })
   return result
@@ -170,12 +181,14 @@ async function adoptSingleton(
   fieldSpecs: FieldSpec[],
   tableSpec: TableSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<AdoptResult> {
   const data = input.data as Record<string, unknown>
   const patch = normalizeAndValidate(data, fieldSpecs, result)
   if (!patch || Object.keys(patch).length === 0) return result
 
-  const target = await findSingleton(input, tableSpec)
+  const table = adoptionTable(tableSpec, storage)
+  const target = await findSingleton(input, tableSpec, table)
   if (input.mode === 'append') {
     for (const [field, val] of Object.entries(patch)) {
       const spec = fieldSpecs.find(f => f.field === field)
@@ -188,7 +201,7 @@ async function adoptSingleton(
 
   const now = Date.now()
   if (target?.id != null) {
-    await tableSpec.table.update(target.id, { ...patch, updatedAt: now } as any)
+    await table.update(target.id, { ...patch, updatedAt: now } as any)
     result.written.push({ id: target.id, fields: Object.keys(patch) })
   } else {
     const row = {
@@ -199,7 +212,7 @@ async function adoptSingleton(
       createdAt: now,
       updatedAt: now,
     }
-    const id = await tableSpec.table.add(row as any) as number
+    const id = await table.add(row as any) as number
     result.written.push({ id, fields: Object.keys(patch) })
   }
   return result
@@ -210,6 +223,7 @@ async function adoptCollection(
   fieldSpecs: FieldSpec[],
   tableSpec: TableSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<AdoptResult> {
   const adoption = ADOPTION_BY_TARGET.get(input.target)
   if (!adoption) throw new Error(`[adopt] target ${input.target} 是集合写回但未在 ADOPTION_SCHEMAS 登记`)
@@ -221,11 +235,12 @@ async function adoptCollection(
     item = applyTableDefaults(item, tableSpec)
     if (input.target === 'characters') item = normalizeCharacterAxes(item)
     if (!applyRequired(item, raw, adoption, result)) continue
-    if (!await applyFkChecks(item, raw, adoption, result)) continue
-    await applyArrayMemberChecks(item, adoption, result)
+    if (!await applyFkChecks(item, raw, adoption, result, storage)) continue
+    await applyArrayMemberChecks(item, adoption, result, storage)
     applyAutoStamps(item, input, tableSpec, adoption)
 
-    const existing = await findExisting(input.projectId, tableSpec, item, adoption)
+    const table = adoptionTable(tableSpec, storage)
+    const existing = await findExisting(input.projectId, item, adoption, table)
     if (existing?.id != null) {
       if (adoption.duplicatePolicy === 'skip') {
         result.skipped.push({ reason: '重复(skip)', data: raw })
@@ -234,18 +249,18 @@ async function adoptCollection(
         // 新增记录(else 分支)仍保留 null(顶层卷 parentId 等需要)。
         const patch: Record<string, unknown> = { updatedAt: Date.now() }
         for (const [k, v] of Object.entries(item)) if (v !== null) patch[k] = v
-        await tableSpec.table.update(existing.id, patch as any)
+        await table.update(existing.id, patch as any)
         result.written.push({ id: existing.id, fields: Object.keys(patch) })
       } else if (adoption.duplicatePolicy === 'merge') {
         const patch = mergeByStrategy(existing, item, adoption.mergeStrategy ?? 'overwrite-non-empty')
         patch.updatedAt = Date.now()
-        await tableSpec.table.update(existing.id, patch as any)
+        await table.update(existing.id, patch as any)
         result.written.push({ id: existing.id, fields: Object.keys(patch) })
       } else {
         throw new Error(`[adopt] 重复记录 ${input.target}.${JSON.stringify(identityValue(item, adoption))}`)
       }
     } else {
-      const id = await tableSpec.table.add(item as any) as number
+      const id = await table.add(item as any) as number
       result.written.push({ id, fields: Object.keys(item) })
     }
   }
@@ -361,8 +376,8 @@ function validateAndCoerce(spec: FieldSpec, value: unknown, result: AdoptResult)
   return undefined
 }
 
-async function findSingleton(input: AdoptInput, tableSpec: TableSpec): Promise<any | null> {
-  const rows = await tableSpec.table.where('projectId').equals(input.projectId).toArray()
+async function findSingleton(input: AdoptInput, tableSpec: TableSpec, table: AdoptionTable): Promise<any | null> {
+  const rows = await table.list({ where: { projectId: input.projectId } })
   if (tableSpec.worldScoped) {
     const wgField = tableSpec.worldGroupField ?? 'worldGroupId'
     return (rows as any[]).find(r => (r[wgField] ?? null) === (input.worldGroupId ?? null)) ?? null
@@ -411,13 +426,14 @@ async function applyFkChecks(
   raw: unknown,
   adoption: CollectionAdoptionSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<boolean> {
   for (const fk of adoption.fkChecks ?? []) {
     const refValue = item[fk.field]
     if (refValue == null) continue
     const targetSpec = PROJECT_TABLES.find(s => s.name === fk.target)
     if (!targetSpec) continue
-    const exists = await targetSpec.table.get(refValue as number)
+    const exists = await adoptionTable(targetSpec, storage).get(refValue as number)
     if (!exists) {
       result.fkErrors.push({ field: fk.field, refValue })
       result.skipped.push({ reason: 'FK 校验失败', data: raw })
@@ -431,6 +447,7 @@ async function applyArrayMemberChecks(
   item: Record<string, unknown>,
   adoption: CollectionAdoptionSpec,
   result: AdoptResult,
+  storage?: ProjectStoragePort,
 ): Promise<void> {
   for (const arr of adoption.arrayMemberChecks ?? []) {
     const value = item[arr.field]
@@ -439,7 +456,7 @@ async function applyArrayMemberChecks(
     if (!targetSpec) continue
     const filtered: unknown[] = []
     for (const v of value) {
-      if (await targetSpec.table.get(v as number)) filtered.push(v)
+      if (await adoptionTable(targetSpec, storage).get(v as number)) filtered.push(v)
       else result.fkErrors.push({ field: `${arr.field}[]`, refValue: v })
     }
     item[arr.field] = filtered
@@ -464,13 +481,51 @@ function applyAutoStamps(
 
 async function findExisting(
   projectId: number,
-  tableSpec: TableSpec,
   item: Record<string, unknown>,
   adoption: CollectionAdoptionSpec,
+  table: AdoptionTable,
 ): Promise<any | null> {
-  if (adoption.identity === 'id' && item.id != null) return tableSpec.table.get(item.id as number)
-  const candidates = await tableSpec.table.where('projectId').equals(projectId).toArray()
+  if (adoption.identity === 'id' && item.id != null) return table.get(item.id as number)
+  const candidates = await table.list({ where: { projectId } })
   return (candidates as any[]).find(row => identityMatches(row, item, adoption)) ?? null
+}
+
+function adoptionTable(tableSpec: TableSpec, storage?: ProjectStoragePort): AdoptionTable {
+  if (storage) return storage.table(tableSpec.name) as AdoptionTable
+  return {
+    get: id => tableSpec.table.get(id),
+    list: async query => {
+      let rows = await tableSpec.table.toArray()
+      if (query?.where) {
+        rows = rows.filter(row => Object.entries(query.where ?? {}).every(([field, expected]) => {
+          const accepted = Array.isArray(expected) ? expected : [expected]
+          return accepted.some(value => Object.is(row[field], value))
+        }))
+      }
+      return rows as Array<StorageRecord & Record<string, any>>
+    },
+    findOne: async query => (await adoptionTable(tableSpec).list({ ...query, limit: 1 }))[0],
+    add: record => tableSpec.table.add(record as any) as Promise<number>,
+    put: record => tableSpec.table.put(record as any) as Promise<number>,
+    update: (id, patch) => tableSpec.table.update(id, patch as any).then(() => undefined),
+    delete: id => tableSpec.table.delete(id),
+    bulkPut: records => tableSpec.table.bulkPut(records as any).then(() => undefined),
+    bulkDelete: ids => tableSpec.table.bulkDelete(ids),
+  }
+}
+
+async function adoptionTransaction(
+  storage: ProjectStoragePort | undefined,
+  tableSpec: TableSpec,
+  work: (table: AdoptionTable) => Promise<void>,
+): Promise<void> {
+  if (storage) {
+    await storage.transaction('readwrite', [tableSpec.name], async transaction => {
+      await work(transaction.table(tableSpec.name) as AdoptionTable)
+    })
+    return
+  }
+  await db.transaction('rw', tableSpec.table, () => work(adoptionTable(tableSpec)))
 }
 
 function identityMatches(row: Record<string, unknown>, item: Record<string, unknown>, adoption: CollectionAdoptionSpec): boolean {

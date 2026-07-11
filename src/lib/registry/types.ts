@@ -8,6 +8,7 @@ import type { Table } from 'dexie'
 import type { AIProvider } from '../types/ai'
 import type { ContextLayer, ContextSegment } from '../ai/context-budget'
 import type { PreparedContinuityContext } from '../ai/chapter-memory/continuity-context'
+import type { ProjectStoragePort } from '../storage/ports'
 
 /**
  * 表的归属方式 —— 决定删项目时如何定位该表的记录。
@@ -235,6 +236,8 @@ export type ContextSourceScope = 'project' | 'world' | 'node' | 'chapter' | 'man
 
 export interface AssembleContextInput {
   projectId: number
+  /** 活动项目存储；未传时由现有 Dexie 读取器提供数据。 */
+  storage?: ProjectStoragePort
   /** Explicit world target. null is a valid explicit single-world/global target. */
   worldGroupId?: number | null
   outlineNodeId?: number | null
