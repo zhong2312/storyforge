@@ -416,9 +416,9 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
     ? [
         `本轮受完成契约约束：必须调用 ${PROPOSE_TOOL}，目标 ${input.completionRequirement.target}/${input.completionRequirement.mode}${input.completionRequirement.recordId != null ? `/recordId=${input.completionRequirement.recordId}` : ''}。`,
         input.completionRequirement.requiredContextSources?.length
-          ? `直接用 ${CONTEXT_READ_TOOL} 读取宿主指定的 requiredContextSources；不要先查目录，并尽量一次读取：${input.completionRequirement.requiredContextSources.join(', ')}。`
+          ? `直接用 ${CONTEXT_READ_TOOL} 读取宿主指定的 requiredContextSources；这些项目读取工具已经由宿主授权，不得向用户索要读取权限、原文或粘贴内容。不要先查目录，并尽量一次读取：${input.completionRequirement.requiredContextSources.join(', ')}。`
           : '',
-        '在提案工具调用前完成内容生成，把完整候选版本放进 data；只说明“下一步将生成”不算完成。',
+        '在提案工具调用前完成正式内容生成，把完整候选版本放进 data；流程说明、方案询问、权限请求、占位内容和“下一步将生成”都不是可采纳交付物。',
       ].filter(Boolean).join('\n')
     : ''
   return [
@@ -427,6 +427,7 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
     '用户按“第 N 章”指代章节且宿主未提供章节 ID 时，先调用 storyforge.context.read 读取 chapterIndex，并传 chapterOrdinal=N；再把返回的 outlineNodeId/chapterId 传给后续 context.read。',
     '写章节时：chapterId=未创建则对 chapters 使用 mode=add，并携带索引返回的 outlineNodeId、标题、正文、字数、draft 状态和章序；已有 chapterId 则使用 recordId 定点 replace，禁止新建重复章节。',
     '找到目标章节后立即读取写作所需上下文并产出变更提案；不得只描述下一步、不得用反复读取代替执行。',
+    '所有已列出的项目工具都已获得当前作用域所需授权。工具返回 omitted 表示该源当前没有数据，不表示缺少权限；不得要求用户授权读取、提供原文或粘贴项目中已有内容。',
     '如果任务来自项目面板，宿主消息中给出的记录 ID、世界、章节、字段和选区是权威目标；不得改写为其它记录，也不得自行切换作用域。',
     '任何修改必须调用 storyforge.change.propose 生成方案；提案后立即停止并等待用户批准，不得声称已经写入。',
     '回答使用中文，清楚说明已读取的事实、当前阶段和下一步。只输出简短的阶段性推理摘要。',
@@ -481,6 +482,56 @@ function assertCompletionProposalInput(
       }
     }
   }
+
+  assertDeliverableContent(requirement, dataItems)
+}
+
+function assertDeliverableContent(
+  requirement: AgentChangeProposalCompletionRequirement,
+  dataItems: readonly Record<string, unknown>[],
+): void {
+  if (requirement.deliverableKind !== 'chapter-draft'
+    && requirement.deliverableKind !== 'chapter-rewrite') return
+
+  for (const item of dataItems) {
+    const content = typeof item.content === 'string' ? item.content : ''
+    const plainContent = plainTextContent(content)
+    if (containsNonDeliverableMetaContent(plainContent)) {
+      throw new Error(
+        '[agent-runtime] 完成条件未满足：content 必须是正式小说正文，不能包含权限请求、索要原文、流程说明或占位内容；请继续调用项目读取工具并生成完整正文',
+      )
+    }
+
+    const sourceLength = requirement.sourceTextLength
+    const minRatio = requirement.minLengthRatio
+    if (requirement.deliverableKind === 'chapter-rewrite'
+      && sourceLength != null
+      && sourceLength > 0
+      && minRatio != null) {
+      const minimum = Math.ceil(sourceLength * minRatio)
+      if (textContentLength(content) < minimum) {
+        throw new Error(
+          `[agent-runtime] 完成条件未满足：改写后的完整章节不足原文的 ${Math.round(minRatio * 100)}%（至少 ${minimum} 字），不能用摘要、说明或局部片段替代正文`,
+        )
+      }
+    }
+  }
+}
+
+function containsNonDeliverableMetaContent(content: string): boolean {
+  const normalized = content.replace(/\s+/g, '')
+  return [
+    /[【[]?(?:正文|内容|章节内容)?待定[】\]]?/,
+    /(?:当前)?工具集.{0,24}(?:缺少|没有|不支持)/,
+    /storyforge\.(?:context|settings|change)\./i,
+    /(?:请|需要)(?:先)?(?:提供|粘贴|上传).{0,24}(?:原文|正文|章节内容)/,
+    /(?:请|需要).{0,20}(?:赋予|开放|授予).{0,12}(?:读取|访问)?权限/,
+    /(?:无法|不能|尚未|未能).{0,20}(?:读取|获取|访问).{0,20}(?:原文|正文|章节内容)/,
+    /(?:获取|读取).{0,12}(?:原文|正文|章节内容).{0,16}(?:后|才能)(?:执行|改写|润色|生成)/,
+    /(?:以下|提供).{0,12}(?:方案|选项).{0,28}(?:请选择|请确认|是否采纳)/,
+    /(?:请确认|请选择).{0,20}(?:方案|方向|要求|风格)/,
+    /(?:我将|接下来|下一步).{0,20}(?:生成|改写|润色|处理).{0,16}(?:正文|章节内容|本章)/,
+  ].some(pattern => pattern.test(normalized))
 }
 
 function requiredContextIsReady(
@@ -509,11 +560,15 @@ function completionFailureMessage(
 
 function textContentLength(value: unknown): number {
   if (typeof value !== 'string') return 0
+  return plainTextContent(value)
+    .replace(/\s/g, '')
+    .length
+}
+
+function plainTextContent(value: string): string {
   return value
     .replace(/<[^>]+>/g, '')
     .replace(/&(nbsp|amp|lt|gt|quot|#39);/gi, ' ')
-    .replace(/\s/g, '')
-    .length
 }
 
 function summarizeInput(descriptor: ToolDescriptor | undefined, input: unknown): string {

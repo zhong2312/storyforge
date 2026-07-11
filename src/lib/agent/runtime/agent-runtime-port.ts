@@ -18,6 +18,9 @@ export interface AgentChangeProposalCompletionRequirement {
   readonly requiredFields: readonly string[]
   readonly minTextLength?: Readonly<Record<string, number>>
   readonly requiredContextSources?: readonly string[]
+  readonly deliverableKind?: 'chapter-draft' | 'chapter-rewrite' | 'structured-record'
+  readonly sourceTextLength?: number
+  readonly minLengthRatio?: number
 }
 
 export type AgentCompletionRequirement = AgentChangeProposalCompletionRequirement

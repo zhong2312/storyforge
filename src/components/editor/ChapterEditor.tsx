@@ -260,6 +260,11 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     payload: Record<string, unknown> = {},
   ) => {
     if (!outlineNode || !currentChapter?.id) return
+    const sourceTextLength = typeof payload.sourceTextLength === 'number'
+      ? payload.sourceTextLength
+      : undefined
+    const isDraft = type === 'chapter.content'
+    const minLengthRatio = type === 'chapter.expand' || type === 'chapter.continue' ? 1 : 0.75
     dispatchAgentIntent({
       type,
       title,
@@ -279,10 +284,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         mode: 'replace',
         recordId: currentChapter.id,
         requiredFields: ['content'],
-        minTextLength: { content: type === 'chapter.content' ? 500 : 1 },
+        minTextLength: { content: isDraft ? 500 : 1 },
         requiredContextSources: Array.isArray(payload.requiredContextSources)
           ? payload.requiredContextSources.filter((value): value is string => typeof value === 'string')
           : undefined,
+        deliverableKind: isDraft ? 'chapter-draft' : 'chapter-rewrite',
+        sourceTextLength,
+        minLengthRatio: isDraft ? undefined : minLengthRatio,
       },
       payload: {
         chapterTitle: outlineNode.title || currentChapter.title,
@@ -316,29 +324,33 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       'Agent 续写本章',
       '读取当前正文及连续性上下文，从现有结尾自然续写。调用变更提案更新当前章节完整 content，保留原文并追加新内容。',
       undefined,
-      { existingWordCount: wordCount, requiredContextSources: contextPlan.sourceKeys },
+      { existingWordCount: wordCount, requiredContextSources: contextPlan.sourceKeys, sourceTextLength: countWords(plainText) },
     )
   }
 
-  const handlePolish = () => {
+  const handlePolish = async () => {
     const selected = editorRef.current?.getSelectedText() || plainText.slice(-1000)
     if (!selected) return
+    const contextPlan = await buildAgentChapterContextPlan()
     dispatchChapterIntent(
       'chapter.polish',
       'Agent 润色本章',
       '润色指定选区；读取当前章节完整正文，保持情节事实不变，将润色后的选区放回原位置，并对当前章节完整 content 生成变更提案。',
       selected,
+      { requiredContextSources: contextPlan.sourceKeys, sourceTextLength: countWords(plainText) },
     )
   }
 
-  const handleExpand = () => {
+  const handleExpand = async () => {
     const selected = editorRef.current?.getSelectedText() || plainText.slice(-500)
     if (!selected) return
+    const contextPlan = await buildAgentChapterContextPlan()
     dispatchChapterIntent(
       'chapter.expand',
       'Agent 扩写本章',
       '扩写指定选区，增加必要的动作、感官和人物反应但不改变情节走向；读取完整正文后将结果放回原位置，并对当前章节完整 content 生成变更提案。',
       selected,
+      { requiredContextSources: contextPlan.sourceKeys, sourceTextLength: countWords(plainText) },
     )
   }
 
@@ -357,6 +369,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       confirmText: '开始改写',
     })
     if (!ok) return
+    const contextPlan = await buildAgentChapterContextPlan()
     dispatchChapterIntent(
       isFull ? 'chapter.deai.full' : 'chapter.deai.selection',
       isFull ? 'Agent 去除整章 AI 味' : 'Agent 去除选区 AI 味',
@@ -364,7 +377,11 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         ? '在不改变剧情事实、人设和篇幅的前提下重写整章，清理模板腔、机械工整和不自然表达，并对当前章节完整 content 生成变更提案。'
         : '仅重写指定选区以清理 AI 味，保持上下文衔接；读取完整正文后把结果放回原位置，并对当前章节完整 content 生成变更提案。',
       isFull ? undefined : target,
-      { fullChapter: isFull },
+      {
+        fullChapter: isFull,
+        requiredContextSources: contextPlan.sourceKeys,
+        sourceTextLength: countWords(plainText),
+      },
     )
   }
 
@@ -377,12 +394,17 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       confirmText: '开始修改',
     })
     if (!ok) return
+    const contextPlan = await buildAgentChapterContextPlan()
     dispatchChapterIntent(
       'review.revise',
       'Agent 按审校报告修改本章',
       '根据审校报告修改整章正文。读取当前正文、角色和世界设定，逐项处理报告中的可执行问题，不改变未被报告要求修改的事实，并对当前章节完整 content 生成变更提案。',
       undefined,
-      { reviewReport: report },
+      {
+        reviewReport: report,
+        requiredContextSources: contextPlan.sourceKeys,
+        sourceTextLength: countWords(plainText),
+      },
     )
   }
 

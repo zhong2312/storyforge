@@ -129,6 +129,7 @@ export function inferChapterChatCompletionRequirement(
     requiredFields: ['content'],
     minTextLength: { content: 500 },
     requiredContextSources: ['chapterIndex', ...CHAPTER_WRITING_CONTEXT_SOURCES],
+    deliverableKind: 'chapter-draft',
   }
 }
 
@@ -175,6 +176,9 @@ function freezeCompletionRequirement(
     minTextLength: requirement.minTextLength
       ? Object.freeze({ ...requirement.minTextLength })
       : undefined,
+    deliverableKind: requirement.deliverableKind,
+    sourceTextLength: requirement.sourceTextLength,
+    minLengthRatio: requirement.minLengthRatio,
     requiredContextSources: requirement.requiredContextSources
       ? Object.freeze([...requirement.requiredContextSources])
       : undefined,

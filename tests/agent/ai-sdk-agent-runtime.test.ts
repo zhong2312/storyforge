@@ -264,6 +264,91 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(events.some(event => event.type === 'run.completed')).toBe(false)
   })
 
+  it('rejects permission requests and placeholder explanations as chapter deliverables', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const proposal = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: {
+          content: '【内容待定——需要获取第1章原文后才能执行去AI味改写。当前工具集缺少 storyforge.context.read，请赋予读取权限。',
+        },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: proposal }
+      await request.execute('storyforge.change.propose', proposal)
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput({
+      minTextLength: 1,
+    })))
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed', payload: { error: expect.stringContaining('必须是正式小说正文') },
+    })
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
+  })
+
+  it('rejects a plan-selection question even when it is long enough', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const proposal = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: {
+          content: `以下提供三种改写方案，请确认风格后我再生成正文。${'第一种侧重节奏，第二种侧重对白，第三种侧重氛围。'.repeat(30)}`,
+        },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: proposal }
+      await request.execute('storyforge.change.propose', proposal)
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput({
+      minTextLength: 500,
+    })))
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed', payload: { error: expect.stringContaining('必须是正式小说正文') },
+    })
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
+  })
+
+  it('rejects a chapter rewrite that replaces the full source with a short explanation', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const readInput = { sourceKeys: ['chapterOutline'] }
+      yield { type: 'tool-call', toolCallId: 'read-1', toolName: 'storyforge.context.read', input: readInput }
+      const readOutput = await request.execute('storyforge.context.read', readInput)
+      yield { type: 'tool-result', toolCallId: 'read-1', toolName: 'storyforge.context.read', output: readOutput }
+
+      const proposal = {
+        target: 'chapters', mode: 'replace', recordId: 12,
+        data: { content: '本次处理将保持原剧情不变，并优化语言节奏。具体修改将在下一阶段完成。'.repeat(3) },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-1', toolName: 'storyforge.change.propose', input: proposal }
+      await request.execute('storyforge.change.propose', proposal)
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput({
+      deliverableKind: 'chapter-rewrite',
+      sourceTextLength: 3152,
+      minLengthRatio: 0.75,
+      minTextLength: 1,
+    })))
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'run.failed', payload: { error: expect.stringContaining('不足原文的 75%') },
+    })
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
+  })
+
   it('does not count context sources absent from the read result', async () => {
     const registry = chapterProposalRegistry({ included: [] })
     const streamer: AgentLoopStreamer = async function* (request) {
@@ -665,7 +750,13 @@ function runInput() {
   }
 }
 
-function chapterRunInput(overrides: { requiredContextSources?: string[] } = {}) {
+function chapterRunInput(overrides: {
+  requiredContextSources?: string[]
+  deliverableKind?: 'chapter-draft' | 'chapter-rewrite'
+  sourceTextLength?: number
+  minLengthRatio?: number
+  minTextLength?: number
+} = {}) {
   return {
     ...runInput(),
     scope: { module: 'editor', chapterId: 12, outlineNodeId: 11 },
@@ -676,8 +767,11 @@ function chapterRunInput(overrides: { requiredContextSources?: string[] } = {}) 
       mode: 'replace' as const,
       recordId: 12,
       requiredFields: ['content'],
-      minTextLength: { content: 20 },
+      minTextLength: { content: overrides.minTextLength ?? 20 },
       requiredContextSources: overrides.requiredContextSources ?? ['chapterOutline'],
+      deliverableKind: overrides.deliverableKind ?? 'chapter-draft',
+      sourceTextLength: overrides.sourceTextLength,
+      minLengthRatio: overrides.minLengthRatio,
     },
   }
 }
