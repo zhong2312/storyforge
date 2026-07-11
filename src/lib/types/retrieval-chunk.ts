@@ -15,6 +15,12 @@ export interface RetrievalChunk {
   worldGroupId?: number | null
   /** 来源章节（删章 / 改章 → 该章的块重建或清除） */
   sourceChapterId: number
+  /** 注册表来源表；旧章节索引缺省时按 chapters 兼容。 */
+  sourceTable?: string
+  /** 来源记录主键；旧章节索引缺省时回退 sourceChapterId。 */
+  sourceRecordId?: number
+  /** 供检索结果引用和 Agent 展示的来源标题。 */
+  sourceTitle?: string
   /** 块在本章内的序号（按时间/正文顺序） */
   chunkIndex: number
   /** 块正文（切块后的片段） */

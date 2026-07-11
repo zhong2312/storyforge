@@ -48,7 +48,7 @@ export default function EmbeddingConfigCard() {
         onProgress: (done, total) => setProgress(`摘要 ${done}/${total} 章`),
       })
       if (!isEmbeddingReady(embedding)) {
-        setMsg(`检索索引已就绪:扫描 ${chunks.chapters} 章,重建 ${chunks.rebuiltChapters} 章 / ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书。未配置 embedding,将使用层级摘要+关键词检索。`)
+        setMsg(`检索索引已就绪:扫描 ${chunks.tables} 张表 / ${chunks.records} 条数据,重建 ${chunks.rebuiltRecords} 条 / ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书。未配置 embedding,将使用层级摘要+关键词检索。`)
         return
       }
       const r = await ensureChunkEmbeddings({
@@ -56,8 +56,8 @@ export default function EmbeddingConfigCard() {
         onProgress: (done, total) => setProgress(`嵌入 ${done}/${total} 块`),
       })
       setMsg(r.total === 0
-        ? `检索索引已就绪:扫描 ${chunks.chapters} 章,当前 ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书;语义向量已全部就绪。`
-        : `完成:扫描 ${chunks.chapters} 章,重建 ${chunks.rebuiltChapters} 章 / ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书;本次嵌入 ${r.embedded} 块,跳过已就绪 ${r.skipped} 块`)
+        ? `检索索引已就绪:扫描 ${chunks.tables} 张表 / ${chunks.records} 条数据,当前 ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书;语义向量已全部就绪。`
+        : `完成:扫描 ${chunks.tables} 张表 / ${chunks.records} 条数据,重建 ${chunks.rebuiltRecords} 条 / ${chunks.chunks} 块;摘要树 ${summaries.chapterNodes} 章、${summaries.volumeNodes} 卷、${summaries.bookNodes} 全书;本次嵌入 ${r.embedded} 块,跳过已就绪 ${r.skipped} 块`)
     } catch (e) {
       setMsg(`建立索引失败:${e instanceof Error ? e.message : String(e)}（已有索引仍可用;embedding 失败会自动退回关键词检索）`)
     } finally {
@@ -86,11 +86,11 @@ export default function EmbeddingConfigCard() {
         <button onClick={buildIndex} disabled={indexing || !currentProjectId}
           className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent text-sm rounded-lg hover:bg-accent/20 disabled:opacity-40 transition-colors">
           {indexing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          {indexing ? `建立中… ${progress}` : '为当前项目历史章节建立检索索引'}
+          {indexing ? `建立中… ${progress}` : '为当前项目全部数据建立检索索引'}
         </button>
         {!currentProjectId && <p className="text-[11px] text-text-muted mt-1.5">打开一个项目后,这里可为其历史章节批量建索引。</p>}
         <p className="text-[11px] text-text-muted mt-1.5">
-          先按章节正文重建关键词块与章→卷→全书摘要树;若已启用并配置 embedding,再只嵌入"缺向量或换了模型"的块。未启用 embedding 时,远距召回仍可走层级摘要+纯关键词通道。
+          从项目表注册表扫描正文、大纲、角色、世界观、设定、事实与参考资料，并重建章→卷→全书摘要树；若已启用 embedding，再只嵌入“缺向量或换了模型”的块。
         </p>
         {msg && <p className="text-[11px] text-text-secondary mt-1.5 px-2 py-1 rounded bg-bg-base">{msg}</p>}
       </div>

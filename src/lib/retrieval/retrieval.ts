@@ -15,6 +15,11 @@ import type { Chapter, EmbeddingConfig, OutlineNode } from '../types'
 import { normalizeChapterText, hashChapterText, getChapterDerivedMemoryStatus, sha256Text } from '../ai/chapter-memory/text-normalization'
 import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-chapter-sequence'
 import { embedTexts, embeddingModelTag, isEmbeddingReady } from '../ai/adapters/embedding-adapter'
+import { PROJECT_TABLES } from '../registry/project-tables'
+import { FIELD_BY_TARGET } from '../registry/field-registry'
+import { DexieProjectStorage } from '../storage/adapters/dexie'
+import type { ProjectStoragePort, StorageRecord } from '../storage/ports'
+import { htmlToPlainText } from '../utils/html'
 
 const CHUNK_SIZE = 400
 const SUMMARY_EXCERPT_CHARS = 220
@@ -45,6 +50,227 @@ export function extractKeywords(text: string, knownEntities: string[]): string[]
   return [...found]
 }
 
+const RAG_SYSTEM_FIELDS = new Set([
+  'id', 'projectId', 'createdAt', 'updatedAt', 'order',
+  'worldGroupId', 'homeWorldGroupId', 'chapterId', 'sourceChapterId',
+])
+
+export interface ProjectRagDocument {
+  sourceTable: string
+  sourceRecordId: number
+  sourceTitle: string
+  sourceChapterId: number
+  worldGroupId: number | null
+  chunkIndex: number
+  text: string
+  keywords: string[]
+  sourceTextHash: string
+}
+
+export interface ProjectRagSearchHit extends ProjectRagDocument {
+  score: number
+}
+
+/** RAG 覆盖范围直接从 PROJECT_TABLES 派生，不维护第二份业务表清单。 */
+export function projectRagSourceTables(): string[] {
+  return PROJECT_TABLES
+    .filter(spec => spec.exportable && spec.owner !== 'global')
+    .map(spec => spec.name)
+}
+
+/**
+ * 把全部可导出项目数据投影成统一检索文档。
+ * 字段优先使用 FIELD_REGISTRY 的 canonical 顺序和中文别名，其余业务字段递归序列化补齐。
+ */
+export async function buildProjectRagDocuments(args: {
+  projectId: number
+  storage?: ProjectStoragePort
+  sourceTables?: readonly string[]
+}): Promise<ProjectRagDocument[]> {
+  const storage = args.storage ?? new DexieProjectStorage({ backend: 'dexie', projectId: args.projectId })
+  const allowed = new Set(projectRagSourceTables())
+  const selected = args.sourceTables?.length
+    ? [...new Set(args.sourceTables)].filter(table => allowed.has(table))
+    : [...allowed]
+  const documents: ProjectRagDocument[] = []
+
+  for (const table of selected) {
+    const rows = await storage.table<StorageRecord & Record<string, unknown>>(table).list()
+    for (const row of rows) {
+      if (row.id == null) continue
+      const projected = projectRagRecord(table, row)
+      if (!projected.text) continue
+      const sourceTextHash = await sha256Text(projected.text)
+      const pieces = splitIntoChunks(projected.text)
+      pieces.forEach((text, chunkIndex) => documents.push({
+        sourceTable: table,
+        sourceRecordId: row.id!,
+        sourceTitle: projected.title,
+        sourceChapterId: projected.sourceChapterId,
+        worldGroupId: projected.worldGroupId,
+        chunkIndex,
+        text,
+        keywords: extractSearchTerms(`${projected.title} ${text}`).slice(0, 80),
+        sourceTextHash,
+      }))
+    }
+  }
+  return documents
+}
+
+/** 对当前项目实时投影后检索，保证 Agent 不依赖可能过期的缓存。 */
+export async function searchProjectRag(args: {
+  projectId: number
+  storage?: ProjectStoragePort
+  query: string
+  sourceTables?: readonly string[]
+  worldGroupId?: number | null
+  currentChapterId?: number | null
+  topK?: number
+}): Promise<ProjectRagSearchHit[]> {
+  const query = args.query.trim()
+  if (!query) return []
+  const documents = await buildProjectRagDocuments(args)
+  const terms = extractSearchTerms(query)
+  const queryNormalized = normalizeSearchText(query)
+  const chapterOrder = args.currentChapterId != null
+    ? await loadChapterOrder(args.projectId, args.storage)
+    : null
+  const currentOrder = args.currentChapterId != null ? chapterOrder?.get(args.currentChapterId) : undefined
+  const hits: ProjectRagSearchHit[] = []
+
+  for (const document of documents) {
+    if (document.worldGroupId != null
+      && args.worldGroupId !== undefined
+      && document.worldGroupId !== (args.worldGroupId ?? null)) continue
+    if (currentOrder != null && document.sourceChapterId > 0) {
+      const sourceOrder = chapterOrder?.get(document.sourceChapterId)
+      if (sourceOrder == null || sourceOrder >= currentOrder) continue
+    }
+    const normalizedText = normalizeSearchText(document.text)
+    const normalizedTitle = normalizeSearchText(document.sourceTitle)
+    let score = queryNormalized.length >= 2 && normalizedText.includes(queryNormalized) ? 8 : 0
+    for (const term of terms) {
+      if (normalizedTitle.includes(term)) score += 3
+      if (document.keywords.includes(term)) score += 2
+      else if (normalizedText.includes(term)) score += 1
+    }
+    if (score > 0) hits.push({ ...document, score })
+  }
+
+  const topK = Math.min(20, Math.max(1, Math.trunc(args.topK ?? 8)))
+  return hits
+    .sort((left, right) => right.score - left.score
+      || left.sourceTable.localeCompare(right.sourceTable)
+      || left.sourceRecordId - right.sourceRecordId
+      || left.chunkIndex - right.chunkIndex)
+    .slice(0, topK)
+}
+
+export function formatProjectRagHits(query: string, hits: readonly ProjectRagSearchHit[]): string {
+  if (!hits.length) return ''
+  return [
+    `【全项目 RAG 检索：${query.trim()}】`,
+    ...hits.map(hit => [
+      `- [${hit.sourceTable}#${hit.sourceRecordId}] ${hit.sourceTitle}（相关度 ${hit.score.toFixed(1)}）`,
+      `  ${hit.text.replace(/\s+/g, ' ').trim()}`,
+    ].join('\n')),
+  ].join('\n')
+}
+
+function projectRagRecord(
+  table: string,
+  row: StorageRecord & Record<string, unknown>,
+): { title: string; text: string; sourceChapterId: number; worldGroupId: number | null } {
+  const title = firstText(row, ['name', 'title', 'label', 'entityName', 'subjectName']) || `${table} #${row.id}`
+  const registered = FIELD_BY_TARGET.get(table) ?? []
+  const orderedFields = [...new Set([...registered.map(field => field.field), ...Object.keys(row)])]
+  const fieldByName = new Map(registered.map(field => [field.field, field] as const))
+  const lines: string[] = [`【${table} / ${title}】`]
+  for (const field of orderedFields) {
+    if (RAG_SYSTEM_FIELDS.has(field)) continue
+    const value = row[field]
+    const text = ragValueText(value, table === 'chapters' && field === 'content')
+    if (!text) continue
+    const spec = fieldByName.get(field)
+    const label = spec?.label || spec?.aliases?.find(alias => /[\u3400-\u9fff]/.test(alias)) || field
+    lines.push(`${label}：${text}`)
+  }
+  const chapterCandidate = table === 'chapters' ? row.id : row.chapterId ?? row.sourceChapterId
+  const sourceChapterId = typeof chapterCandidate === 'number' && Number.isFinite(chapterCandidate)
+    ? chapterCandidate
+    : 0
+  const worldCandidate = row.worldGroupId ?? row.homeWorldGroupId
+  const worldGroupId = typeof worldCandidate === 'number' && Number.isFinite(worldCandidate)
+    ? worldCandidate
+    : null
+  return { title, text: lines.length > 1 ? lines.join('\n') : '', sourceChapterId, worldGroupId }
+}
+
+function firstText(row: Record<string, unknown>, fields: readonly string[]): string {
+  for (const field of fields) {
+    const value = row[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function ragValueText(value: unknown, html = false, depth = 0): string {
+  if (value == null || depth > 4) return ''
+  if (typeof value === 'string') {
+    const text = html ? htmlToPlainText(value) : value
+    return text.trim()
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value instanceof Blob || value instanceof ArrayBuffer) return ''
+  if (Array.isArray(value)) return value.map(item => ragValueText(item, false, depth + 1)).filter(Boolean).join('；')
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => {
+        const nested = ragValueText(item, false, depth + 1)
+        return nested ? `${key}=${nested}` : ''
+      })
+      .filter(Boolean)
+      .join('；')
+  }
+  return ''
+}
+
+function normalizeSearchText(value: string): string {
+  return value.toLocaleLowerCase().replace(/\s+/g, '')
+}
+
+function extractSearchTerms(value: string): string[] {
+  const terms = new Set<string>()
+  const runs = value.toLocaleLowerCase().match(/[a-z0-9_\-]{2,}|[\u3400-\u9fff]{2,}/g) ?? []
+  for (const run of runs) {
+    terms.add(run)
+    if (/^[\u3400-\u9fff]+$/.test(run)) {
+      for (let size = 2; size <= Math.min(4, run.length); size++) {
+        for (let index = 0; index + size <= run.length; index++) terms.add(run.slice(index, index + size))
+      }
+    }
+    if (terms.size >= 80) break
+  }
+  return [...terms]
+}
+
+async function loadChapterOrder(
+  projectId: number,
+  storage?: ProjectStoragePort,
+): Promise<Map<number, number>> {
+  const activeStorage = storage ?? new DexieProjectStorage({ backend: 'dexie', projectId })
+  const [outlineNodes, chapters] = await Promise.all([
+    activeStorage.table<OutlineNode>('outlineNodes').list(),
+    activeStorage.table<Chapter>('chapters').list(),
+  ])
+  const order = new Map<number, number>()
+  resolveCanonicalChapterSequence(outlineNodes, chapters).sequence.forEach((entry, index) => {
+    if (entry.chapter.id != null) order.set(entry.chapter.id, index)
+  })
+  return order
+}
+
 /**
  * 重建某章的检索块（删旧块 + 切块 + 抽关键词 + 写入）。正文未变（hash 相同）则跳过。
  * embedding 字段留空——由可选 embedding 通道异步回填，不阻塞。
@@ -60,8 +286,12 @@ export async function rebuildChapterChunks(args: {
   const normalized = normalizeChapterText(chapter.content || '')
   const hash = await hashChapterText(chapter.content || '')
 
-  const existing = await db.retrievalChunks.where('sourceChapterId').equals(chapter.id).toArray()
-  if (existing.length && existing[0].sourceTextHash === hash) {
+  const existing = (await db.retrievalChunks.where('sourceChapterId').equals(chapter.id).toArray())
+    .filter(chunk => (chunk.sourceTable ?? 'chapters') === 'chapters')
+  if (existing.length
+    && existing[0].sourceTextHash === hash
+    && existing.every(chunk => (chunk.sourceTable ?? 'chapters') === 'chapters'
+      && (chunk.sourceRecordId ?? chunk.sourceChapterId) === chapter.id)) {
     return { rebuilt: false, count: existing.length } // 正文未变，复用
   }
   // 正文变了 / 首次：清旧块重建
@@ -74,6 +304,9 @@ export async function rebuildChapterChunks(args: {
     projectId,
     worldGroupId: worldGroupId ?? null,
     sourceChapterId: chapter.id!,
+    sourceTable: 'chapters',
+    sourceRecordId: chapter.id!,
+    sourceTitle: chapter.title || `章节 #${chapter.id}`,
     chunkIndex: i,
     text,
     keywords: extractKeywords(text, knownEntities),
@@ -93,7 +326,14 @@ export async function rebuildChapterChunks(args: {
 export async function rebuildProjectRetrievalChunks(args: {
   projectId: number
   onProgress?: (done: number, total: number) => void
-}): Promise<{ chapters: number; rebuiltChapters: number; chunks: number }> {
+}): Promise<{
+  chapters: number
+  rebuiltChapters: number
+  tables: number
+  records: number
+  rebuiltRecords: number
+  chunks: number
+}> {
   const [chapters, outlineNodes, characters, codexEntries, locations] = await Promise.all([
     db.chapters.where('projectId').equals(args.projectId).toArray(),
     db.outlineNodes.where('projectId').equals(args.projectId).toArray(),
@@ -132,7 +372,98 @@ export async function rebuildProjectRetrievalChunks(args: {
     chunks += result.count
     args.onProgress?.(i + 1, sorted.length)
   }
-  return { chapters: sorted.length, rebuiltChapters, chunks }
+  const projectData = await rebuildRegisteredProjectChunks(args.projectId)
+  return {
+    chapters: sorted.length,
+    rebuiltChapters,
+    tables: projectData.tables + 1,
+    records: projectData.records + sorted.length,
+    rebuiltRecords: projectData.rebuiltRecords + rebuiltChapters,
+    chunks: chunks + projectData.chunks,
+  }
+}
+
+async function rebuildRegisteredProjectChunks(projectId: number): Promise<{
+  tables: number
+  records: number
+  rebuiltRecords: number
+  chunks: number
+}> {
+  const sourceTables = projectRagSourceTables().filter(table => table !== 'chapters')
+  const documents = await buildProjectRagDocuments({ projectId, sourceTables })
+  const existing = (await db.retrievalChunks.where('projectId').equals(projectId).toArray())
+    .filter(chunk => chunk.sourceTable != null && chunk.sourceTable !== 'chapters')
+  const documentsByRecord = groupRagDocuments(documents)
+  const existingByRecord = new Map<string, RetrievalChunk[]>()
+  for (const chunk of existing) {
+    if (chunk.sourceTable == null || chunk.sourceRecordId == null) continue
+    const key = ragRecordKey(chunk.sourceTable, chunk.sourceRecordId)
+    const list = existingByRecord.get(key) ?? []
+    list.push(chunk)
+    existingByRecord.set(key, list)
+  }
+
+  const deleteIds: number[] = []
+  const additions: RetrievalChunk[] = []
+  let rebuiltRecords = 0
+  for (const [key, chunksForRecord] of existingByRecord) {
+    const next = documentsByRecord.get(key)
+    if (!next
+      || chunksForRecord.length !== next.length
+      || chunksForRecord.some(chunk => chunk.sourceTextHash !== next[0]?.sourceTextHash)) {
+      deleteIds.push(...chunksForRecord.flatMap(chunk => chunk.id == null ? [] : [chunk.id]))
+    }
+  }
+  for (const [key, next] of documentsByRecord) {
+    const previous = existingByRecord.get(key)
+    if (previous?.length
+      && previous.length === next.length
+      && previous.every(chunk => chunk.sourceTextHash === next[0].sourceTextHash)) continue
+    rebuiltRecords++
+    const now = Date.now()
+    additions.push(...next.map(document => ({
+      projectId,
+      worldGroupId: document.worldGroupId,
+      sourceChapterId: document.sourceChapterId,
+      sourceTable: document.sourceTable,
+      sourceRecordId: document.sourceRecordId,
+      sourceTitle: document.sourceTitle,
+      chunkIndex: document.chunkIndex,
+      text: document.text,
+      keywords: document.keywords,
+      embedding: null,
+      embeddingModel: null,
+      sourceTextHash: document.sourceTextHash,
+      createdAt: now,
+    })))
+  }
+  if (deleteIds.length || additions.length) {
+    await db.transaction('rw', db.retrievalChunks, async () => {
+      if (deleteIds.length) await db.retrievalChunks.bulkDelete(deleteIds)
+      if (additions.length) await db.retrievalChunks.bulkAdd(additions)
+    })
+  }
+  return {
+    tables: sourceTables.length,
+    records: documentsByRecord.size,
+    rebuiltRecords,
+    chunks: documents.length,
+  }
+}
+
+function groupRagDocuments(documents: readonly ProjectRagDocument[]): Map<string, ProjectRagDocument[]> {
+  const grouped = new Map<string, ProjectRagDocument[]>()
+  for (const document of documents) {
+    const key = ragRecordKey(document.sourceTable, document.sourceRecordId)
+    const list = grouped.get(key) ?? []
+    list.push(document)
+    grouped.set(key, list)
+  }
+  return grouped
+}
+
+function ragRecordKey(table: string, id: number): string {
+  return `${table}:${id}`
 }
 
 function capText(text: string, max = SUMMARY_EXCERPT_CHARS): string {

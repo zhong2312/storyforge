@@ -8,7 +8,13 @@ import { resolveCanonicalChapterSequence } from '../ai/chapter-memory/canonical-
 import { walkOutlineChaptersInCanonicalOrder } from '../outline/canonical-outline-walk'
 import { pickBestChapterForOutline } from '../chapters/selectors'
 import { getFactPredicate } from './fact-predicate-registry'
-import { retrieveChunks, embedQuery, readNarrativeSummaryContext } from '../retrieval/retrieval'
+import {
+  embedQuery,
+  formatProjectRagHits,
+  readNarrativeSummaryContext,
+  retrieveChunks,
+  searchProjectRag,
+} from '../retrieval/retrieval'
 import { isEmbeddingReady, embeddingModelTag } from '../ai/adapters/embedding-adapter'
 import { useAIConfigStore } from '../../stores/ai-config'
 import {
@@ -476,6 +482,21 @@ async function readRetrievedPassages(projectId: number, chapterId?: number | nul
   return [hierarchy, '【相关前文召回（防止远距离细节/伏笔矛盾，仅供参考）】', ...lines].filter(Boolean).join('\n\n')
 }
 
+async function readProjectRag(input: AssembleContextInput): Promise<string> {
+  const query = input.retrievalQuery?.trim()
+  if (!query) return ''
+  const hits = await searchProjectRag({
+    projectId: input.projectId,
+    storage: input.storage,
+    query,
+    sourceTables: input.retrievalSourceTables,
+    worldGroupId: input.worldGroupId,
+    currentChapterId: input.chapterId,
+    topK: input.retrievalTopK,
+  })
+  return formatProjectRagHits(query, hits)
+}
+
 /**
  * C2 反向哺喂 · 某角色的「已确认事实」证据。
  * 取事实账本里 subjectName == 该角色名 的 confirmed 事实（按当前世界 ∪ null 过滤），
@@ -593,6 +614,15 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     budgetTokens: 2500,
     requiresChapterId: true,
     read: input => readRetrievedPassages(input.projectId, input.chapterId, input.outlineNodeId, input.worldGroupId, input.storage),
+  },
+  {
+    key: 'ragSearch',
+    label: '全项目 RAG 检索',
+    scope: 'project',
+    layer: 'L2',
+    budgetTokens: 4000,
+    enabled: input => Boolean(input.retrievalQuery?.trim()),
+    read: readProjectRag,
   },
   {
     key: 'detailedOutline',

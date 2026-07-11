@@ -9,11 +9,15 @@ import {
   extractKeywords,
   rebuildChapterChunks,
   rebuildProjectRetrievalChunks,
+  buildProjectRagDocuments,
+  projectRagSourceTables,
+  searchProjectRag,
   rebuildProjectNarrativeSummaries,
   readNarrativeSummaryContext,
   retrieveChunks,
 } from '../../src/lib/retrieval/retrieval'
 import { useChapterStore } from '../../src/stores/chapter'
+import { PROJECT_TABLES } from '../../src/lib/registry/project-tables'
 
 const now = Date.now()
 async function seedChapters(texts: string[]) {
@@ -134,5 +138,90 @@ describe('NS-5 · retrieval', () => {
     await rebuildChapterChunks({ projectId: pid, chapter: ch0!, worldGroupId: 99, knownEntities: ['林飞'] })
     const got = await retrieveChunks({ projectId: pid, currentChapterId: chaps[1], worldGroupId: 7, queryTerms: ['林飞'] })
     expect(got.length).toBe(0) // 块在世界99，当前世界7 → 不召回
+  })
+
+  it('全项目 RAG 来源严格派生自 PROJECT_TABLES 的可导出项目数据', async () => {
+    const { pid } = await seedChapters(['第一章：雨夜入城。'])
+    await db.characters.add({
+      projectId: pid, name: '顾潮生', role: 'supporting', ending: '守住无潮港', createdAt: now, updatedAt: now,
+    } as any)
+    await db.notes.add({ projectId: pid, title: '港口规则', content: '午夜后禁止鸣钟', createdAt: now, updatedAt: now } as any)
+
+    expect(projectRagSourceTables()).toEqual(
+      PROJECT_TABLES.filter(spec => spec.exportable && spec.owner !== 'global').map(spec => spec.name),
+    )
+    const documents = await buildProjectRagDocuments({ projectId: pid })
+    const populatedSources = documents.map(document => document.sourceTable)
+    expect(populatedSources).toEqual(expect.arrayContaining(['projects', 'chapters', 'characters', 'notes']))
+    expect(documents.find(document => document.sourceTable === 'characters')?.text).toContain('守住无潮港')
+    expect(documents.find(document => document.sourceTable === 'notes')?.text).toContain('午夜后禁止鸣钟')
+  })
+
+  it('全项目 RAG 可检索设定，同时在章节范围内禁止泄漏当前和未来正文', async () => {
+    const { pid, chaps } = await seedChapters([
+      '第一章：林飞将赤铜钥匙埋在古槐树下。',
+      '第二章：苏禾准备寻找钥匙。',
+      '第三章：未来才揭示钥匙能开启天门。',
+    ])
+    await db.characters.add({
+      projectId: pid, name: '苏禾', role: 'supporting', ending: '最终成为天门守钥人', createdAt: now, updatedAt: now,
+    } as any)
+
+    const settingHits = await searchProjectRag({ projectId: pid, query: '谁是天门守钥人', sourceTables: ['characters'] })
+    expect(settingHits[0]).toMatchObject({ sourceTable: 'characters', sourceTitle: '苏禾' })
+
+    const chapterHits = await searchProjectRag({
+      projectId: pid,
+      currentChapterId: chaps[1],
+      query: '赤铜钥匙天门',
+      sourceTables: ['chapters'],
+    })
+    expect(chapterHits.map(hit => hit.sourceChapterId)).toContain(chaps[0])
+    expect(chapterHits.map(hit => hit.sourceChapterId)).not.toContain(chaps[1])
+    expect(chapterHits.map(hit => hit.sourceChapterId)).not.toContain(chaps[2])
+  })
+
+  it('建立索引会写入非章节来源元数据，并在源记录变化后替换旧块', async () => {
+    const { pid } = await seedChapters(['第一章：雨夜入城。'])
+    const characterId = await db.characters.add({
+      projectId: pid, name: '闻铃', role: 'supporting', ending: '留守北境', createdAt: now, updatedAt: now,
+    } as any) as number
+    const first = await rebuildProjectRetrievalChunks({ projectId: pid })
+    expect(first.tables).toBe(projectRagSourceTables().length)
+    expect(first.records).toBeGreaterThanOrEqual(2)
+    const oldChunk = (await db.retrievalChunks.where('projectId').equals(pid).toArray())
+      .find(chunk => chunk.sourceTable === 'characters' && chunk.sourceRecordId === characterId)
+    expect(oldChunk?.text).toContain('留守北境')
+
+    await db.characters.update(characterId, { ending: '远赴东海' })
+    await rebuildProjectRetrievalChunks({ projectId: pid })
+    const nextChunks = (await db.retrievalChunks.where('projectId').equals(pid).toArray())
+      .filter(chunk => chunk.sourceTable === 'characters' && chunk.sourceRecordId === characterId)
+    expect(nextChunks).toHaveLength(1)
+    expect(nextChunks[0].text).toContain('远赴东海')
+    expect(nextChunks[0].text).not.toContain('留守北境')
+  })
+
+  it('局部重建章节时不误删同章关联的其他数据块', async () => {
+    const { pid, chaps } = await seedChapters(['第一章：雨夜入城。'])
+    await db.storyTimelineEvents.add({
+      projectId: pid,
+      chapterId: chaps[0],
+      title: '城门关闭',
+      description: '子时封城',
+      importance: 'major',
+      createdAt: now,
+    } as any)
+    await rebuildProjectRetrievalChunks({ projectId: pid })
+    const before = (await db.retrievalChunks.where('sourceChapterId').equals(chaps[0]).toArray())
+      .find(chunk => chunk.sourceTable === 'storyTimelineEvents')
+    expect(before?.text).toContain('子时封城')
+
+    const chapter = await db.chapters.get(chaps[0])
+    await rebuildChapterChunks({ projectId: pid, chapter: { ...chapter!, content: '第一章：破晓出城。' }, knownEntities: [] })
+    expect(await db.retrievalChunks.get(before!.id!)).toMatchObject({
+      sourceTable: 'storyTimelineEvents',
+      text: expect.stringContaining('子时封城'),
+    })
   })
 })

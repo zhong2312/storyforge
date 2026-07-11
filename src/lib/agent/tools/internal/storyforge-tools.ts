@@ -6,6 +6,7 @@ import { REGISTRY_BY_NAME } from '../../../registry/project-tables'
 import { projectLocatorKey, type ProjectStoragePort } from '../../../storage/ports'
 import type { AdoptInput, FieldSpec } from '../../../registry/types'
 import { countWords, htmlToPlainText } from '../../../utils/html'
+import { projectRagSourceTables } from '../../../retrieval/retrieval'
 import type { StoryForgeTool, ToolExecutionContext } from '../tool-types'
 import { AdoptionPlanStore, type AdoptionPlanPreview } from './adoption-plan-store'
 
@@ -21,6 +22,7 @@ export function createStoryForgeTools(
   return Object.freeze([
     createSettingsCatalogTool(),
     createContextReadTool(dependencies.storage),
+    createRagSearchTool(dependencies.storage),
     createChangeProposeTool(dependencies.storage, plans),
     createChangeCommitTool(dependencies.storage, plans),
   ])
@@ -228,6 +230,71 @@ async function resolveStorageProjectId(storage: ProjectStoragePort): Promise<num
     throw new Error('[storyforge-tools] local-folder project must contain exactly one project record')
   }
   return projects[0].id
+}
+
+function createRagSearchTool(storage: ProjectStoragePort): StoryForgeTool<{
+  query: string
+  sourceTables?: string[]
+  worldGroupId?: number | null
+  chapterId?: number
+  topK?: number
+}, unknown> {
+  const sourceTables = projectRagSourceTables()
+  return {
+    name: 'storyforge.rag.search',
+    title: `检索全项目数据（${sourceTables.length} 个数据表）`,
+    description: '通过 PROJECT_TABLES 派生的全项目 RAG 索引检索正文、大纲、角色、设定、事实和参考资料。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1 },
+        sourceTables: {
+          type: 'array',
+          items: { type: 'string', enum: sourceTables },
+          uniqueItems: true,
+        },
+        worldGroupId: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+        chapterId: { type: 'number', minimum: 1 },
+        topK: { type: 'number', minimum: 1, maximum: 20 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    risk: 'read',
+    availability: 'both',
+    requiredScopes: ['project:read'],
+    summarizeInput: input => `RAG 检索：${input.query}`,
+    summarizeOutput: output => `已召回 ${(output as { hitCount?: number }).hitCount ?? 0} 条项目数据`,
+    async execute(context, input) {
+      assertStorageBinding(storage, context)
+      const unknown = input.sourceTables?.filter(table => !sourceTables.includes(table)) ?? []
+      if (unknown.length) throw new Error(`[storyforge.rag.search] unknown source tables: ${unknown.join(', ')}`)
+      const projectId = await resolveStorageProjectId(storage)
+      const worldGroupId = resolveReadScope('worldGroupId', context.worldGroupId, input.worldGroupId)
+      const chapterId = resolveReadScope('chapterId', context.chapterId, input.chapterId)
+      const assembled = await assembleContext({
+        projectId,
+        storage,
+        worldGroupId,
+        chapterId,
+        sourceKeys: ['ragSearch'],
+        retrievalQuery: input.query,
+        retrievalSourceTables: input.sourceTables,
+        retrievalTopK: input.topK,
+      })
+      const hitCount = assembled.text
+        ? (assembled.text.match(/^- \[/gm) ?? []).length
+        : 0
+      return {
+        query: input.query,
+        sourceTables: input.sourceTables ?? sourceTables,
+        hitCount,
+        text: assembled.text,
+        included: assembled.included,
+        resolvedScope: { worldGroupId, chapterId },
+      }
+    },
+  }
 }
 
 async function loadProposalBeforeData(

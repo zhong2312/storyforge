@@ -46,6 +46,14 @@ describe('StoryForge tools with local-folder storage', () => {
       createdAt: 100,
       updatedAt: 100,
     })
+    await storage.table('characters').add({
+      projectId: 41,
+      name: '陆昭',
+      role: 'supporting',
+      ending: '在星河尽头守望故乡',
+      createdAt: 100,
+      updatedAt: 100,
+    })
     const registry = new ToolRegistry()
     for (const tool of createStoryForgeTools({ storage })) registry.register(tool)
 
@@ -57,6 +65,15 @@ describe('StoryForge tools with local-folder storage', () => {
 
     expect(read.included).toContain('worldview')
     expect(read.text).toContain('星河从本地文件中苏醒')
+
+    const rag = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '谁在星河尽头守望', sourceTables: ['characters'] },
+    ) as { hitCount: number; text: string }
+    expect(rag.hitCount).toBeGreaterThan(0)
+    expect(rag.text).toContain('陆昭')
+    expect(rag.text).toContain('星河尽头守望故乡')
 
     const plan = await registry.execute(
       'storyforge.change.propose',

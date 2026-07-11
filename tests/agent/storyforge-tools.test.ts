@@ -33,13 +33,40 @@ describe('registry-driven StoryForge tools', () => {
     await db.delete()
   })
 
-  it('exposes immutable descriptors for the four generic registry tools', () => {
+  it('exposes immutable descriptors for the five generic registry tools', () => {
     expect(registry.listAvailable(context(['project:read'])).map(tool => tool.name)).toEqual([
       'storyforge.settings.catalog',
       'storyforge.context.read',
+      'storyforge.rag.search',
       'storyforge.change.propose',
     ])
     expect(registry.get('storyforge.change.commit')?.requiredScopes).toEqual(['project:write'])
+  })
+
+  it('rag.search retrieves current project data through the registered context source', async () => {
+    await db.characters.add({
+      projectId: 1,
+      name: '沈砚',
+      role: 'supporting',
+      roleWeight: 'secondary',
+      moralAxis: 'neutral',
+      orderAxis: 'lawful',
+      ending: '在终局封存潮汐神印',
+      createdAt: 100,
+      updatedAt: 100,
+    } as never)
+
+    const output = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '谁封存潮汐神印', sourceTables: ['characters'], topK: 5 },
+    ) as { hitCount: number; text: string; included: string[] }
+
+    expect(output.hitCount).toBeGreaterThan(0)
+    expect(output.included).toEqual(['ragSearch'])
+    expect(output.text).toContain('[characters#')
+    expect(output.text).toContain('沈砚')
+    expect(output.text).toContain('封存潮汐神印')
   })
 
   it('catalog derives readable sources and writable settings from registries', async () => {
