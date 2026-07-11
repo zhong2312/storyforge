@@ -461,6 +461,58 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(toolNamesFromRequest(requests[0])).toEqual(['storyforge_context_read'])
     expect(toolNamesFromRequest(requests[1])).toEqual(['storyforge_change_propose'])
   })
+
+  it('continues a DeepSeek completion contract after a text-only premature stop', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const responses = [
+      namedToolCallChunks('storyforge_context_read', { sourceKeys: ['chapterOutline'] }, 'read-1'),
+      textChunks('上下文已经齐备，接下来生成正文。'),
+      namedToolCallChunks('storyforge_change_propose', {
+        target: 'chapters', mode: 'replace', recordId: 12, data: { content: '正文'.repeat(30) },
+      }, 'proposal-1'),
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+      return sseResponse(responses[requests.length - 1])
+    }))
+    const registry = chapterProposalRegistry()
+    const contextDescriptor = registry.get('storyforge.context.read')
+    const proposalDescriptor = registry.get('storyforge.change.propose')
+    if (!contextDescriptor || !proposalDescriptor) throw new Error('missing chapter tool descriptors')
+    let contextReady = false
+    let proposalReady = false
+
+    for await (const _part of streamAiSdkAgentLoop({
+      config: {
+        provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'DeepSeek-V4-Flash',
+      },
+      instructions: 'Read context, then propose.',
+      prompt: '写第一章',
+      descriptors: [contextDescriptor, proposalDescriptor],
+      maxSteps: 5,
+      tokenBudget: 2_000,
+      signal: new AbortController().signal,
+      execute: async name => {
+        if (name === 'storyforge.context.read') contextReady = true
+        if (name === 'storyforge.change.propose') proposalReady = true
+        return name === 'storyforge.change.propose'
+          ? { planId: 'p', approvalId: 'a', planHash: 'h' }
+          : { included: ['chapterOutline'] }
+      },
+      shouldStop: () => proposalReady,
+      requiredContextTool: 'storyforge.context.read',
+      requiredCompletionTool: 'storyforge.change.propose',
+      shouldForceCompletion: () => contextReady,
+    })) {
+      // Consume the continuation round after the text-only model response.
+    }
+
+    expect(requests).toHaveLength(3)
+    expect(requests.map(request => request.tool_choice)).toEqual(['auto', 'auto', 'auto'])
+    expect(toolNamesFromRequest(requests[2])).toEqual(['storyforge_change_propose'])
+    expect(JSON.stringify(requests[2].messages)).toContain('宿主完成契约尚未满足')
+    expect(JSON.stringify(requests[2].messages)).toContain('接下来生成正文')
+  })
 })
 
 function toolNamesFromRequest(request: Record<string, unknown>): string[] {

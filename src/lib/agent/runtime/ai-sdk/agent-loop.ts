@@ -4,6 +4,7 @@ import {
   dynamicTool,
   jsonSchema,
   stepCountIs,
+  type ModelMessage,
   type ToolSet,
 } from 'ai'
 import type { ToolDescriptor } from '../../tools/tool-types'
@@ -86,86 +87,115 @@ export async function* streamAiSdkAgentLoop(
     })
   }
 
-  const agent = new ToolLoopAgent({
-    id: 'storyforge-copilot',
-    model: provider(request.config.model),
-    instructions: request.instructions,
-    tools,
-    temperature: request.config.temperature,
-    maxOutputTokens: normalizeOutputLimit(request.config.maxTokens, request.tokenBudget),
-    toolChoice: completionToolName ? (autoOnlyToolChoice ? 'auto' : 'required') : undefined,
-    prepareStep: completionToolName
-      ? ({ stepNumber }) => ({
-          ...(autoOnlyToolChoice
-            ? {
-                activeTools: [request.shouldForceCompletion?.() || !contextToolName
-                  ? completionToolName
-                  : contextToolName],
-                toolChoice: 'auto' as const,
-              }
-            : {
-                toolChoice: request.shouldForceCompletion?.() || stepNumber >= request.maxSteps - 1
-                  ? { type: 'tool' as const, toolName: completionToolName }
-                  : 'required' as const,
-              }),
-        })
-      : undefined,
-    stopWhen: [
-      stepCountIs(request.maxSteps),
-      ({ steps }) => request.shouldStop() || totalTokens(steps) >= request.tokenBudget,
-    ],
-  })
-  const result = await agent.stream({ prompt: request.prompt, abortSignal: request.signal })
   let step = 0
+  let consumedTokens = 0
+  let messages: ModelMessage[] | undefined
 
-  for await (const part of result.fullStream) {
-    switch (part.type) {
-      case 'start-step':
-        step += 1
-        yield { type: 'phase-start', step }
-        break
-      case 'finish-step':
-        yield { type: 'phase-end', step }
-        break
-      case 'text-delta':
-        yield { type: 'text', text: part.text }
-        break
-      case 'reasoning-delta':
-        yield { type: 'reasoning', text: part.text }
-        break
-      case 'tool-call':
-        yield {
-          type: 'tool-call',
-          toolCallId: part.toolCallId,
-          toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
-          input: part.input,
-        }
-        break
-      case 'tool-result':
-        yield {
-          type: 'tool-result',
-          toolCallId: part.toolCallId,
-          toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
-          output: part.output,
-        }
-        break
-      case 'tool-error':
-        yield {
-          type: 'tool-error',
-          toolCallId: part.toolCallId,
-          toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
-          error: part.error,
-        }
-        break
-      case 'abort':
-        yield { type: 'abort', reason: part.reason }
-        break
-      case 'error':
-        yield { type: 'error', error: part.error }
-        break
-      default:
-        break
+  while (step < request.maxSteps && consumedTokens < request.tokenBudget && !request.shouldStop()) {
+    const remainingSteps = request.maxSteps - step
+    const remainingTokens = request.tokenBudget - consumedTokens
+    const agent = new ToolLoopAgent({
+      id: 'storyforge-copilot',
+      model: provider(request.config.model),
+      instructions: request.instructions,
+      tools,
+      temperature: request.config.temperature,
+      maxOutputTokens: normalizeOutputLimit(request.config.maxTokens, remainingTokens),
+      toolChoice: completionToolName ? (autoOnlyToolChoice ? 'auto' : 'required') : undefined,
+      prepareStep: completionToolName
+        ? ({ stepNumber }) => ({
+            ...(autoOnlyToolChoice
+              ? {
+                  activeTools: [request.shouldForceCompletion?.() || !contextToolName
+                    ? completionToolName
+                    : contextToolName],
+                  toolChoice: 'auto' as const,
+                }
+              : {
+                  toolChoice: request.shouldForceCompletion?.() || stepNumber >= remainingSteps - 1
+                    ? { type: 'tool' as const, toolName: completionToolName }
+                    : 'required' as const,
+                }),
+          })
+        : undefined,
+      stopWhen: [
+        stepCountIs(remainingSteps),
+        ({ steps }) => request.shouldStop() || totalTokens(steps) >= remainingTokens,
+      ],
+    })
+    const result = messages
+      ? await agent.stream({ messages, abortSignal: request.signal })
+      : await agent.stream({ prompt: request.prompt, abortSignal: request.signal })
+
+    for await (const part of result.fullStream) {
+      switch (part.type) {
+        case 'start-step':
+          step += 1
+          yield { type: 'phase-start', step }
+          break
+        case 'finish-step':
+          yield { type: 'phase-end', step }
+          break
+        case 'text-delta':
+          yield { type: 'text', text: part.text }
+          break
+        case 'reasoning-delta':
+          yield { type: 'reasoning', text: part.text }
+          break
+        case 'tool-call':
+          yield {
+            type: 'tool-call',
+            toolCallId: part.toolCallId,
+            toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
+            input: part.input,
+          }
+          break
+        case 'tool-result':
+          yield {
+            type: 'tool-result',
+            toolCallId: part.toolCallId,
+            toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
+            output: part.output,
+          }
+          break
+        case 'tool-error':
+          yield {
+            type: 'tool-error',
+            toolCallId: part.toolCallId,
+            toolName: toolNames.fromSdk.get(part.toolName) ?? part.toolName,
+            error: part.error,
+          }
+          break
+        case 'abort':
+          yield { type: 'abort', reason: part.reason }
+          break
+        case 'error':
+          yield { type: 'error', error: part.error }
+          break
+        default:
+          break
+      }
     }
+
+    consumedTokens += (await result.usage).totalTokens ?? 0
+    if (request.shouldStop()
+      || !autoOnlyToolChoice
+      || !completionToolName
+      || step >= request.maxSteps
+      || consumedTokens >= request.tokenBudget) {
+      return
+    }
+
+    const responseMessages = await result.responseMessages
+    messages = messages
+      ? [...messages, ...responseMessages]
+      : [{ role: 'user', content: request.prompt }, ...responseMessages]
+    messages.push({
+      role: 'user',
+      content: request.shouldForceCompletion?.()
+        ? `宿主完成契约尚未满足。不要只描述下一步；现在必须调用 ${request.requiredCompletionTool}，提交完整可采纳结果。`
+        : `宿主完成契约尚未满足。继续调用 ${request.requiredContextTool} 读取尚缺上下文，不要停止或只输出说明。`,
+    })
   }
 }
 
