@@ -83,6 +83,12 @@ import {
 import { ProposalDiffDialog } from './ProposalDiffDialog'
 import { modelRefForCategory } from '../../lib/ai/model-scenes'
 import type { AIModelRef } from '../../lib/types'
+import {
+  AGENT_DOCK_DEFAULT_WIDTH,
+  AGENT_DOCK_MAX_WIDTH,
+  AGENT_DOCK_MIN_WIDTH,
+  clampAgentDockWidth,
+} from '../../lib/agent/presentation/agent-dock-size'
 
 interface Props {
   projectId: number
@@ -123,6 +129,8 @@ interface RunMessageOptions {
   readonly modelRef?: AIModelRef
 }
 
+const AGENT_DOCK_WIDTH_KEY = 'storyforge-agent-dock-width'
+
 export default function AgentDock({
   projectId,
   activeModule,
@@ -146,6 +154,11 @@ export default function AgentDock({
   const model = selectedModelConfig.model
   const baseUrl = selectedModelConfig.baseUrl
   const [input, setInput] = useState('')
+  const [dockWidth, setDockWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(AGENT_DOCK_WIDTH_KEY))
+    const width = Number.isFinite(saved) && saved > 0 ? saved : AGENT_DOCK_DEFAULT_WIDTH
+    return clampAgentDockWidth(width, globalThis.innerWidth || 1440)
+  })
   const [conversationState, setConversationState] = useState<AgentConversationState>(() => (
     ensureConversationState(loadAgentConversationState(projectId), projectId, activeModule)
   ))
@@ -162,6 +175,7 @@ export default function AgentDock({
   const handledIntentIdsRef = useRef(new Set<string>())
   const runContextRef = useRef(new Map<string, AgentRunContext>())
   const bottomRef = useRef<HTMLDivElement>(null)
+  const dockResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const activeConversation = conversationState.conversations.find(item => item.id === activeConversationId)
     ?? conversationState.conversations[0]!
   const turns = activeConversation.turns
@@ -191,6 +205,18 @@ export default function AgentDock({
   }, [activeModelRef, providerConfigs, sceneBindings.chat, selectedModelRef])
 
   useEffect(() => {
+    const handleResize = () => setDockWidth(current => clampAgentDockWidth(current, window.innerWidth))
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (dockResizeRef.current) {
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (conversationState.projectId !== projectId) return
     const timer = window.setTimeout(() => saveAgentConversationState(conversationState), 250)
     return () => window.clearTimeout(timer)
@@ -205,6 +231,23 @@ export default function AgentDock({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [turns, busy, activeConversationId])
+
+  const setAndPersistDockWidth = useCallback((width: number) => {
+    const next = clampAgentDockWidth(width, window.innerWidth)
+    setDockWidth(next)
+    localStorage.setItem(AGENT_DOCK_WIDTH_KEY, String(next))
+  }, [])
+
+  const finishDockResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dockResizeRef.current) return
+    dockResizeRef.current = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    localStorage.setItem(AGENT_DOCK_WIDTH_KEY, String(dockWidth))
+  }
 
   const patchConversation = useCallback((
     conversationId: string,
@@ -514,7 +557,45 @@ export default function AgentDock({
   }
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] shrink-0 flex-col border-l border-border bg-bg-surface shadow-2xl lg:static lg:z-auto lg:w-[380px] lg:shadow-none">
+    <aside
+      style={{ '--agent-dock-width': `${dockWidth}px` } as React.CSSProperties}
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] shrink-0 flex-col border-l border-border bg-bg-surface shadow-2xl lg:relative lg:inset-auto lg:z-auto lg:w-[var(--agent-dock-width)] lg:max-w-[720px] lg:shadow-none"
+    >
+      <div
+        role="separator"
+        aria-label="调整 AI 对话框宽度"
+        aria-orientation="vertical"
+        aria-valuemin={AGENT_DOCK_MIN_WIDTH}
+        aria-valuemax={AGENT_DOCK_MAX_WIDTH}
+        aria-valuenow={dockWidth}
+        tabIndex={0}
+        onPointerDown={event => {
+          if (busy || window.innerWidth < 1024) return
+          event.preventDefault()
+          dockResizeRef.current = { startX: event.clientX, startWidth: dockWidth }
+          event.currentTarget.setPointerCapture(event.pointerId)
+          document.body.style.cursor = 'col-resize'
+          document.body.style.userSelect = 'none'
+        }}
+        onPointerMove={event => {
+          const resize = dockResizeRef.current
+          if (!resize) return
+          setDockWidth(clampAgentDockWidth(resize.startWidth + resize.startX - event.clientX, window.innerWidth))
+        }}
+        onPointerUp={finishDockResize}
+        onPointerCancel={finishDockResize}
+        onKeyDown={event => {
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            setAndPersistDockWidth(dockWidth + 20)
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            setAndPersistDockWidth(dockWidth - 20)
+          }
+        }}
+        className="absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize items-center justify-center outline-none after:h-12 after:w-0.5 after:rounded after:bg-border hover:after:bg-accent focus:after:bg-accent lg:flex"
+        title="拖动调整 AI 对话框宽度"
+      />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <div className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white">
           <Bot className="h-4 w-4" />

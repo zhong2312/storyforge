@@ -189,6 +189,9 @@ export default function AIConfigPanel() {
                     onChange={(e) => setConfig({ model: e.target.value })}
                     className="w-full px-3 py-2 bg-bg-base border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent transition-colors"
                   >
+                    {!PROVIDER_MODELS[config.provider].some(model => model.value === config.model) && (
+                      <option value={config.model}>{config.model}（当前自定义）</option>
+                    )}
                     {PROVIDER_MODELS[config.provider].map((m) => (
                       <option key={m.value} value={m.value}>
                         {m.value}
