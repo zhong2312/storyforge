@@ -56,6 +56,42 @@ export interface AIConfigPreset {
   config: AIConfig
 }
 
+export interface AIModelEntry {
+  id: string
+  name: string
+  model: string
+  temperature: number
+  maxTokens: number
+  contextWindow?: number
+  contextCompressionThreshold?: number
+}
+
+export interface AIProviderConfig {
+  id: string
+  name: string
+  provider: AIProvider
+  apiKey: string
+  baseUrl: string
+  models: AIModelEntry[]
+}
+
+export interface AIModelRef {
+  providerConfigId: string
+  modelId: string
+}
+
+export type AIModelScene = 'chapter' | 'outline' | 'settings' | 'polish' | 'chat'
+
+export const AI_MODEL_SCENES: readonly { value: AIModelScene; label: string; description: string }[] = [
+  { value: 'chapter', label: '正文', description: '生成、续写、扩写章节正文' },
+  { value: 'outline', label: '大纲', description: '卷纲、章纲、细纲与场景设计' },
+  { value: 'settings', label: '设定', description: '角色、世界观及其他项目设定' },
+  { value: 'polish', label: '润色', description: '润色、改写、去 AI 味与审校修订' },
+  { value: 'chat', label: 'AI 对话框', description: '右侧 Agent 对话与工具调用' },
+] as const
+
+export type AIModelSceneBindings = Partial<Record<AIModelScene, AIModelRef>>
+
 /** 聊天消息 */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'

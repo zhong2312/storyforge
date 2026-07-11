@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, Sparkles, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react'
 import { useAIStream } from '../../../hooks/useAIStream'
-import { useAIConfigStore } from '../../../stores/ai-config'
+import { useAIModelConfig } from '../../../hooks/useAIModelConfig'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../../lib/ai/config-readiness'
 import type { PromptTemplate, PromptExample } from '../../../lib/types/prompt'
 import { useDialog } from '../../shared/Dialog'
@@ -26,7 +26,7 @@ export default function PromptExamplesEditor({ template, onChange, readOnly }: P
   const dialog = useDialog()
   const toast = useToast()
   const ai = useAIStream()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
   const [generatingFor, setGeneratingFor] = useState<'good' | 'bad' | null>(null)
 
   const examples = template.examples || {}

@@ -6,6 +6,7 @@ const CONFIG_KEY = 'storyforge-ai-config'
 const SESSION_KEY = 'storyforge-ai-api-key-session'
 const REMEMBER_KEY = 'storyforge-ai-api-key-remember'
 const PORTABLE_MIGRATION_KEY = 'storyforge-ai-portable-key-migration-v1'
+const CATALOG_KEY = 'storyforge-ai-model-catalog-v1'
 
 async function freshStore() {
   vi.resetModules()
@@ -115,5 +116,49 @@ describe('R-AI-CONFIG · API Key 存储策略', () => {
     useAIConfigStore.getState().switchProvider('longcat')
     expect(useAIConfigStore.getState().config.baseUrl).toBe('https://api.longcat.chat/openai/v1')
     expect(useAIConfigStore.getState().config.model).toBe('LongCat-2.0')
+  })
+
+  it('把旧单模型配置无损迁移为供应商目录', async () => {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({
+      provider: 'openai', apiKey: 'sk-old', baseUrl: 'https://example.com/v1',
+      model: 'writer-v1', temperature: 0.4, maxTokens: 8192, contextWindow: 128000,
+    }))
+
+    const useAIConfigStore = await freshStore()
+    const state = useAIConfigStore.getState()
+    expect(state.providerConfigs).toHaveLength(1)
+    expect(state.providerConfigs[0]).toMatchObject({
+      provider: 'openai', baseUrl: 'https://example.com/v1', apiKey: 'sk-old',
+      models: [{ model: 'writer-v1', contextWindow: 128000 }],
+    })
+    expect(JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}').providers).toHaveLength(1)
+  })
+
+  it('支持多个供应商、多个模型及五类场景绑定', async () => {
+    const useAIConfigStore = await freshStore()
+    const secondProviderId = useAIConfigStore.getState().addProviderConfig('openai')
+    useAIConfigStore.getState().setConfig({ apiKey: 'sk-openai', baseUrl: 'https://api.openai.com/v1' })
+    const secondModelId = useAIConfigStore.getState().addModel(secondProviderId, 'gpt-writing')
+    useAIConfigStore.getState().setSceneBinding('chapter', {
+      providerConfigId: secondProviderId,
+      modelId: secondModelId,
+    })
+
+    const state = useAIConfigStore.getState()
+    expect(state.providerConfigs).toHaveLength(2)
+    expect(state.providerConfigs.find(provider => provider.id === secondProviderId)?.models).toHaveLength(2)
+    expect(state.resolveConfigForScene('chapter')).toMatchObject({
+      provider: 'openai', model: 'gpt-writing', apiKey: 'sk-openai',
+    })
+    expect(state.resolveConfigForScene('outline').model).toBe(state.config.model)
+  })
+
+  it('多供应商 API Key 在会话模式下不写入 localStorage', async () => {
+    const useAIConfigStore = await freshStore()
+    useAIConfigStore.getState().setConfig({ apiKey: 'sk-private' })
+
+    const catalog = JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}')
+    expect(catalog.providers[0].apiKey).toBe('')
+    expect(sessionStorage.getItem('storyforge-ai-model-catalog-session-keys')).toContain('sk-private')
   })
 })

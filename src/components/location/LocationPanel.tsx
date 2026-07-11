@@ -13,7 +13,7 @@ import { TAG_EMOJI } from '../../lib/types/location'
 import LocationTagPicker from './LocationTagPicker'
 import LocationTreeView from './LocationTreeView'
 import { useChapterStore } from '../../stores/chapter'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { chat } from '../../lib/ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
 import {
@@ -36,7 +36,7 @@ export default function LocationPanel({ project }: Props) {
     getTree,
   } = useLocationStore()
   const { chapters, loadAll: loadChapters } = useChapterStore()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
 
   const [view, setView] = useState<'tree' | 'list'>('tree')
   const [expandedId, setExpandedId] = useState<number | null>(null)

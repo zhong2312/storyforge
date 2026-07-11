@@ -1,5 +1,15 @@
 import { create } from 'zustand'
-import type { AIConfig, AIProvider, AIConfigPreset, EmbeddingConfig } from '../lib/types'
+import type {
+  AIConfig,
+  AIProvider,
+  AIConfigPreset,
+  EmbeddingConfig,
+  AIProviderConfig,
+  AIModelEntry,
+  AIModelRef,
+  AIModelScene,
+  AIModelSceneBindings,
+} from '../lib/types'
 import { PROVIDER_PRESETS } from '../lib/types'
 import { createLog, updateLog } from '../lib/ai/logger'
 import { nanoid } from '../lib/utils/id'
@@ -12,6 +22,8 @@ const REMEMBER_API_KEY = 'storyforge-ai-api-key-remember'
 const PORTABLE_KEY_MIGRATION = 'storyforge-ai-portable-key-migration-v1'
 const EMBEDDING_KEY = 'storyforge-embedding-config'
 const EMBEDDING_SESSION_KEY = 'storyforge-embedding-key-session'
+const MODEL_CATALOG_KEY = 'storyforge-ai-model-catalog-v1'
+const MODEL_CATALOG_SESSION_KEYS = 'storyforge-ai-model-catalog-session-keys'
 
 interface RuntimeLocation {
   hostname?: string
@@ -77,6 +89,150 @@ function loadPresets(): AIConfigPreset[] {
 
 function savePresets(presets: AIConfigPreset[]) {
   localStorage.setItem(PRESETS_KEY, JSON.stringify(presets))
+}
+
+interface AIModelCatalogState {
+  providers: AIProviderConfig[]
+  bindings: AIModelSceneBindings
+  active: AIModelRef
+}
+
+function modelEntryFromConfig(config: AIConfig, id: string, name = config.model): AIModelEntry {
+  return {
+    id,
+    name,
+    model: config.model,
+    temperature: config.temperature,
+    maxTokens: config.maxTokens,
+    contextWindow: config.contextWindow,
+    contextCompressionThreshold: config.contextCompressionThreshold,
+  }
+}
+
+function migrateLegacyCatalog(config: AIConfig, presets: AIConfigPreset[]): AIModelCatalogState {
+  const configs = [{ name: '默认供应商', config }, ...presets.map(preset => ({ name: preset.name, config: preset.config }))]
+  const providers: AIProviderConfig[] = []
+  for (const item of configs) {
+    const key = `${item.config.provider}\n${item.config.baseUrl}`
+    let provider = providers.find(candidate => `${candidate.provider}\n${candidate.baseUrl}` === key)
+    if (!provider) {
+      provider = {
+        id: `legacy-provider-${providers.length + 1}`,
+        name: item.name,
+        provider: item.config.provider,
+        apiKey: item.config.apiKey,
+        baseUrl: item.config.baseUrl,
+        models: [],
+      }
+      providers.push(provider)
+    }
+    if (!provider.models.some(model => model.model === item.config.model)) {
+      provider.models.push(modelEntryFromConfig(item.config, `legacy-model-${providers.length}-${provider.models.length + 1}`))
+    }
+  }
+  const activeProvider = providers[0]
+  const active = { providerConfigId: activeProvider.id, modelId: activeProvider.models[0].id }
+  return { providers, bindings: {}, active }
+}
+
+function loadModelCatalog(
+  fallback: AIConfig,
+  rememberApiKey: boolean,
+  presets: AIConfigPreset[],
+): AIModelCatalogState {
+  let raw: Partial<AIModelCatalogState> | undefined
+  try {
+    const saved = localStorage.getItem(MODEL_CATALOG_KEY)
+    if (saved) raw = JSON.parse(saved)
+  } catch { /* ignore */ }
+  const providers = Array.isArray(raw?.providers)
+    ? raw.providers.filter(provider => provider && Array.isArray(provider.models) && provider.models.length > 0)
+    : []
+  if (providers.length === 0) return migrateLegacyCatalog(fallback, presets)
+
+  let sessionKeys: Record<string, string> = {}
+  try { sessionKeys = JSON.parse(sessionStorage.getItem(MODEL_CATALOG_SESSION_KEYS) || '{}') } catch { /* ignore */ }
+  const hydrated = providers.map(provider => ({
+    ...provider,
+    apiKey: rememberApiKey
+      ? (provider.apiKey || (provider.provider === fallback.provider && provider.baseUrl === fallback.baseUrl ? fallback.apiKey : ''))
+      : (sessionKeys[provider.id] || (provider.provider === fallback.provider && provider.baseUrl === fallback.baseUrl ? fallback.apiKey : '')),
+  }))
+  const requested = raw?.active
+  const activeProvider = hydrated.find(provider => provider.id === requested?.providerConfigId) ?? hydrated[0]
+  const activeModel = activeProvider.models.find(model => model.id === requested?.modelId) ?? activeProvider.models[0]
+  return {
+    providers: hydrated,
+    bindings: raw?.bindings ?? {},
+    active: { providerConfigId: activeProvider.id, modelId: activeModel.id },
+  }
+}
+
+function persistModelCatalog(catalog: AIModelCatalogState, rememberApiKey: boolean): void {
+  const persisted = {
+    ...catalog,
+    providers: catalog.providers.map(provider => rememberApiKey ? provider : { ...provider, apiKey: '' }),
+  }
+  localStorage.setItem(MODEL_CATALOG_KEY, JSON.stringify(persisted))
+  if (rememberApiKey) {
+    sessionStorage.removeItem(MODEL_CATALOG_SESSION_KEYS)
+  } else {
+    sessionStorage.setItem(MODEL_CATALOG_SESSION_KEYS, JSON.stringify(Object.fromEntries(
+      catalog.providers.filter(provider => provider.apiKey).map(provider => [provider.id, provider.apiKey]),
+    )))
+  }
+}
+
+function resolveCatalogConfig(catalog: AIModelCatalogState, ref: AIModelRef | undefined): AIConfig {
+  const fallbackProvider = catalog.providers.find(provider => provider.id === catalog.active.providerConfigId)
+    ?? catalog.providers[0]
+  const provider = catalog.providers.find(candidate => candidate.id === ref?.providerConfigId) ?? fallbackProvider
+  const fallbackModel = provider.models.find(model => model.id === catalog.active.modelId) ?? provider.models[0]
+  const model = provider.models.find(candidate => candidate.id === ref?.modelId) ?? fallbackModel
+  return {
+    provider: provider.provider,
+    apiKey: provider.apiKey,
+    baseUrl: provider.baseUrl,
+    model: model.model,
+    temperature: model.temperature,
+    maxTokens: model.maxTokens,
+    contextWindow: model.contextWindow,
+    contextCompressionThreshold: model.contextCompressionThreshold ?? 0.8,
+  }
+}
+
+export function resolveAIModelConfig(
+  providers: AIProviderConfig[],
+  bindings: AIModelSceneBindings,
+  active: AIModelRef,
+  scene: AIModelScene,
+  override?: AIModelRef,
+): AIConfig {
+  return resolveCatalogConfig(
+    { providers, bindings, active },
+    override ?? bindings[scene] ?? active,
+  )
+}
+
+function syncActiveCatalog(catalog: AIModelCatalogState, config: AIConfig): AIModelCatalogState {
+  return {
+    ...catalog,
+    providers: catalog.providers.map(provider => provider.id !== catalog.active.providerConfigId ? provider : {
+      ...provider,
+      provider: config.provider,
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      models: provider.models.map(model => model.id !== catalog.active.modelId ? model : {
+        ...model,
+        model: config.model,
+        name: model.name === model.model ? config.model : model.name,
+        temperature: config.temperature,
+        maxTokens: config.maxTokens,
+        contextWindow: config.contextWindow,
+        contextCompressionThreshold: config.contextCompressionThreshold,
+      }),
+    }),
+  }
 }
 
 /** 根据 HTTP 状态码和英文错误信息，返回中文解释 */
@@ -189,6 +345,9 @@ export interface TestResult {
 
 interface AIConfigStore {
   config: AIConfig
+  providerConfigs: AIProviderConfig[]
+  sceneBindings: AIModelSceneBindings
+  activeModelRef: AIModelRef
   rememberApiKey: boolean
   presets: AIConfigPreset[]
   /** 当前生效的预设 id（null = 未对应任何预设/已改动） */
@@ -202,6 +361,15 @@ interface AIConfigStore {
   setRememberApiKey: (remember: boolean) => void
   switchProvider: (provider: AIProvider) => void
   testConnection: () => Promise<TestResult>
+  addProviderConfig: (provider?: AIProvider) => string
+  removeProviderConfig: (id: string) => void
+  selectModel: (ref: AIModelRef) => void
+  addModel: (providerConfigId: string, model: string) => string
+  removeModel: (providerConfigId: string, modelId: string) => void
+  renameProviderConfig: (id: string, name: string) => void
+  renameModel: (providerConfigId: string, modelId: string, name: string) => void
+  setSceneBinding: (scene: AIModelScene, ref: AIModelRef | null) => void
+  resolveConfigForScene: (scene: AIModelScene, override?: AIModelRef) => AIConfig
   // ── 预设管理 ──
   saveAsPreset: (name: string) => string
   applyPreset: (id: string) => void
@@ -211,11 +379,18 @@ interface AIConfigStore {
 }
 
 const initial = loadInitialConfig()
+const initialPresets = loadPresets()
+const initialCatalog = loadModelCatalog(initial.config, initial.rememberApiKey, initialPresets)
+const initialRuntimeConfig = resolveCatalogConfig(initialCatalog, initialCatalog.active)
+persistModelCatalog(initialCatalog, initial.rememberApiKey)
 
 export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
-  config: initial.config,
+  config: initialRuntimeConfig,
+  providerConfigs: initialCatalog.providers,
+  sceneBindings: initialCatalog.bindings,
+  activeModelRef: initialCatalog.active,
   rememberApiKey: initial.rememberApiKey,
-  presets: loadPresets(),
+  presets: initialPresets,
   activePresetId: null,
   editingPresetId: null,
   embedding: loadEmbeddingConfig(initial.rememberApiKey),
@@ -228,14 +403,21 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
 
   setConfig: (partial: Partial<AIConfig>) => {
     const newConfig = { ...get().config, ...partial }
+    const catalog = syncActiveCatalog({
+      providers: get().providerConfigs,
+      bindings: get().sceneBindings,
+      active: get().activeModelRef,
+    }, newConfig)
     persistConfig(newConfig, get().rememberApiKey)
+    persistModelCatalog(catalog, get().rememberApiKey)
     // 手动改动配置后，与已选预设脱钩（除非改动等于该预设）
-    set({ config: newConfig, activePresetId: null })
+    set({ config: newConfig, providerConfigs: catalog.providers, activePresetId: null })
   },
 
   setRememberApiKey: (remember: boolean) => {
     persistConfig(get().config, remember)
     persistEmbeddingConfig(get().embedding, remember)
+    persistModelCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef }, remember)
     set({ rememberApiKey: remember })
   },
 
@@ -294,8 +476,128 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       apiKey: provider === get().config.provider ? get().config.apiKey : (preset.apiKey || ''),
     }
     persistConfig(newConfig, get().rememberApiKey)
-    set({ config: newConfig, activePresetId: null, editingPresetId: null })
+    const catalog = syncActiveCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef }, newConfig)
+    persistModelCatalog(catalog, get().rememberApiKey)
+    set({ config: newConfig, providerConfigs: catalog.providers, activePresetId: null, editingPresetId: null })
   },
+
+  addProviderConfig: (provider = 'custom') => {
+    const preset = PROVIDER_PRESETS[provider] ?? {}
+    const providerId = nanoid()
+    const modelId = nanoid()
+    const base: AIConfig = {
+      ...DEFAULT_CONFIG,
+      provider,
+      ...preset,
+      apiKey: '',
+    }
+    const entry: AIProviderConfig = {
+      id: providerId,
+      name: `${provider} ${get().providerConfigs.length + 1}`,
+      provider,
+      apiKey: base.apiKey,
+      baseUrl: base.baseUrl,
+      models: [modelEntryFromConfig(base, modelId)],
+    }
+    const catalog = {
+      providers: [...get().providerConfigs, entry],
+      bindings: get().sceneBindings,
+      active: { providerConfigId: providerId, modelId },
+    }
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(base, get().rememberApiKey)
+    set({ providerConfigs: catalog.providers, activeModelRef: catalog.active, config: base })
+    return providerId
+  },
+
+  removeProviderConfig: (id) => {
+    if (get().providerConfigs.length <= 1) return
+    const providers = get().providerConfigs.filter(provider => provider.id !== id)
+    const fallback = providers[0]
+    const active = get().activeModelRef.providerConfigId === id
+      ? { providerConfigId: fallback.id, modelId: fallback.models[0].id }
+      : get().activeModelRef
+    const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => ref?.providerConfigId !== id)) as AIModelSceneBindings
+    const catalog = { providers, bindings, active }
+    const config = resolveCatalogConfig(catalog, active)
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(config, get().rememberApiKey)
+    set({ providerConfigs: providers, sceneBindings: bindings, activeModelRef: active, config })
+  },
+
+  selectModel: (ref) => {
+    const catalog = { providers: get().providerConfigs, bindings: get().sceneBindings, active: ref }
+    const config = resolveCatalogConfig(catalog, ref)
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(config, get().rememberApiKey)
+    set({ activeModelRef: ref, config })
+  },
+
+  addModel: (providerConfigId, modelName) => {
+    const modelId = nanoid()
+    const model = modelName.trim() || 'new-model'
+    const providers = get().providerConfigs.map(provider => provider.id !== providerConfigId ? provider : {
+      ...provider,
+      models: [...provider.models, modelEntryFromConfig({ ...get().config, provider: provider.provider, baseUrl: provider.baseUrl, apiKey: provider.apiKey, model }, modelId)],
+    })
+    const active = { providerConfigId, modelId }
+    const catalog = { providers, bindings: get().sceneBindings, active }
+    const config = resolveCatalogConfig(catalog, active)
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(config, get().rememberApiKey)
+    set({ providerConfigs: providers, activeModelRef: active, config })
+    return modelId
+  },
+
+  removeModel: (providerConfigId, modelId) => {
+    const provider = get().providerConfigs.find(item => item.id === providerConfigId)
+    if (!provider || provider.models.length <= 1) return
+    const providers = get().providerConfigs.map(item => item.id !== providerConfigId ? item : {
+      ...item,
+      models: item.models.filter(model => model.id !== modelId),
+    })
+    const fallbackModel = providers.find(item => item.id === providerConfigId)!.models[0]
+    const active = get().activeModelRef.modelId === modelId
+      ? { providerConfigId, modelId: fallbackModel.id }
+      : get().activeModelRef
+    const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => ref?.modelId !== modelId)) as AIModelSceneBindings
+    const catalog = { providers, bindings, active }
+    const config = resolveCatalogConfig(catalog, active)
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(config, get().rememberApiKey)
+    set({ providerConfigs: providers, sceneBindings: bindings, activeModelRef: active, config })
+  },
+
+  renameProviderConfig: (id, name) => {
+    const providers = get().providerConfigs.map(provider => provider.id === id ? { ...provider, name: name.trim() || provider.name } : provider)
+    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef }, get().rememberApiKey)
+    set({ providerConfigs: providers })
+  },
+
+  renameModel: (providerConfigId, modelId, name) => {
+    const providers = get().providerConfigs.map(provider => provider.id !== providerConfigId ? provider : {
+      ...provider,
+      models: provider.models.map(model => model.id === modelId ? { ...model, name: name.trim() || model.model } : model),
+    })
+    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef }, get().rememberApiKey)
+    set({ providerConfigs: providers })
+  },
+
+  setSceneBinding: (scene, ref) => {
+    const bindings = { ...get().sceneBindings }
+    if (ref) bindings[scene] = ref
+    else delete bindings[scene]
+    persistModelCatalog({ providers: get().providerConfigs, bindings, active: get().activeModelRef }, get().rememberApiKey)
+    set({ sceneBindings: bindings })
+  },
+
+  resolveConfigForScene: (scene, override) => resolveAIModelConfig(
+    get().providerConfigs,
+    get().sceneBindings,
+    get().activeModelRef,
+    scene,
+    override,
+  ),
 
   testConnection: async (): Promise<TestResult> => {
     const { config } = get()

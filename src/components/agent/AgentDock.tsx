@@ -44,6 +44,7 @@ import {
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
 import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { usePromptStore } from '../../stores/prompt'
 import type {
   AgentCompletionRequirement,
@@ -130,8 +131,9 @@ export default function AgentDock({
   onOpenSettings,
   onProjectChanged,
 }: Props) {
-  const model = useAIConfigStore(state => state.config.model)
-  const baseUrl = useAIConfigStore(state => state.config.baseUrl)
+  const chatModelConfig = useAIModelConfig('chat')
+  const model = chatModelConfig.model
+  const baseUrl = chatModelConfig.baseUrl
   const [input, setInput] = useState('')
   const [conversationState, setConversationState] = useState<AgentConversationState>(() => (
     ensureConversationState(loadAgentConversationState(projectId), projectId, activeModule)
@@ -1371,7 +1373,7 @@ function createResources(
   const runtime = new AiSdkAgentRuntimeAdapter({
     platform: isTauri() ? 'desktop' : 'web',
     getModelConfig: () => {
-      const config = useAIConfigStore.getState().config
+      const config = useAIConfigStore.getState().resolveConfigForScene('chat')
       return {
         provider: config.provider,
         apiKey: config.apiKey,

@@ -28,6 +28,7 @@ import { htmlToPlainText, countWords } from '../../lib/utils/html'
 import { ChapterHistoryDialog } from './ChapterHistoryDialog'
 import { useDialog } from '../shared/Dialog'
 import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import StateDiffModal from '../state/StateDiffModal'
 import RichEditor, { type RichEditorHandle } from './RichEditor'
 import EmotionBeatCard from './EmotionBeatCard'
@@ -105,7 +106,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [showReviewPanel, setShowReviewPanel] = useState(false)
   const [showNotePanel, setShowNotePanel] = useState(false)
   const [planReconciliationCurrent, setPlanReconciliationCurrent] = useState(false)
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('chapter')
   const dialog = useDialog()
 
   // 字数（基于纯文本）

@@ -15,7 +15,7 @@ import {
   parseVolumeOutlineSmart, parseChapterOutlineSmart,
   type ParsedVolume, type ParsedChapter,
 } from '../../lib/ai/parse-outline-output'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { adopt } from '../../lib/registry/adopt'
 import { getTopLevelVolumes, estimateChaptersPerVolume, DEFAULT_WORDS_PER_CHAPTER } from '../../lib/outline/selectors'
 import { normalizeOutlineNode } from '../../lib/outline/normalize'
@@ -66,7 +66,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const toast = useToast()
   const { nodes, loadAll, addNode, updateNode, deleteNode, reorderNodes, insertNodeAt } = useOutlineStore()
   const worldGroups = useWorldGroupStore(s => s.groups)
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('outline')
   const [selectedVolId, setSelectedVolId] = useState<number | null>(null)
   const [hint, setHint] = useState('')
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({})

@@ -342,7 +342,7 @@ async function parseChunkOnce(args: {
     knownContext: args.knownContext.slice(0, 2000),
     rawDocument: args.rawDocument,
   })
-  const baseConfig = useAIConfigStore.getState().config
+  const baseConfig = useAIConfigStore.getState().resolveConfigForScene('settings')
   const overrideMax = Math.max(baseConfig.maxTokens ?? 4096, IMPORT_MAX_TOKENS.all)
   const config: AIConfig = { ...baseConfig, maxTokens: overrideMax }
   if (!isAIConfigReady(config)) throw new Error(getAIConfigRequiredMessage(config))

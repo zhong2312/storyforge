@@ -4,7 +4,7 @@ import { Plus, Trash2, ArrowRight, Sparkles, Loader2, LayoutList, LayoutGrid, In
 import { useForeshadowStore } from '../../stores/foreshadow'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { useAIStream } from '../../hooks/useAIStream'
 import { createAISessionKey } from '../../stores/ai-generation-session'
 import { buildForeshadowSuggestPrompt, buildForeshadowStructurePrompt, parseForeshadowStructured } from '../../lib/ai/adapters/foreshadow-adapter'
@@ -40,7 +40,7 @@ export default function ForeshadowPanel({ project }: Props) {
   const { foreshadows, loadAll: loadForeshadows, addForeshadow, updateForeshadow, deleteForeshadow, updateStatus } = useForeshadowStore()
   const { chapters, loadAll: loadChapters } = useChapterStore()
   const { nodes: outlineNodes, loadAll: loadOutline } = useOutlineStore()
-  const { config } = useAIConfigStore()
+  const config = useAIModelConfig('settings')
   const ai = useAIStream(createAISessionKey(project.id!, 'foreshadow.suggest'))
   const [filterStatus, setFilterStatus] = useState<ForeshadowStatus | 'all'>('all')
   const [selected, setSelected] = useState<number | null>(null)

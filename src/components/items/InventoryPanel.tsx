@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Package, Sparkles, Loader2, Trash2, ChevronDown, ChevronRight, Plus, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import { useItemLedgerStore } from '../../stores/item-ledger'
 import { useChapterStore } from '../../stores/chapter'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { chat } from '../../lib/ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
 import {
@@ -28,7 +28,7 @@ interface Props {
 export default function InventoryPanel({ project }: Props) {
   const { entries, loading, loadAll, addEntry, updateEntry, deleteEntry, deleteByChapter } = useItemLedgerStore()
   const { chapters, loadAll: loadChapters } = useChapterStore()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
 
   const [extracting, setExtracting] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)

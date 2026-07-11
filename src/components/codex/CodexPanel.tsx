@@ -18,7 +18,7 @@ import {
 } from '../../lib/types/codex'
 import type { Project } from '../../lib/types'
 import { useDialog } from '../shared/Dialog'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { useWorldGroupStore } from '../../stores/world-group'
 import { chat } from '../../lib/ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
@@ -52,7 +52,7 @@ const DOMAINS: CodexDomain[] = ['natural', 'humanity']
 export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, embedded, extractionSourceText = '' }: Props) {
   const dialog = useDialog()
   const toast = useToast()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
   const projectId = project.id!
   const {

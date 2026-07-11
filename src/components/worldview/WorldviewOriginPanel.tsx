@@ -424,7 +424,7 @@ function DivineFieldEditor({
         },
         { role: 'user' as const, content: text },
       ]
-      const config = useAIConfigStore.getState().config
+      const config = useAIConfigStore.getState().resolveConfigForScene('settings')
       let accumulated = ''
       const stream = streamChat(splitMessages, config, new AbortController().signal, {}, { category: 'worldview.divine.split', projectId: project.id! })
       for await (const chunk of stream) {

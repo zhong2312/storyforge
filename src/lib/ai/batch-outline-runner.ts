@@ -74,7 +74,7 @@ export async function runBatchOutlineGeneration(
     onProgress,
     signal,
   } = options
-  const config = useAIConfigStore.getState().config
+  const config = useAIConfigStore.getState().resolveConfigForScene('outline')
   const chaptersByVolume = new Map<number, ParsedChapter[]>()
   const startTime = Date.now()
 

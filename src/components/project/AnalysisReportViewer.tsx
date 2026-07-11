@@ -105,7 +105,7 @@ export default function AnalysisReportViewer({ reference, chunks, isHistorical }
       const { system, user } = buildSummaryPrompt(
         reference.title, reference.author || '', merged, isHistorical,
       )
-      const config = useAIConfigStore.getState().config
+      const config = useAIConfigStore.getState().resolveConfigForScene('settings')
       if (!isAIConfigReady(config)) throw new Error(getAIConfigRequiredMessage(config))
       const output = await chat(
         [{ role: 'system', content: system }, { role: 'user', content: user }],
@@ -131,7 +131,7 @@ export default function AnalysisReportViewer({ reference, chunks, isHistorical }
     try {
       const craftTexts = collectCharacterCraftTexts(chunks)
       if (craftTexts.length === 0) throw new Error('暂无人物塑造分析可供整理')
-      const config = useAIConfigStore.getState().config
+      const config = useAIConfigStore.getState().resolveConfigForScene('settings')
       if (!isAIConfigReady(config)) throw new Error(getAIConfigRequiredMessage(config))
       const { system, user } = buildCharacterMergePrompt(
         reference.title, reference.author || '', craftTexts,

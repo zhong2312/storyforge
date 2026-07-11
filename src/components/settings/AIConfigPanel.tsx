@@ -7,56 +7,25 @@ import { PROVIDER_MODELS } from '../../lib/types'
 import { isAIConfigReady } from '../../lib/ai/config-readiness'
 import { getLogs, subscribeLogs, clearLogs, formatLog } from '../../lib/ai/logger'
 import { applyStoryForgeTheme, resolveStoryForgeTheme, THEME_OPTIONS, type StoryForgeTheme } from '../../lib/theme'
-import { useDialog } from '../shared/Dialog'
-
-export const PROVIDER_OPTIONS: { value: AIProvider; label: string; cors: boolean; hint: string }[] = [
-  { value: 'deepseek', label: 'DeepSeek', cors: false, hint: '获取 Key: platform.deepseek.com → API Keys（需点击下方「切换到本地代理」）' },
-  { value: 'qwen', label: '通义千问', cors: true, hint: '获取 Key: dashscope.console.aliyun.com → API-KEY 管理' },
-  { value: 'doubao', label: '豆包', cors: false, hint: '获取 Key: console.volcengine.com → 模型推理 → API Key（火山引擎不支持浏览器直连，需点击下方「切换到本地代理」）' },
-  { value: 'minimax', label: 'MiniMax', cors: true, hint: '获取 Key: platform.minimaxi.com → API Keys' },
-  { value: 'glm', label: '智谱 GLM', cors: true, hint: '获取 Key: open.bigmodel.cn → API Keys' },
-  { value: 'wenxin', label: '文心一言', cors: true, hint: '获取 Key: console.bce.baidu.com → 千帆大模型 → API Key' },
-  { value: 'gemini', label: 'Gemini', cors: true, hint: '获取 Key: aistudio.google.com → API Keys' },
-  { value: 'poe', label: 'Poe', cors: true, hint: '获取 Key: poe.com → Settings → API → API Key' },
-  { value: 'openai', label: 'OpenAI', cors: false, hint: '获取 Key: platform.openai.com → API Keys（需点击下方「切换到本地代理」）' },
-  { value: 'kimi', label: 'Kimi', cors: false, hint: '获取 Key: platform.moonshot.cn → API Key 管理（需点击下方「切换到本地代理」）' },
-  { value: 'claude', label: 'Claude', cors: false, hint: '获取 Key: console.anthropic.com → API Keys（需点击下方「切换到本地代理」）' },
-  { value: 'nvidia', label: 'NVIDIA NIM', cors: false, hint: '获取 Key: build.nvidia.com → 登录后获取 API Key（需点击下方「切换到本地代理」）' },
-  { value: 'modelscope', label: '魔搭社区', cors: true, hint: '获取 Key: modelscope.cn → 我的 → Access Token' },
-  { value: 'agnes', label: 'Agnes AI（免费）', cors: true, hint: '清华系免费全模态 · 获取 Key: platform.agnes-ai.com（若连不上可点下方「切换到本地代理」）' },
-  { value: 'longcat', label: 'LongCat（美团）', cors: false, hint: '获取 Key: longcat.chat 平台控制台；OpenAI 兼容接口（若浏览器直连 CORS 失败可切换本地代理）' },
-  { value: 'opencode', label: 'OpenCode Go（月付）', cors: false, hint: '获取 Key: opencode.ai → Zen → Go API Key（需点击下方「切换到本地代理」）' },
-  { value: 'ollama', label: '本地模型 (Ollama / LM Studio 等)', cors: true, hint: '本地 OpenAI-compatible /v1 接口；Ollama 常用 http://localhost:11434/v1，LM Studio 常用 http://localhost:1234/v1；通常无需 API Key。' },
-  { value: 'custom', label: '自定义', cors: true, hint: '填写任何兼容 OpenAI 格式的 API' },
-]
+import ModelCatalogSection from './ModelCatalogSection'
+import { PROVIDER_OPTIONS } from './provider-options'
+export { PROVIDER_OPTIONS } from './provider-options'
 
 export default function AIConfigPanel() {
   const { config, setConfig, switchProvider, testConnection,
-    rememberApiKey, setRememberApiKey,
-    presets, activePresetId, editingPresetId, saveAsPreset, applyPreset, updatePresetFromCurrent, renamePreset, deletePreset } = useAIConfigStore()
-  const dialog = useDialog()
+    rememberApiKey, setRememberApiKey } = useAIConfigStore()
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [showLogs, setShowLogs] = useState(false)
-  const [savingPreset, setSavingPreset] = useState(false)
-  const [presetName, setPresetName] = useState('')
   const [currentTheme, setCurrentTheme] = useState<StoryForgeTheme>(() =>
     resolveStoryForgeTheme(localStorage.getItem('storyforge-theme')),
   )
-
-  const handleSavePreset = () => {
-    if (!presetName.trim()) return
-    saveAsPreset(presetName.trim())
-    setPresetName('')
-    setSavingPreset(false)
-  }
 
   // 订阅日志变化
   const logs = useSyncExternalStore(subscribeLogs, getLogs)
 
   const currentProviderInfo = PROVIDER_OPTIONS.find((p) => p.value === config.provider)
-  const editingPreset = editingPresetId ? presets.find(p => p.id === editingPresetId) : null
 
   const handleTest = async () => {
     setTesting(true)
@@ -72,25 +41,6 @@ export default function AIConfigPanel() {
   const handleThemeChange = (theme: StoryForgeTheme) => {
     setCurrentTheme(theme)
     applyStoryForgeTheme(theme)
-  }
-
-  const handleRenamePreset = async (id: string, currentName: string) => {
-    const name = await dialog.prompt({
-      title: '重命名预设',
-      defaultValue: currentName,
-      placeholder: '输入新的预设名称',
-    })
-    if (name?.trim()) renamePreset(id, name.trim())
-  }
-
-  const handleDeletePreset = async (id: string, name: string) => {
-    const ok = await dialog.confirm({
-      title: `删除预设「${name}」？`,
-      message: '此操作不可恢复。',
-      confirmText: '删除',
-      tone: 'danger',
-    })
-    if (ok) deletePreset(id)
   }
 
   // 切换 provider 时清空测试结果
@@ -109,87 +59,7 @@ export default function AIConfigPanel() {
           Web/PWA 中 API Key 默认仅保存在本次浏览器会话；Portable 的独立本机配置默认记住 Key，仍可手动关闭。发起 AI 生成、测试连接或使用自定义 baseUrl 时，相关提示词和上下文会发送到你配置的模型服务。
         </p>
 
-        {/* ── API 配置预设（多套一键切换） ── */}
-        <div className="mb-4 pb-4 border-b border-border/50">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm text-text-secondary">配置预设</label>
-            {editingPreset && !savingPreset ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => updatePresetFromCurrent(editingPreset.id)}
-                  title={`用当前表单内容覆盖「${editingPreset.name}」`}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors"
-                >
-                  保存修改到「{editingPreset.name}」
-                </button>
-                <button
-                  onClick={() => setSavingPreset(true)}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-bg-elevated text-text-secondary border border-border hover:text-accent hover:border-accent/50 transition-colors"
-                >
-                  另存为新预设
-                </button>
-              </div>
-            ) : savingPreset ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  autoFocus
-                  value={presetName}
-                  onChange={e => setPresetName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setSavingPreset(false) }}
-                  placeholder="预设名称，如「DeepSeek 主力」"
-                  className="px-2 py-1 bg-bg-base border border-border rounded text-xs text-text-primary focus:outline-none focus:border-accent w-44"
-                />
-                <button onClick={handleSavePreset} className="px-2 py-1 text-xs bg-accent text-white rounded hover:bg-accent-hover">保存</button>
-                <button onClick={() => setSavingPreset(false)} className="px-2 py-1 text-xs text-text-muted hover:text-text-primary">取消</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setSavingPreset(true)}
-                className="text-xs px-2.5 py-1 rounded-lg bg-bg-elevated text-text-secondary border border-border hover:text-accent hover:border-accent/50 transition-colors"
-              >
-                ＋ 保存当前为预设
-              </button>
-            )}
-          </div>
-
-          {presets.length === 0 ? (
-            <p className="text-xs text-text-muted">还没有预设。配好一套 API 后点「保存当前为预设」，之后可一键切换。</p>
-          ) : (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {presets.map(p => (
-                <div
-                  key={p.id}
-                  className={`group flex items-center gap-1 pl-2.5 pr-1 py-1 text-xs rounded-full border transition-colors ${
-                    activePresetId === p.id
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-bg-base text-text-secondary border-border hover:border-accent/50'
-                  }`}
-                >
-                  <button onClick={() => applyPreset(p.id)} title={`${p.config.provider} · ${p.config.model}`}>
-                    {p.name}
-                  </button>
-                  {activePresetId === p.id && (
-                    <button
-                      onClick={() => updatePresetFromCurrent(p.id)}
-                      title="用当前配置覆盖此预设"
-                      className="opacity-70 hover:opacity-100"
-                    >保存</button>
-                  )}
-                  <button
-                    onClick={() => { void handleRenamePreset(p.id, p.name) }}
-                    title="重命名"
-                    className="opacity-0 group-hover:opacity-70 hover:opacity-100"
-                  >✎</button>
-                  <button
-                    onClick={() => { void handleDeletePreset(p.id, p.name) }}
-                    title="删除"
-                    className="opacity-0 group-hover:opacity-70 hover:opacity-100 hover:text-red-400"
-                  >✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <ModelCatalogSection />
 
         <div className="space-y-4">
           <div>

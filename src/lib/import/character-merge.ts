@@ -68,7 +68,7 @@ export async function runCharacterMerge(args: RunCharacterMergeArgs): Promise<vo
   try {
     const tpl = usePromptStore.getState().getActive('import.merge-characters')
     const { messages } = renderPrompt(tpl, { characterList })
-    const baseConfig = useAIConfigStore.getState().config
+    const baseConfig = useAIConfigStore.getState().resolveConfigForScene('settings')
     const config: AIConfig = {
       ...baseConfig,
       maxTokens: Math.max(baseConfig.maxTokens ?? 4096, 4096),

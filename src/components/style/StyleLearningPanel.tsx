@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Sparkles, Brain, Loader2, Check, AlertCircle, Power } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useUserStyleStore } from '../../stores/user-style'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { buildStyleLearnPrompt } from '../../lib/ai/adapters/style-adapter'
 import { chat } from '../../lib/ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
@@ -21,7 +21,7 @@ const PER_CHAPTER_CHARS = 2500
 export default function StyleLearningPanel({ project }: Props) {
   const { chapters, loadAll } = useChapterStore()
   const { profile, loadProfile, saveProfile, updateProfileText, setEnabled } = useUserStyleStore()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [running, setRunning] = useState(false)

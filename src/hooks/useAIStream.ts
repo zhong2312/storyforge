@@ -9,6 +9,7 @@ import {
 } from '../stores/ai-generation-session'
 import type { AIConfig, ChatMessage } from '../lib/types'
 import type { TokenUsage } from '../lib/ai/logger'
+import { modelSceneForCategory } from '../lib/ai/model-scenes'
 
 export interface UseAIStreamReturn {
   /** 当前累积的输出文本 */
@@ -115,7 +116,7 @@ export function useAIStream(sessionKey?: string): UseAIStreamReturn {
     if (sessionKey) sharedAbortControllers.set(sessionKey, controller)
     else abortRef.current = controller
 
-    const baseConfig = useAIConfigStore.getState().config
+    const baseConfig = useAIConfigStore.getState().resolveConfigForScene(modelSceneForCategory(meta?.category))
     const config: AIConfig = overrideConfig
       ? { ...baseConfig, ...overrideConfig }
       : baseConfig

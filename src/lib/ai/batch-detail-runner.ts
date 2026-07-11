@@ -63,7 +63,7 @@ export async function batchGenerateDetails(
   opts: BatchDetailOptions,
 ): Promise<BatchDetailResult> {
   const { chapters, existingDetails, worldContext, worldContextResolver, characterContext, foreshadowContext, onSave, onProgress, signal } = opts
-  const config = useAIConfigStore.getState().config
+  const config = useAIConfigStore.getState().resolveConfigForScene('outline')
   const start = Date.now()
 
   // 过滤出需要生成的
@@ -214,7 +214,7 @@ export async function batchGenerateChapters(
     onProgress,
     signal,
   } = opts
-  const config = useAIConfigStore.getState().config
+  const config = useAIConfigStore.getState().resolveConfigForScene('outline')
   const start = Date.now()
 
   const todo = chapters.filter(ch => (ch.content || '').length < minWordThreshold)

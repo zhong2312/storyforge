@@ -403,7 +403,7 @@ ${depthGuide}
     { role: 'user', content: `请分析以下文本：\n\n${chunk.text}` },
   ]
 
-  const baseConfig = useAIConfigStore.getState().config
+  const baseConfig = useAIConfigStore.getState().resolveConfigForScene('settings')
   const config: AIConfig = { ...baseConfig, maxTokens: args.maxTokens }
   if (!isAIConfigReady(config)) throw new Error(getAIConfigRequiredMessage(config))
   const output = await chatWithAbort(messages, config, args.signal, { category: 'reference.analysis', projectId: args.ref.projectId })

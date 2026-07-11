@@ -13,7 +13,7 @@ import AIStreamOutput from '../shared/AIStreamOutput'
 import { nanoid } from '../../lib/utils/id'
 import { adopt } from '../../lib/registry/adopt'
 import { assembleContext } from '../../lib/registry/assemble-context'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { useToast } from '../shared/Toast'
 import type { DetailedScene, ScenePace } from '../../lib/types'
 
@@ -41,7 +41,7 @@ interface Props {
 export default function ScenePanel({ projectId, outlineNodeId, chapterTitle, chapterSummary }: Props) {
   const { detailedOutlines, loadAll, getOrCreate, save } = useDetailedOutlineStore()
   const ai = useAIStream(createAISessionKey(projectId, 'detail.scene', outlineNodeId))
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('outline')
   const toast = useToast()
   const [expanded, setExpanded] = useState(false)
 

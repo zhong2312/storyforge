@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { CalendarClock, Sparkles, Loader2, Trash2, Plus, BookOpen, Flag } from 'lucide-react'
 import { useStoryTimelineStore } from '../../stores/story-timeline'
 import { useChapterStore } from '../../stores/chapter'
-import { useAIConfigStore } from '../../stores/ai-config'
+import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { chat } from '../../lib/ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
 import {
@@ -35,7 +35,7 @@ const IMPORTANCE_STYLE: Record<number, string> = {
 export default function StoryTimelinePanel({ project, onOpenChapter }: Props) {
   const { events, loading, loadAll, addEvent, updateEvent, deleteEvent, deleteByChapter } = useStoryTimelineStore()
   const { chapters, loadAll: loadChapters } = useChapterStore()
-  const aiConfig = useAIConfigStore(s => s.config)
+  const aiConfig = useAIModelConfig('settings')
 
   const [extracting, setExtracting] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
