@@ -1,7 +1,7 @@
 # StoryForge AI 创作副驾 + 后台 Agent 设计方案
 
 > Phase 27 — AI Agent 化（重定义版）
-> 状态：设计阶段
+> 状态：实施中（27.1-a 完成；27.1-b / 27.1-c 首个可用切片完成）
 > 作者构想 + 实现构想合并
 
 ### 规范性架构决策
@@ -11,6 +11,14 @@
 - [`ADR-003: Agent writes use plan, approval and commit`](adr/ADR-003-agent-write-plan-approval-commit.md)
 
 本文件负责产品与总体设计说明；上述 ADR 是对应边界的规范性决策。若本文与 ADR 冲突，以 ADR 为准。
+
+### 当前实现基线（2026-07-11）
+
+- `AiSdkAgentRuntimeAdapter` 已通过 `AgentRuntimePort` 接入 AI SDK `ToolLoopAgent`，支持多步工具循环、事件流、取消、提案暂停和审批恢复。
+- 项目设定工具从 `CONTEXT_SOURCES` / `FIELD_REGISTRY` 派生，读取委托 `assembleContext()`，写入走 `change.propose → 用户批准 → change.commit → adopt()`。
+- MCP Streamable HTTP / SSE 工具映射到同一个 `ToolRegistry`；只读和写入工具按 scope 隔离，外部写工具默认不开放。
+- Workspace 右侧 Agent Dock 已显示阶段、推理摘要、工具调用、错误和审批卡片；批准写入后刷新现有面板 store。
+- 当前边界：会话/事件仅保留在当前页面会话；不支持 tool calling 的 provider 降级、Tauri stdio MCP、编辑审批方案、多 Agent 编排和后台 Agent 尚未实施。
 
 ---
 

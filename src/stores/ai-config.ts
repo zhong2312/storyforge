@@ -276,7 +276,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       persistConfig(newConfig, get().rememberApiKey)
       set({ config: newConfig, activePresetId: null })
     }
-    const url = buildOpenAIEndpoint(normalized.baseUrl, 'chat/completions')
+    const url = buildOpenAIEndpoint(normalized.baseUrl, 'chat/completions', { provider: config.provider })
     const startTime = Date.now()
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 15_000)

@@ -1204,3 +1204,28 @@ WPS bug 文档《故事熔炉bug收集》对应“微软输入法只能输入字
 **② 档**(`INVENTORY-1` 收口 + `CONSISTENCY-0` 覆盖地图)**等作者确认**;**③ 档**(`CONSISTENCY-2/3`、`PIPELINE-1/2/3`、`EDITOR-2`)**等 GPT 设计审放行**,当前不实施。
 
 CF-10(0字导出)已由 `61bf441` 修复并在 ROADMAP 标完成。
+
+### [2026-07-11] Codex · REPORT · Phase 27 Agent 首个可用纵向切片 / 分支 `refactor/phase-27-task-2`
+
+作者指出“当前 Agent 没有真实工具调用、项目设定也没有包装为工具”。核查确认属实：`main` 无 Agent，前置分支 `refactor/phase-27-task-1` 只有端口、事件、空 ToolRegistry 和内存存储地基。本分支在该地基上完成 27.1-a，并交付 27.1-b / 27.1-c 的首个可用切片。
+
+本次实现：
+- AI SDK `ToolLoopAgent` 经 `AiSdkAgentRuntimeAdapter` 实现 `AgentRuntimePort`：多步 tool loop、步数/token 预算、取消、阶段/推理摘要/消息/工具事件归一化。
+- 设定统一包装为四个注册表驱动工具：`storyforge.settings.catalog`、`storyforge.context.read`、`storyforge.change.propose`、`storyforge.change.commit`。读委托 `CONTEXT_SOURCES + assembleContext()`；写使用“提案 → approvalId/planHash/revision 校验 → 用户批准 → adopt() 提交”，Agent 不导入 store 或 Dexie schema。
+- 新增 `DexieProjectStorage` 生产适配器，表元信息从 `PROJECT_TABLES` 派生并按项目隔离；补齐事务、revision、只读保护、跨项目拒绝和存储契约语义。
+- MCP Streamable HTTP / SSE 工具映射进同一个 `ToolRegistry`；只读与写入按 `external:read` / `external:write` scope 隔离，未明确授权的外部写工具不注册。
+- Workspace 右侧默认显示 Agent Dock，包含对话、阶段性推理摘要、工具时间线、错误/停止、审批卡片、批准后面板刷新，以及 MCP 连接管理；属性面板仍可从标题栏切换。
+- AI SDK 请求复用已验证的 OpenAI-compatible 通用开发代理，避免 Portable 中普通 AI 请求可用但 Agent 直连再次触发 CORS；界面版本单源同步为 `v3.7.5`。
+- 未改 IndexedDB schema，未新增项目表，未迁移或清理用户数据。
+
+验证证据：
+- `npx vitest run` → 113 files / 464 tests passed；其中真实 `ToolLoopAgent` + 模拟 OpenAI SSE 两步工具调用集成测试通过。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`、`npm run check:ai-manual`、`git diff --check` 全部通过。
+- Playwright 实测 `1280×720` 与 `390×844`：右侧栏默认出现，Agent / MCP 视图无溢出；修复了最初截图中切换按钮遮挡主面板“保存”的问题。
+
+当前明确边界：
+- 对话和事件目前只保留当前页面会话，尚未加入持久化表。
+- 不支持 tool calling 的 provider 降级、Tauri stdio MCP、审批方案行内编辑、27.1-d 全流程扩展、27.1-e 多 Agent 与后台 Agent 尚未实施。
+- 本分支只推 feature branch，不直接合并 `main`；Portable EXE 应在 Claude 审查、合入和真实模型回归后再覆盖测试目录。
+
+👉 球在 Claude：请重点审查工具权限/审批恢复、MCP 外部写入默认关闭、`DexieProjectStorage` 项目隔离，以及 Agent Dock 在写入后刷新 store 的边界。审查通过后再决定是否 rebase/合入 `main` 和更新测试 Portable。
