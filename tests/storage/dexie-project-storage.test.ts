@@ -47,10 +47,36 @@ describe('DexieProjectStorage', () => {
     await db.delete()
   })
 
-  it('uses PROJECT_TABLES and rejects unknown, global, and indirect tables', () => {
+  it('uses PROJECT_TABLES and rejects unknown and global tables', () => {
     expect(() => storage.table('missing')).toThrow('unknown project table')
     expect(() => storage.table('promptTemplates')).toThrow('unsupported table ownership')
-    expect(() => storage.table('referenceChunkAnalysis')).toThrow('unsupported table ownership')
+    expect(() => storage.table('referenceChunkAnalysis')).not.toThrow()
+  })
+
+  it('scopes direct-child, indirect, transient, and Blob tables through registry ownership', async () => {
+    const ownReferenceId = await db.references.add({ projectId: 1, title: 'Own' } as never)
+    const foreignReferenceId = await db.references.add({ projectId: 2, title: 'Foreign' } as never)
+    await db.referenceChunkAnalysis.bulkAdd([
+      { referenceId: ownReferenceId, chunkIndex: 0, content: 'own' },
+      { referenceId: foreignReferenceId, chunkIndex: 0, content: 'foreign' },
+    ] as never)
+    const ownSessionId = await db.importSessions.add({ projectId: 1, status: 'pending' } as never)
+    const foreignSessionId = await db.importSessions.add({ projectId: 2, status: 'pending' } as never)
+    await db.importLogs.bulkAdd([
+      { sessionId: ownSessionId, message: 'own' },
+      { sessionId: foreignSessionId, message: 'foreign' },
+    ] as never)
+    await db.importFiles.bulkPut([
+      { sessionId: ownSessionId, filename: 'own.txt', blob: new Blob(['own']) },
+      { sessionId: foreignSessionId, filename: 'foreign.txt', blob: new Blob(['foreign']) },
+    ] as never)
+
+    expect(await storage.table('referenceChunkAnalysis').list()).toHaveLength(1)
+    expect(await storage.table('importSessions').list()).toHaveLength(1)
+    expect(await storage.table('importLogs').list()).toHaveLength(1)
+    const files = await storage.table<{ id?: number; filename: string }>('importFiles').list()
+    expect(files).toEqual([expect.objectContaining({ id: ownSessionId, filename: 'own.txt' })])
+    expect(await storage.table('importFiles').get(foreignSessionId)).toBeUndefined()
   })
 
   it('automatically scopes reads and query operations to the locator project', async () => {

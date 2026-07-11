@@ -241,7 +241,7 @@ export const PROJECT_TABLES: TableSpec[] = [
       (await db.importSessions.where('projectId').equals(projectId).primaryKeys()) as number[],
     refs: [{ kind: 'indirect', via: { table: 'importSessions', field: 'sessionId', resolveProject: 'projectId' }, onDelete: 'cascade' }] },
 
-  { table: db.importFiles, name: 'importFiles', owner: 'blob', exportable: false,
+  { table: db.importFiles, name: 'importFiles', owner: 'blob', primaryKey: 'sessionId', exportable: false,
     note: '主键=sessionId;导入原文 blob 复用 importSessions.id' },
 
   // ───────────────────── 全局 / 本地态 ─────────────────────

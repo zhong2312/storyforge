@@ -113,6 +113,8 @@ export interface TableSpec<T = any> {
   table: Table<T, number>
   /** 表名(与 db 实例属性名一致) */
   name: string
+  /** StoragePort 归一主键；缺省为 id。Blob 表可声明其真实主键字段。 */
+  primaryKey?: string
   /** 归属方式 */
   owner: TableOwner
   /** owner!=='project' 时如何解析到 projectId(可选,删项目用) */

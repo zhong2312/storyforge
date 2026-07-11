@@ -102,7 +102,7 @@ export class DexieProjectStorage implements ProjectStoragePort {
   private resolveTable(name: string): Table<StorageRecord, number> {
     const spec = REGISTRY_BY_NAME.get(name)
     if (!spec) throw new Error(`[dexie-storage] unknown project table: ${name}`)
-    if (spec.owner !== 'project') {
+    if (spec.owner === 'global') {
       throw new Error(`[dexie-storage] unsupported table ownership: ${name}:${spec.owner}`)
     }
     return spec.table as Table<StorageRecord, number>
@@ -132,7 +132,9 @@ export class DexieProjectStorage implements ProjectStoragePort {
   ): Promise<T | undefined> {
     this.assertContext(context)
     const record = await this.resolveTable(name).get(id)
-    return record && this.belongsToProject(name, record) ? structuredClone(record as T) : undefined
+    return record && await this.belongsToProject(name, record)
+      ? cloneStorageValue(this.normalizeFromTable(name, record) as T)
+      : undefined
   }
 
   private async listRecords<T extends StorageRecord>(
@@ -142,10 +144,9 @@ export class DexieProjectStorage implements ProjectStoragePort {
   ): Promise<T[]> {
     this.assertContext(context)
     const table = this.resolveTable(name)
-    const records = name === 'projects'
-      ? [await table.get(this.projectId)].filter((record): record is StorageRecord => Boolean(record))
-      : await table.where('projectId').equals(this.projectId).toArray()
-    return applyQuery(records as T[], query).map(record => structuredClone(record))
+    const records = await this.projectRecords(name, table)
+    const normalized = records.map(record => this.normalizeFromTable(name, record)) as T[]
+    return applyQuery(normalized, query).map(record => cloneStorageValue(record))
   }
 
   private async findOneRecord<T extends StorageRecord>(
@@ -157,14 +158,14 @@ export class DexieProjectStorage implements ProjectStoragePort {
   }
 
   private async addRecord<T extends StorageRecord>(name: string, record: T): Promise<number> {
-    const stored = this.stampProject(name, record)
+    const stored = this.normalizeToTable(name, this.stampProject(name, record))
     return await this.resolveTable(name).add(stored)
   }
 
   private async putRecord<T extends StorageRecord>(name: string, record: T): Promise<number> {
     const stored = this.stampProject(name, record)
     if (stored.id !== undefined) await this.assertPutTarget(name, stored.id)
-    return await this.resolveTable(name).put(stored)
+    return await this.resolveTable(name).put(this.normalizeToTable(name, stored))
   }
 
   private async updateRecord<T extends StorageRecord>(
@@ -173,7 +174,7 @@ export class DexieProjectStorage implements ProjectStoragePort {
     patch: Partial<T>,
   ): Promise<void> {
     await this.assertOwnedRecord(name, id)
-    const storedPatch = this.stampProject(name, patch as StorageRecord)
+    const storedPatch = this.normalizeToTable(name, this.stampProject(name, patch as StorageRecord))
     delete storedPatch.id
     await this.resolveTable(name).update(id, storedPatch)
   }
@@ -188,7 +189,7 @@ export class DexieProjectStorage implements ProjectStoragePort {
     for (const record of records) {
       if (record.id !== undefined) await this.assertPutTarget(name, record.id)
     }
-    await this.resolveTable(name).bulkPut(records.map(record => this.stampProject(name, record)))
+    await this.resolveTable(name).bulkPut(records.map(record => this.normalizeToTable(name, this.stampProject(name, record))))
   }
 
   private async bulkDeleteRecords(name: string, ids: number[]): Promise<boolean> {
@@ -236,12 +237,17 @@ export class DexieProjectStorage implements ProjectStoragePort {
   }
 
   private stampProject(name: string, record: StorageRecord): StorageRecord {
-    const stored = structuredClone(record)
+    const stored = cloneStorageValue(record)
+    const spec = REGISTRY_BY_NAME.get(name)!
     if (name === 'projects') {
       if (stored.id !== undefined && stored.id !== this.projectId) {
         throw new Error(`[dexie-storage] cross-project write rejected: projects:${stored.id}`)
       }
       stored.id = this.projectId
+      return stored
+    }
+    if (spec.owner === 'direct-child' || spec.owner === 'indirect' || spec.owner === 'blob') {
+      delete (stored as Record<string, unknown>).projectId
       return stored
     }
     const suppliedProjectId = Reflect.get(stored, 'projectId')
@@ -252,22 +258,84 @@ export class DexieProjectStorage implements ProjectStoragePort {
     return stored
   }
 
-  private belongsToProject(name: string, record: StorageRecord): boolean {
-    return name === 'projects'
-      ? record.id === this.projectId
-      : Reflect.get(record, 'projectId') === this.projectId
+  private async belongsToProject(name: string, record: StorageRecord): Promise<boolean> {
+    if (name === 'projects') return record.id === this.projectId
+    const spec = REGISTRY_BY_NAME.get(name)!
+    if (spec.owner === 'project' || spec.owner === 'transient') {
+      return Reflect.get(record, 'projectId') === this.projectId
+    }
+    const ids = new Set(await this.ownerKeys(name))
+    if (spec.owner === 'blob') {
+      const key = Number(Reflect.get(record, spec.primaryKey ?? 'id'))
+      return Number.isFinite(key) && ids.has(key)
+    }
+    const linkField = this.linkField(name)
+    return linkField != null && ids.has(Number(Reflect.get(record, linkField)))
+  }
+
+  private async projectRecords(
+    name: string,
+    table: Table<StorageRecord, number>,
+  ): Promise<StorageRecord[]> {
+    if (name === 'projects') {
+      return [await table.get(this.projectId)].filter((record): record is StorageRecord => Boolean(record))
+    }
+    const spec = REGISTRY_BY_NAME.get(name)!
+    if (spec.owner === 'project' || spec.owner === 'transient') {
+      return await table.where('projectId').equals(this.projectId).toArray()
+    }
+    const ownerKeys = await this.ownerKeys(name)
+    if (!ownerKeys.length) return []
+    if (spec.owner === 'blob') {
+      return (await table.bulkGet(ownerKeys)).filter((record): record is StorageRecord => Boolean(record))
+    }
+    const linkField = this.linkField(name)
+    return linkField ? await table.where(linkField).anyOf(ownerKeys).toArray() : []
+  }
+
+  private async ownerKeys(name: string): Promise<number[]> {
+    const spec = REGISTRY_BY_NAME.get(name)!
+    if (spec.projectResolver) return await spec.projectResolver(this.projectId)
+    if (spec.owner === 'blob') {
+      return await db.importSessions.where('projectId').equals(this.projectId).primaryKeys() as number[]
+    }
+    return []
+  }
+
+  private linkField(name: string): string | undefined {
+    const spec = REGISTRY_BY_NAME.get(name)!
+    const indirect = spec.refs?.find(ref => ref.kind === 'indirect')
+    if (indirect?.kind === 'indirect') return indirect.via.field
+    return spec.exportRemap?.[0]?.field
+  }
+
+  private normalizeFromTable(name: string, record: StorageRecord): StorageRecord {
+    const primaryKey = REGISTRY_BY_NAME.get(name)?.primaryKey
+    const normalized = cloneStorageValue(record)
+    if (primaryKey && primaryKey !== 'id') normalized.id = Number(Reflect.get(normalized, primaryKey))
+    return normalized
+  }
+
+  private normalizeToTable(name: string, record: StorageRecord): StorageRecord {
+    const primaryKey = REGISTRY_BY_NAME.get(name)?.primaryKey
+    const normalized = cloneStorageValue(record)
+    if (primaryKey && primaryKey !== 'id' && normalized.id != null) {
+      Reflect.set(normalized, primaryKey, normalized.id)
+      delete normalized.id
+    }
+    return normalized
   }
 
   private async assertOwnedRecord(name: string, id: number): Promise<void> {
     const record = await this.resolveTable(name).get(id)
-    if (!record || !this.belongsToProject(name, record)) {
+    if (!record || !await this.belongsToProject(name, record)) {
       throw new Error(`[dexie-storage] record not found in project: ${name}:${id}`)
     }
   }
 
   private async assertPutTarget(name: string, id: number): Promise<void> {
     const record = await this.resolveTable(name).get(id)
-    if (record && !this.belongsToProject(name, record)) {
+    if (record && !await this.belongsToProject(name, record)) {
       throw new Error(`[dexie-storage] record not found in project: ${name}:${id}`)
     }
   }
@@ -275,7 +343,7 @@ export class DexieProjectStorage implements ProjectStoragePort {
   private async assertDeleteTarget(name: string, id: number): Promise<boolean> {
     const record = await this.resolveTable(name).get(id)
     if (!record) return false
-    if (!this.belongsToProject(name, record)) {
+    if (!await this.belongsToProject(name, record)) {
       throw new Error(`[dexie-storage] record not found in project: ${name}:${id}`)
     }
     return true
@@ -332,4 +400,14 @@ function compareValues(left: unknown, right: unknown): number {
 function normalizeNonNegativeInteger(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return 0
   return Math.max(0, Math.trunc(value))
+}
+
+function cloneStorageValue<T>(value: T): T {
+  if (value instanceof Blob) return value.slice(0, value.size, value.type) as T
+  if (value instanceof Date) return new Date(value.getTime()) as T
+  if (Array.isArray(value)) return value.map(item => cloneStorageValue(item)) as T
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneStorageValue(item)])) as T
+  }
+  return structuredClone(value)
 }
