@@ -43,8 +43,7 @@ import {
   type McpServerConfig,
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
-import { useAIConfigStore } from '../../stores/ai-config'
-import { useAIModelConfig } from '../../hooks/useAIModelConfig'
+import { resolveAIModelConfig, useAIConfigStore } from '../../stores/ai-config'
 import { usePromptStore } from '../../stores/prompt'
 import type {
   AgentCompletionRequirement,
@@ -82,6 +81,8 @@ import {
   proposalPreviewMarkdown,
 } from '../../lib/agent/presentation/proposal-markdown'
 import { ProposalDiffDialog } from './ProposalDiffDialog'
+import { modelRefForCategory } from '../../lib/ai/model-scenes'
+import type { AIModelRef } from '../../lib/types'
 
 interface Props {
   projectId: number
@@ -107,6 +108,7 @@ interface AgentRunContext {
   readonly completionRequirement?: AgentCompletionRequirement
   readonly promptProfile?: AgentPromptProfile
   readonly originalPrompt: string
+  readonly modelRef: AIModelRef
 }
 
 interface RunMessageOptions {
@@ -118,6 +120,7 @@ interface RunMessageOptions {
   readonly forceNewConversation?: boolean
   readonly conversationId?: string
   readonly ignoreBlock?: boolean
+  readonly modelRef?: AIModelRef
 }
 
 export default function AgentDock({
@@ -131,9 +134,17 @@ export default function AgentDock({
   onOpenSettings,
   onProjectChanged,
 }: Props) {
-  const chatModelConfig = useAIModelConfig('chat')
-  const model = chatModelConfig.model
-  const baseUrl = chatModelConfig.baseUrl
+  const providerConfigs = useAIConfigStore(state => state.providerConfigs)
+  const sceneBindings = useAIConfigStore(state => state.sceneBindings)
+  const activeModelRef = useAIConfigStore(state => state.activeModelRef)
+  const defaultChatRef = sceneBindings.chat ?? activeModelRef
+  const [selectedModelRef, setSelectedModelRef] = useState<AIModelRef>(defaultChatRef)
+  const selectedModelConfig = useMemo(
+    () => resolveAIModelConfig(providerConfigs, sceneBindings, activeModelRef, 'chat', selectedModelRef),
+    [providerConfigs, sceneBindings, activeModelRef, selectedModelRef],
+  )
+  const model = selectedModelConfig.model
+  const baseUrl = selectedModelConfig.baseUrl
   const [input, setInput] = useState('')
   const [conversationState, setConversationState] = useState<AgentConversationState>(() => (
     ensureConversationState(loadAgentConversationState(projectId), projectId, activeModule)
@@ -172,6 +183,12 @@ export default function AgentDock({
     handledIntentIdsRef.current.clear()
     runContextRef.current.clear()
   }, [projectId])
+
+  useEffect(() => {
+    const provider = providerConfigs.find(item => item.id === selectedModelRef.providerConfigId)
+    if (provider?.models.some(item => item.id === selectedModelRef.modelId)) return
+    setSelectedModelRef(sceneBindings.chat ?? activeModelRef)
+  }, [activeModelRef, providerConfigs, sceneBindings.chat, selectedModelRef])
 
   useEffect(() => {
     if (conversationState.projectId !== projectId) return
@@ -268,6 +285,7 @@ export default function AgentDock({
       completionRequirement: options.completionRequirement,
       promptProfile: options.promptProfile,
       originalPrompt: message,
+      modelRef: options.modelRef ?? selectedModelRef,
     })
     const turn: AgentConversationTurn = {
       id: turnId, userMessage: displayMessage, assistantMessage: '', events: [],
@@ -304,13 +322,14 @@ export default function AgentDock({
         conversationHistory: buildAgentConversationHistory(targetConversation.turns),
         completionRequirement: options.completionRequirement,
         promptProfile: options.promptProfile,
+        modelProfile: modelRefKey(options.modelRef ?? selectedModelRef),
       })
       await consumeEvents(conversationId, turnId, stream)
     } finally {
       setBusy(false)
       currentRunIdRef.current = null
     }
-  }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime])
+  }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime, selectedModelRef])
 
   const send = async () => {
     const completionRequirement = inferChapterChatCompletionRequirement(input)
@@ -324,6 +343,7 @@ export default function AgentDock({
             variables: { userHint: input },
           })
         : undefined,
+      modelRef: selectedModelRef,
     })
   }
 
@@ -332,6 +352,8 @@ export default function AgentDock({
     handledIntentIdsRef.current.add(intent.id)
     onIntentConsumed?.(intent.id)
     setView('chat')
+    const intentModelRef = modelRefForCategory(intent.promptModuleKey ?? intent.type, sceneBindings, activeModelRef)
+    setSelectedModelRef(intentModelRef)
     void runMessage(
       buildAgentIntentPrompt(intent),
       {
@@ -341,9 +363,10 @@ export default function AgentDock({
         completionRequirement: intent.completionRequirement,
         promptProfile: promptProfileFromIntent(intent),
         forceNewConversation: true,
+        modelRef: intentModelRef,
       },
     )
-  }, [busy, intent, onIntentConsumed, pendingApproval, runMessage])
+  }, [activeModelRef, busy, intent, onIntentConsumed, pendingApproval, runMessage, sceneBindings])
 
   const resolveApproval = async (turn: AgentConversationTurn, decision: 'approved' | 'rejected') => {
     if (!turn.runId || !turn.waitingApproval || busy) return
@@ -383,6 +406,7 @@ export default function AgentDock({
         intentType: context.intentType,
         completionRequirement: context.completionRequirement,
         promptProfile: context.promptProfile,
+        modelRef: context.modelRef,
         conversationId,
         ignoreBlock: true,
       })
@@ -606,6 +630,28 @@ export default function AgentDock({
                 配置模型后开始对话
               </button>
             ) : null}
+            <label className="mb-2 flex items-center gap-2 text-[11px] text-text-muted">
+              <span className="shrink-0">模型</span>
+              <select
+                value={modelRefKey(selectedModelRef)}
+                onChange={event => {
+                  const ref = parseModelRefKey(event.target.value)
+                  if (ref) setSelectedModelRef(ref)
+                }}
+                disabled={busy}
+                className="min-w-0 flex-1 rounded border border-border bg-bg-base px-2 py-1 text-xs text-text-primary outline-none focus:border-accent disabled:opacity-50"
+              >
+                {providerConfigs.map(provider => (
+                  <optgroup key={provider.id} label={provider.name}>
+                    {provider.models.map(item => (
+                      <option key={item.id} value={modelRefKey({ providerConfigId: provider.id, modelId: item.id })}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
             <div className="flex items-end gap-2 rounded-md border border-border bg-bg-base p-2 focus-within:border-accent">
               <AutoResizeTextarea
                 minRows={1}
@@ -1372,8 +1418,8 @@ function createResources(
   const mcp = new McpToolProvider()
   const runtime = new AiSdkAgentRuntimeAdapter({
     platform: isTauri() ? 'desktop' : 'web',
-    getModelConfig: () => {
-      const config = useAIConfigStore.getState().resolveConfigForScene('chat')
+    getModelConfig: profile => {
+      const config = useAIConfigStore.getState().resolveConfigForScene('chat', parseModelRefKey(profile || '') ?? undefined)
       return {
         provider: config.provider,
         apiKey: config.apiKey,
@@ -1406,6 +1452,15 @@ function createResources(
     },
   })
   return { runtime, mcp, storage }
+}
+
+function modelRefKey(ref: AIModelRef): string {
+  return `${ref.providerConfigId}::${ref.modelId}`
+}
+
+function parseModelRefKey(value: string): AIModelRef | null {
+  const [providerConfigId, modelId] = value.split('::')
+  return providerConfigId && modelId ? { providerConfigId, modelId } : null
 }
 
 function promptProfileFromIntent(intent: AgentIntent): AgentPromptProfile | undefined {
