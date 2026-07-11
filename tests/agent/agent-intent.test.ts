@@ -4,6 +4,7 @@ import {
   buildAgentIntentPrompt,
   dispatchAgentProjectCommit,
   dispatchAgentIntent,
+  inferChapterChatCompletionRequirement,
   isIntentForDexieProject,
   subscribeAgentIntents,
   subscribeAgentProjectCommits,
@@ -98,5 +99,17 @@ describe('AgentIntent panel bridge', () => {
       scope: { module: 'editor', chapterId: 12, outlineNodeId: 11 },
       intentType: 'chapter.content',
     }])
+  })
+
+  it('infers a chapter proposal contract for explicit free-form writing commands', () => {
+    expect(inferChapterChatCompletionRequirement('优化第一章，增强冲突')).toMatchObject({
+      target: 'chapters',
+      mode: 'replace',
+      requiredFields: ['content'],
+      requiredContextSources: expect.arrayContaining(['chapterIndex', 'chapterContent', 'chapterOutline']),
+    })
+    expect(inferChapterChatCompletionRequirement('把本章润色一下')).toBeDefined()
+    expect(inferChapterChatCompletionRequirement('第一章讲了什么？')).toBeUndefined()
+    expect(inferChapterChatCompletionRequirement('梳理世界观')).toBeUndefined()
   })
 })

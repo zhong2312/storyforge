@@ -50,6 +50,7 @@ import {
   agentScopeFromIntent,
   buildAgentIntentPrompt,
   dispatchAgentProjectCommit,
+  inferChapterChatCompletionRequirement,
   type AgentIntent,
 } from '../../lib/agent/intents'
 import {
@@ -292,9 +293,14 @@ export default function AgentDock({
     }
   }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime])
 
-  const send = async () => await runMessage(input, {
-    scope: { module: activeModule, worldGroupId },
-  })
+  const send = async () => {
+    const completionRequirement = inferChapterChatCompletionRequirement(input)
+    await runMessage(input, {
+      scope: { module: activeModule, worldGroupId },
+      intentType: completionRequirement ? 'chapter.chat' : undefined,
+      completionRequirement,
+    })
+  }
 
   useEffect(() => {
     if (!intent || busy || pendingApproval || handledIntentIdsRef.current.has(intent.id)) return

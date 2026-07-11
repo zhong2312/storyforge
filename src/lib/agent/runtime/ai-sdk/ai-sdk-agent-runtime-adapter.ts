@@ -457,6 +457,11 @@ function assertCompletionProposalInput(
   if (requirement.recordId != null && input.recordId !== requirement.recordId) {
     throw new Error(`[agent-runtime] 完成条件未满足：提案 recordId 必须是 ${requirement.recordId}`)
   }
+  if (requirement.target === 'chapters'
+    && requirement.recordId == null
+    && (typeof input.recordId !== 'number' || input.recordId <= 0)) {
+    throw new Error('[agent-runtime] 完成条件未满足：章节提案必须包含通过 chapterIndex 定位的 recordId')
+  }
 
   const dataItems = isRecordArray(input.data)
     ? input.data

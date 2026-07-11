@@ -8,6 +8,35 @@ import type { ProjectLocator } from '../../storage/ports'
 const AGENT_INTENT_EVENT = 'storyforge:agent-intent'
 const AGENT_PROJECT_COMMIT_EVENT = 'storyforge:agent-project-commit'
 
+export const CHAPTER_WRITING_CONTEXT_SOURCES = Object.freeze([
+  'contextMemo',
+  'chapterContent',
+  'chapterOutline',
+  'detailedOutline',
+  'chapterContinuityHandoff',
+  'previousPlanReconciliation',
+  'previousChapterEnding',
+  'recentChapterSummaries',
+  'worldview',
+  'storyCore',
+  'powerSystem',
+  'codex',
+  'characters',
+  'creativeRules',
+  'worldRules',
+  'historical',
+  'locations',
+  'foreshadows',
+  'storyArcs',
+  'emotionBeats',
+  'stateCards',
+  'currentFacts',
+  'heldItems',
+  'retrievedPassages',
+  'references',
+  'userStyleProfile',
+] as const)
+
 export interface AgentIntentSource extends AgentScope {
   readonly project: ProjectLocator
   readonly field?: string
@@ -83,6 +112,23 @@ export function agentScopeFromIntent(intent: AgentIntent): AgentScope {
     chapterId: source.chapterId,
     entityId: source.entityId,
     selection: source.selection,
+  }
+}
+
+export function inferChapterChatCompletionRequirement(
+  message: string,
+): AgentCompletionRequirement | undefined {
+  const normalized = message.trim()
+  const chapterReference = /(?:第[一二三四五六七八九十百零〇两\d]+章|本章|当前章|这一章|这章)/
+  const writingCommand = /(?:写|续写|补写|扩写|缩写|重写|改写|优化|润色|修改|调整|精修|重构)/
+  if (!chapterReference.test(normalized) || !writingCommand.test(normalized)) return undefined
+  return {
+    kind: 'change-proposal',
+    target: 'chapters',
+    mode: 'replace',
+    requiredFields: ['content'],
+    minTextLength: { content: 500 },
+    requiredContextSources: ['chapterIndex', ...CHAPTER_WRITING_CONTEXT_SOURCES],
   }
 }
 

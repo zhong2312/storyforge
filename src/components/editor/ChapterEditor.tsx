@@ -36,6 +36,7 @@ import NotePanel from './NotePanel'
 import FloatingToolbar from './FloatingToolbar'
 import type { ChapterStatus, Project, StateDiffItem } from '../../lib/types'
 import {
+  CHAPTER_WRITING_CONTEXT_SOURCES,
   dispatchAgentIntent,
   subscribeAgentProjectCommits,
 } from '../../lib/agent/intents'
@@ -293,33 +294,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   }
 
   const buildAgentChapterContextPlan = async () => ({
-    sourceKeys: [
-      'contextMemo',
-      'chapterOutline',
-      'detailedOutline',
-      'chapterContinuityHandoff',
-      'previousPlanReconciliation',
-      'previousChapterEnding',
-      'recentChapterSummaries',
-      'worldview',
-      'storyCore',
-      'powerSystem',
-      'codex',
-      'characters',
-      'creativeRules',
-      'worldRules',
-      'historical',
-      'locations',
-      'foreshadows',
-      'storyArcs',
-      'emotionBeats',
-      'stateCards',
-      'currentFacts',
-      'heldItems',
-      'retrievedPassages',
-      'references',
-      'userStyleProfile',
-    ],
+    sourceKeys: [...CHAPTER_WRITING_CONTEXT_SOURCES],
   })
 
   const handleGenerate = async () => {
