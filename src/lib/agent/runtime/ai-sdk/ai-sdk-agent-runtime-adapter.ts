@@ -7,6 +7,7 @@ import type {
 } from '../../events/agent-events'
 import type {
   AgentChangeProposalCompletionRequirement,
+  AgentCompletionRequirement,
   AgentRunInput,
   AgentRuntimePort,
   ApprovalDecision,
@@ -27,7 +28,8 @@ import {
 
 const DEFAULT_MAX_STEPS = 8
 const DEFAULT_REQUIRED_MAX_STEPS = 16
-const MAX_STEPS = 20
+const REQUIRED_COMPLETION_STEP_RESERVE = 8
+const MAX_STEPS = 48
 const DEFAULT_TOKEN_BUDGET = 12_000
 const DEFAULT_REQUIRED_TOKEN_BUDGET = 48_000
 const MAX_TOKEN_BUDGET = 64_000
@@ -102,7 +104,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         descriptors,
         maxSteps: clampInteger(
           input.maxSteps,
-          input.completionRequirement ? DEFAULT_REQUIRED_MAX_STEPS : DEFAULT_MAX_STEPS,
+          defaultMaxSteps(input.completionRequirement),
           1,
           MAX_STEPS,
         ),
@@ -137,6 +139,9 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           input.completionRequirement,
           readContextSources,
         ),
+        remainingContextSources: () => input.completionRequirement
+          ? missingRequiredSources(input.completionRequirement, readContextSources)
+          : [],
       })
 
       for await (const part of parts) {
@@ -525,6 +530,17 @@ function summarizeOutput(descriptor: ToolDescriptor | undefined, output: unknown
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return fallback
   return Math.min(max, Math.max(min, Math.trunc(value as number)))
+}
+
+function defaultMaxSteps(requirement: AgentCompletionRequirement | undefined): number {
+  if (!requirement) return DEFAULT_MAX_STEPS
+  return Math.min(
+    MAX_STEPS,
+    Math.max(
+      DEFAULT_REQUIRED_MAX_STEPS,
+      (requirement.requiredContextSources?.length ?? 0) + REQUIRED_COMPLETION_STEP_RESERVE,
+    ),
+  )
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

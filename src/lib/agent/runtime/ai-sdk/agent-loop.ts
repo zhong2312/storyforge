@@ -43,6 +43,7 @@ export interface AgentLoopRequest {
   readonly requiredContextTool?: string
   readonly requiredCompletionTool?: string
   readonly shouldForceCompletion?: () => boolean
+  readonly remainingContextSources?: () => readonly string[]
 }
 
 export type AgentLoopStreamer = (request: AgentLoopRequest) => AsyncIterable<AgentLoopPart>
@@ -194,7 +195,7 @@ export async function* streamAiSdkAgentLoop(
       role: 'user',
       content: request.shouldForceCompletion?.()
         ? `宿主完成契约尚未满足。不要只描述下一步；现在必须调用 ${request.requiredCompletionTool}，提交完整可采纳结果。`
-        : `宿主完成契约尚未满足。继续调用 ${request.requiredContextTool} 读取尚缺上下文，不要停止或只输出说明。`,
+        : `宿主完成契约尚未满足。继续调用 ${request.requiredContextTool} 读取尚缺上下文：${request.remainingContextSources?.().join('、') || '按宿主清单继续读取'}。不要重复读取已完成源，不要停止或只输出说明。`,
     })
   }
 }

@@ -209,6 +209,21 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     })
   })
 
+  it('reserves completion steps beyond the required context source count', async () => {
+    const sources = Array.from({ length: 25 }, (_, index) => `source-${index + 1}`)
+    let maxSteps = 0
+    const streamer: AgentLoopStreamer = async function* (request) {
+      maxSteps = request.maxSteps
+      yield { type: 'phase-start', step: 1 }
+    }
+
+    await collect(createRuntime(chapterProposalRegistry(), streamer).run(chapterRunInput({
+      requiredContextSources: sources,
+    })))
+
+    expect(maxSteps).toBe(33)
+  })
+
   it('rejects an incomplete proposal, then accepts a corrected chapter proposal with preview', async () => {
     const registry = chapterProposalRegistry()
     const validContent = '山雨压住了山门外的灯火。'.repeat(12)
