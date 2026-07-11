@@ -18,6 +18,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     const registry = registryWithCatalog(execute)
     const streamer: AgentLoopStreamer = async function* (request) {
       expect(request.instructions).toContain('chapterIndex')
+      expect(request.tokenBudget).toBeUndefined()
       yield { type: 'phase-start', step: 1 }
       yield { type: 'reasoning', text: '先查看可用设定。' }
       yield { type: 'tool-call', toolCallId: 'call-1', toolName: 'storyforge.settings.catalog', input: {} }
@@ -598,11 +599,14 @@ describe('AiSdkAgentRuntimeAdapter', () => {
   it('continues a DeepSeek completion contract after a text-only premature stop', async () => {
     const requests: Array<Record<string, unknown>> = []
     const responses = [
-      namedToolCallChunks('storyforge_context_read', { sourceKeys: ['chapterOutline'] }, 'read-1'),
-      textChunks('上下文已经齐备，接下来生成正文。'),
-      namedToolCallChunks('storyforge_change_propose', {
+      [
+        ...namedToolCallChunks('storyforge_context_read', { sourceKeys: ['chapterOutline'] }, 'read-1'),
+        usageChunk(10, 5),
+      ],
+      [...textChunks('上下文已经齐备，接下来生成正文。'), usageChunk(5_000, 20)],
+      [...namedToolCallChunks('storyforge_change_propose', {
         target: 'chapters', mode: 'replace', recordId: 12, data: { content: '正文'.repeat(30) },
-      }, 'proposal-1'),
+      }, 'proposal-1'), usageChunk(5_100, 30)],
     ]
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
@@ -623,7 +627,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       prompt: '写第一章',
       descriptors: [contextDescriptor, proposalDescriptor],
       maxSteps: 5,
-      tokenBudget: 2_000,
+      tokenBudget: 100,
       signal: new AbortController().signal,
       execute: async name => {
         if (name === 'storyforge.context.read') contextReady = true
@@ -635,6 +639,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       shouldStop: () => proposalReady,
       requiredContextTool: 'storyforge.context.read',
       requiredCompletionTool: 'storyforge.change.propose',
+      requiredCompletionReminder: '提案参数必须为 target=characters，mode=add；必填字段：name、roleWeight、moralAxis、orderAxis。',
       shouldForceCompletion: () => contextReady,
     })) {
       // Consume the continuation round after the text-only model response.
@@ -645,6 +650,7 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(toolNamesFromRequest(requests[2])).toEqual(['storyforge_change_propose'])
     expect(JSON.stringify(requests[2].messages)).toContain('宿主完成契约尚未满足')
     expect(JSON.stringify(requests[2].messages)).toContain('接下来生成正文')
+    expect(JSON.stringify(requests[2].messages)).toContain('target=characters')
   })
 })
 
@@ -834,6 +840,18 @@ function namedToolCallChunks(
 
 function textChunks(text: string): Record<string, unknown>[] {
   return [completionChunk({ role: 'assistant', content: text }, null), completionChunk({}, 'stop')]
+}
+
+function usageChunk(inputTokens: number, outputTokens: number): Record<string, unknown> {
+  return {
+    id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 1, model: 'test-model',
+    choices: [],
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    },
+  }
 }
 
 function completionChunk(delta: Record<string, unknown>, finishReason: string | null): Record<string, unknown> {

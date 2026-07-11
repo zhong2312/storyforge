@@ -128,7 +128,7 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
         module: 'characters',
         worldGroupId: targetWorld,
       },
-      instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。',
+      instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。提案必须使用 target=characters、mode=add，data 直接放角色对象；roleWeight 取 main/secondary/npc/extra，moralAxis 取 good/neutral/evil，orderAxis 取 lawful/neutral/chaotic。',
       completionRequirement: {
         kind: 'change-proposal',
         target: 'characters',

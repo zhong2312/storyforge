@@ -36,12 +36,13 @@ export interface AgentLoopRequest {
   readonly prompt: string
   readonly descriptors: readonly ToolDescriptor[]
   readonly maxSteps: number
-  readonly tokenBudget: number
+  readonly tokenBudget?: number
   readonly signal: AbortSignal
   readonly execute: (toolName: string, input: unknown) => Promise<unknown>
   readonly shouldStop: () => boolean
   readonly requiredContextTool?: string
   readonly requiredCompletionTool?: string
+  readonly requiredCompletionReminder?: string
   readonly shouldForceCompletion?: () => boolean
   readonly remainingContextSources?: () => readonly string[]
 }
@@ -89,12 +90,15 @@ export async function* streamAiSdkAgentLoop(
   }
 
   let step = 0
-  let consumedTokens = 0
+  let consumedOutputTokens = 0
   let messages: ModelMessage[] | undefined
+  const hasTokenBudget = request.tokenBudget != null
 
-  while (step < request.maxSteps && consumedTokens < request.tokenBudget && !request.shouldStop()) {
+  while (step < request.maxSteps
+    && (!hasTokenBudget || consumedOutputTokens < request.tokenBudget!)
+    && !request.shouldStop()) {
     const remainingSteps = request.maxSteps - step
-    const remainingTokens = request.tokenBudget - consumedTokens
+    const remainingTokens = hasTokenBudget ? request.tokenBudget! - consumedOutputTokens : undefined
     const agent = new ToolLoopAgent({
       id: 'storyforge-copilot',
       model: provider(request.config.model),
@@ -121,7 +125,8 @@ export async function* streamAiSdkAgentLoop(
         : undefined,
       stopWhen: [
         stepCountIs(remainingSteps),
-        ({ steps }) => request.shouldStop() || totalTokens(steps) >= remainingTokens,
+        ({ steps }) => request.shouldStop()
+          || (remainingTokens != null && totalOutputTokens(steps) >= remainingTokens),
       ],
     })
     const result = messages
@@ -178,12 +183,12 @@ export async function* streamAiSdkAgentLoop(
       }
     }
 
-    consumedTokens += (await result.usage).totalTokens ?? 0
+    consumedOutputTokens += (await result.usage).outputTokens ?? 0
     if (request.shouldStop()
       || !autoOnlyToolChoice
       || !completionToolName
       || step >= request.maxSteps
-      || consumedTokens >= request.tokenBudget) {
+      || (hasTokenBudget && consumedOutputTokens >= request.tokenBudget!)) {
       return
     }
 
@@ -194,7 +199,7 @@ export async function* streamAiSdkAgentLoop(
     messages.push({
       role: 'user',
       content: request.shouldForceCompletion?.()
-        ? `宿主完成契约尚未满足。不要只描述下一步；现在必须调用 ${request.requiredCompletionTool}，提交完整可采纳结果。`
+        ? `宿主完成契约尚未满足。不要只描述下一步；现在必须调用 ${request.requiredCompletionTool}，提交完整可采纳结果。${request.requiredCompletionReminder ? `\n${request.requiredCompletionReminder}` : ''}`
         : `宿主完成契约尚未满足。继续调用 ${request.requiredContextTool} 读取尚缺上下文：${request.remainingContextSources?.().join('、') || '按宿主清单继续读取'}。不要重复读取已完成源，不要停止或只输出说明。`,
     })
   }
@@ -204,8 +209,8 @@ function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
 
-function normalizeOutputLimit(configured: number | undefined, budget: number): number {
-  if (configured && configured > 0) return Math.min(configured, budget)
+function normalizeOutputLimit(configured: number | undefined, budget: number | undefined): number | undefined {
+  if (configured && configured > 0) return budget == null ? configured : Math.min(configured, budget)
   return budget
 }
 
@@ -216,10 +221,10 @@ function usesAutoOnlyToolChoice(config: AgentModelConfig): boolean {
   return /deepseek/i.test(config.model)
 }
 
-function totalTokens(steps: readonly unknown[]): number {
+function totalOutputTokens(steps: readonly unknown[]): number {
   return steps.reduce<number>((sum, step) => {
     const usage = Reflect.get(step as object, 'usage') as Record<string, unknown> | undefined
-    const value = usage?.totalTokens
+    const value = usage?.outputTokens
     return sum + (typeof value === 'number' ? value : 0)
   }, 0)
 }

@@ -30,8 +30,6 @@ const DEFAULT_MAX_STEPS = 8
 const DEFAULT_REQUIRED_MAX_STEPS = 16
 const REQUIRED_COMPLETION_STEP_RESERVE = 8
 const MAX_STEPS = 48
-const DEFAULT_TOKEN_BUDGET = 12_000
-const DEFAULT_REQUIRED_TOKEN_BUDGET = 48_000
 const MAX_TOKEN_BUDGET = 64_000
 const CONTEXT_READ_TOOL = 'storyforge.context.read'
 const PROPOSE_TOOL = 'storyforge.change.propose'
@@ -80,6 +78,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     let message = ''
     let reasoning = ''
     let proposal: PendingApproval | undefined
+    let lastCompletionError = ''
     const readContextSources = new Set<string>()
 
     yield this.append(runId, input.conversationId, 'run.started', { userMessage: input.userMessage })
@@ -108,16 +107,18 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           1,
           MAX_STEPS,
         ),
-        tokenBudget: clampInteger(
-          input.tokenBudget,
-          input.completionRequirement ? DEFAULT_REQUIRED_TOKEN_BUDGET : DEFAULT_TOKEN_BUDGET,
-          256,
-          MAX_TOKEN_BUDGET,
-        ),
+        tokenBudget: input.tokenBudget == null
+          ? undefined
+          : clampInteger(input.tokenBudget, input.tokenBudget, 256, MAX_TOKEN_BUDGET),
         signal: controller.signal,
         execute: async (toolName, toolInput) => {
           if (toolName === PROPOSE_TOOL && input.completionRequirement) {
-            assertCompletionProposalInput(input.completionRequirement, toolInput, readContextSources)
+            try {
+              assertCompletionProposalInput(input.completionRequirement, toolInput, readContextSources)
+            } catch (error) {
+              lastCompletionError = errorMessage(error)
+              throw error
+            }
           }
           const output = await registry.execute(toolName, context, toolInput)
           if (toolName === CONTEXT_READ_TOOL) {
@@ -135,6 +136,9 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           ? CONTEXT_READ_TOOL
           : undefined,
         requiredCompletionTool: input.completionRequirement ? PROPOSE_TOOL : undefined,
+        requiredCompletionReminder: input.completionRequirement
+          ? completionRequirementReminder(input.completionRequirement)
+          : undefined,
         shouldForceCompletion: () => requiredContextIsReady(
           input.completionRequirement,
           readContextSources,
@@ -156,7 +160,11 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         yield this.append(runId, input.conversationId, 'reasoning.summary.completed', { text: reasoning })
       }
       if (input.completionRequirement && !proposal) {
-        throw new Error(completionFailureMessage(input.completionRequirement, readContextSources))
+        throw new Error(completionFailureMessage(
+          input.completionRequirement,
+          readContextSources,
+          lastCompletionError,
+        ))
       }
       if (message) {
         yield this.append(runId, input.conversationId, 'message.completed', { text: message })
@@ -571,11 +579,23 @@ function missingRequiredSources(
 function completionFailureMessage(
   requirement: AgentChangeProposalCompletionRequirement,
   readContextSources: ReadonlySet<string>,
+  lastCompletionError = '',
 ): string {
   const missing = missingRequiredSources(requirement, readContextSources)
-  return missing.length > 0
+  const message = missing.length > 0
     ? `Agent 未完成任务：尚未读取 ${missing.join('、')}，也未生成可采纳方案。`
     : `Agent 未完成任务：没有生成符合 ${requirement.target}/${requirement.mode} 完成条件的可采纳方案。`
+  return lastCompletionError ? `${message}\n最近一次提案被拒绝：${lastCompletionError}` : message
+}
+
+function completionRequirementReminder(
+  requirement: AgentChangeProposalCompletionRequirement,
+): string {
+  const record = requirement.recordId != null ? `，recordId=${requirement.recordId}` : ''
+  return [
+    `提案参数必须为 target=${requirement.target}，mode=${requirement.mode}${record}。`,
+    `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。`,
+  ].join('\n')
 }
 
 function textContentLength(value: unknown): number {
