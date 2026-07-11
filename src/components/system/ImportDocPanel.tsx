@@ -210,6 +210,8 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
         `抽取 ${result.rawChars.toLocaleString()} 字符`,
       ]
       if (result.pageCount) parts.push(`${result.pageCount} 页`)
+      if (result.fileCount) parts.push(`${result.fileCount} 个文档`)
+      if (result.skippedFiles?.length) parts.push(`跳过 ${result.skippedFiles.length} 项`)
       setExtractInfo(parts.join(' · '))
     } catch (err) {
       setFilename('')
@@ -526,7 +528,7 @@ export default function ImportDocPanel({ project, onNavigate }: Props) {
             <Info className="w-3.5 h-3.5 text-accent" />
             <span className="font-medium">支持的文件格式与大小上限</span>
           </div>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {FILE_LIMIT_HINTS.map(h => (
               <div key={h.ext} className="text-center px-2 py-1.5 bg-bg-base rounded">
                 <div className="text-xs font-mono text-accent">.{h.ext}</div>

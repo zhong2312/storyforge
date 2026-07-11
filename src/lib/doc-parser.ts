@@ -8,7 +8,6 @@
  * AI 解析阶段仍会被 import-adapter 的 MAX_CHARS 再截断一次。
  */
 // Vite URL import — pdfjs 的 worker 必须走 URL 引入（仅 URL 字符串，不进主包）
-// @ts-ignore - Vite 的 ?url 后缀 import TS 无法识别
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
 // pdfjs / mammoth 体积大（~870KB）且仅在用户导入文件时才需要，改为动态导入按需加载，
@@ -28,8 +27,12 @@ export type SupportedExt = keyof typeof FILE_SIZE_LIMITS
 /** 列表里面明确告诉用户 `.doc` 不行 */
 export const UNSUPPORTED_EXTS = ['doc'] as const
 
+export const ZIP_MAX_COMPRESSED_BYTES = 100 * 1024 * 1024
+export const ZIP_MAX_EXTRACTED_BYTES = 100 * 1024 * 1024
+export const ZIP_MAX_ENTRIES = 1000
+
 /** 浏览器 <input accept> 字符串 */
-export const ACCEPT_ATTR = '.txt,.md,.csv,.pdf,.docx'
+export const ACCEPT_ATTR = '.txt,.md,.csv,.pdf,.docx,.zip'
 
 /** 人类可读的大小说明（给 UI 用） */
 export const FILE_LIMIT_HINTS: Array<{ ext: string; label: string; mb: number }> = [
@@ -38,6 +41,7 @@ export const FILE_LIMIT_HINTS: Array<{ ext: string; label: string; mb: number }>
   { ext: 'csv',  label: 'CSV',      mb: FILE_SIZE_LIMITS.csv  / 1024 / 1024 },
   { ext: 'pdf',  label: 'PDF',      mb: FILE_SIZE_LIMITS.pdf  / 1024 / 1024 },
   { ext: 'docx', label: 'Word',     mb: FILE_SIZE_LIMITS.docx / 1024 / 1024 },
+  { ext: 'zip',  label: '多文档包', mb: ZIP_MAX_COMPRESSED_BYTES / 1024 / 1024 },
 ]
 
 export interface ExtractResult {
@@ -46,11 +50,17 @@ export interface ExtractResult {
   rawChars: number
   /** 对于 PDF 会返回页数；docx 返回 undefined */
   pageCount?: number
+  /** ZIP 内成功解析的文档数量；普通文件不返回。 */
+  fileCount?: number
+  /** ZIP 内被忽略或解析失败的路径及原因。 */
+  skippedFiles?: string[]
 }
 
 /** 统一入口：给一个 File，返回提取到的纯文本 */
 export async function extractTextFromFile(file: File): Promise<ExtractResult> {
   const extRaw = file.name.split('.').pop()?.toLowerCase() || ''
+
+  if (extRaw === 'zip') return extractZip(file)
 
   // 明确不支持的
   if ((UNSUPPORTED_EXTS as readonly string[]).includes(extRaw)) {
@@ -88,6 +98,78 @@ export async function extractTextFromFile(file: File): Promise<ExtractResult> {
     case 'pdf':  return extractPdf(file)
     case 'docx': return extractDocx(file)
   }
+}
+
+async function extractZip(file: File): Promise<ExtractResult> {
+  if (file.size > ZIP_MAX_COMPRESSED_BYTES) {
+    throw new Error(`.zip 文件最大 ${ZIP_MAX_COMPRESSED_BYTES / 1024 / 1024} MB，当前 ${(file.size / 1024 / 1024).toFixed(2)} MB。`)
+  }
+  const JSZip = (await import('jszip')).default
+  const archive = await JSZip.loadAsync(await file.arrayBuffer())
+  const entries = Object.values(archive.files)
+  if (entries.length > ZIP_MAX_ENTRIES) {
+    throw new Error(`ZIP 条目过多：${entries.length} 个，最多支持 ${ZIP_MAX_ENTRIES} 个。`)
+  }
+
+  const supported = entries
+    .filter(entry => !entry.dir && !isArchiveJunkPath(entry.name))
+    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN', { numeric: true }))
+  const sections: string[] = []
+  const skippedFiles: string[] = []
+  let extractedBytes = 0
+  let pageCount = 0
+
+  for (const entry of supported) {
+    const ext = entry.name.split('.').pop()?.toLowerCase() || ''
+    if (!(ext in FILE_SIZE_LIMITS)) {
+      skippedFiles.push(`${entry.name}（不支持 .${ext || '无扩展名'}）`)
+      continue
+    }
+    const bytes = await entry.async('uint8array')
+    extractedBytes += bytes.byteLength
+    if (extractedBytes > ZIP_MAX_EXTRACTED_BYTES) {
+      throw new Error(`ZIP 解压后的支持文档超过 ${ZIP_MAX_EXTRACTED_BYTES / 1024 / 1024} MB，请拆分压缩包后重试。`)
+    }
+    try {
+      const nestedFile = new File([new Uint8Array(bytes).buffer], entry.name, { type: archiveMimeType(ext) })
+      const result = await extractTextFromFile(nestedFile)
+      if (!result.text.trim()) {
+        skippedFiles.push(`${entry.name}（未提取到文本）`)
+        continue
+      }
+      sections.push(`===== 文件：${entry.name} =====\n\n${result.text.trim()}`)
+      pageCount += result.pageCount ?? 0
+    } catch (error) {
+      skippedFiles.push(`${entry.name}（${error instanceof Error ? error.message : String(error)}）`)
+    }
+  }
+
+  if (sections.length === 0) {
+    const detail = skippedFiles.length ? `\n${skippedFiles.slice(0, 5).join('\n')}` : ''
+    throw new Error(`ZIP 中没有可解析的文档。支持：${Object.keys(FILE_SIZE_LIMITS).map(ext => `.${ext}`).join('、')}${detail}`)
+  }
+  const text = sections.join('\n\n')
+  return {
+    text,
+    rawChars: text.length,
+    fileCount: sections.length,
+    skippedFiles,
+    pageCount: pageCount || undefined,
+  }
+}
+
+function isArchiveJunkPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/')
+  return normalized.startsWith('__MACOSX/')
+    || normalized.split('/').some(segment => segment === '.DS_Store' || segment === 'Thumbs.db')
+}
+
+function archiveMimeType(ext: string): string {
+  if (ext === 'pdf') return 'application/pdf'
+  if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  if (ext === 'csv') return 'text/csv'
+  if (ext === 'md') return 'text/markdown'
+  return 'text/plain'
 }
 
 async function extractPdf(file: File): Promise<ExtractResult> {
