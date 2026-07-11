@@ -39,11 +39,17 @@ export interface AgentPromptProfile {
   }
 }
 
+export interface AgentHistoryMessage {
+  readonly role: 'user' | 'assistant'
+  readonly content: string
+}
+
 export interface AgentRunInput {
   conversationId: string
   project: ProjectLocator
   scope: AgentScope
   userMessage: string
+  conversationHistory?: readonly AgentHistoryMessage[]
   preferredAgent?: string
   modelProfile?: string
   maxSteps?: number

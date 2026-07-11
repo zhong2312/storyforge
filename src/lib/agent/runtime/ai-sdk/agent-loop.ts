@@ -8,6 +8,7 @@ import {
   type ToolSet,
 } from 'ai'
 import type { ToolDescriptor } from '../../tools/tool-types'
+import type { AgentHistoryMessage } from '../agent-runtime-port'
 import { buildOpenAIEndpoint } from '../../../ai/openai-endpoint'
 
 export interface AgentModelConfig {
@@ -34,6 +35,7 @@ export interface AgentLoopRequest {
   readonly config: AgentModelConfig
   readonly instructions: string
   readonly prompt: string
+  readonly conversationHistory?: readonly AgentHistoryMessage[]
   readonly descriptors: readonly ToolDescriptor[]
   readonly maxSteps: number
   readonly tokenBudget?: number
@@ -91,7 +93,15 @@ export async function* streamAiSdkAgentLoop(
 
   let step = 0
   let consumedOutputTokens = 0
-  let messages: ModelMessage[] | undefined
+  let messages: ModelMessage[] | undefined = request.conversationHistory?.length
+    ? [
+        ...request.conversationHistory.map(message => ({
+          role: message.role,
+          content: message.content,
+        } satisfies ModelMessage)),
+        { role: 'user', content: request.prompt },
+      ]
+    : undefined
   const hasTokenBudget = request.tokenBudget != null
 
   while (step < request.maxSteps

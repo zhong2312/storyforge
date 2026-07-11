@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAgentConversationHistory,
   createAgentConversation,
   createAgentConversationState,
   defaultConversationGroupId,
@@ -67,7 +68,55 @@ describe('Agent conversation store', () => {
     expect(loaded.conversations[0].turns[0].waitingApproval).toBeUndefined()
     expect(loaded.conversations[0].turns[0].error).toContain('审批运行已失效')
   })
+
+  it('restores a bounded model history using only completed visible messages', () => {
+    const storage = new MemoryStorage()
+    const state = createAgentConversationState(9)
+    const current = createAgentConversation({ id: 'current', projectId: 9, module: 'chapters' })
+    current.turns.push(
+      turn('第一章写了什么？', '第一章写了林川进入山门。', [
+        event('tool.completed', { toolCallId: 'tool-1', toolName: 'storyforge.context.read', output: { secret: true } }),
+        event('reasoning.summary.completed', { text: '隐藏的阶段推理' }),
+      ]),
+      { ...turn('继续润色', '这是一段未完成输出'), error: '网络错误' },
+    )
+    const other = createAgentConversation({ id: 'other', projectId: 9, module: 'chapters' })
+    other.turns.push(turn('另一个会话的问题', '另一个会话的回答'))
+    state.conversations.push(current, other)
+
+    saveAgentConversationState(state, storage)
+    const loaded = loadAgentConversationState(9, storage)
+    const restoredCurrent = loaded.conversations.find(item => item.id === 'current')
+    if (!restoredCurrent) throw new Error('missing restored conversation')
+
+    expect(buildAgentConversationHistory(restoredCurrent.turns)).toEqual([
+      { role: 'user', content: '第一章写了什么？' },
+      { role: 'assistant', content: '第一章写了林川进入山门。' },
+    ])
+    expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('secret')
+    expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('隐藏的阶段推理')
+    expect(JSON.stringify(buildAgentConversationHistory(restoredCurrent.turns))).not.toContain('另一个会话')
+  })
+
+  it('keeps the newest complete turn pairs within the history budget', () => {
+    const turns = [
+      turn('旧问题', '旧回答'),
+      turn('较新问题', '较新回答'),
+      turn('最新问题', '最新回答'),
+    ]
+
+    expect(buildAgentConversationHistory(turns, { maxTurns: 2, maxCharacters: 100 })).toEqual([
+      { role: 'user', content: '较新问题' },
+      { role: 'assistant', content: '较新回答' },
+      { role: 'user', content: '最新问题' },
+      { role: 'assistant', content: '最新回答' },
+    ])
+  })
 })
+
+function turn(userMessage: string, assistantMessage: string, events: ReturnType<typeof event>[] = []) {
+  return { id: `turn-${userMessage}`, userMessage, assistantMessage, events }
+}
 
 function event(type: string, payload: Record<string, unknown>) {
   return {

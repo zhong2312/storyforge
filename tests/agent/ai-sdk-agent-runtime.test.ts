@@ -55,6 +55,30 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(preparation.payload.summary).toContain('storyforge.settings.catalog')
   })
 
+  it('passes prior visible conversation messages to the model loop', async () => {
+    const registry = registryWithCatalog(vi.fn(async () => ({})))
+    const streamer: AgentLoopStreamer = async function* (request) {
+      expect(request.prompt).toBe('那第二章呢？')
+      expect(request.conversationHistory).toEqual([
+        { role: 'user', content: '第一章写了什么？' },
+        { role: 'assistant', content: '第一章写了林川进入山门。' },
+      ])
+      yield { type: 'text', text: '第二章继续山门试炼。' }
+    }
+    const runtime = createRuntime(registry, streamer)
+
+    const events = await collect(runtime.run({
+      ...runInput(),
+      userMessage: '那第二章呢？',
+      conversationHistory: [
+        { role: 'user', content: '第一章写了什么？' },
+        { role: 'assistant', content: '第一章写了林川进入山门。' },
+      ],
+    }))
+
+    expect(events.some(event => event.type === 'run.completed')).toBe(true)
+  })
+
   it('injects the active prompt-library profile and applies its model overrides', async () => {
     const registry = registryWithCatalog(vi.fn(async () => ({})))
     const streamer: AgentLoopStreamer = async function* (request) {
@@ -523,6 +547,41 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       expect.objectContaining({ type: 'tool-result', toolName: 'storyforge.settings.catalog' }),
       expect.objectContaining({ type: 'text', text: '已读取设定目录。' }),
     ]))
+  })
+
+  it('sends prior conversation messages before the current prompt', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+      return sseResponse(textChunks('第二章继续山门试炼。'))
+    }))
+
+    const parts: AgentLoopPart[] = []
+    for await (const part of streamAiSdkAgentLoop({
+      config: {
+        provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'test-model',
+      },
+      instructions: 'Continue the conversation.',
+      prompt: '那第二章呢？',
+      conversationHistory: [
+        { role: 'user', content: '第一章写了什么？' },
+        { role: 'assistant', content: '第一章写了林川进入山门。' },
+      ],
+      descriptors: [],
+      maxSteps: 1,
+      signal: new AbortController().signal,
+      execute: async () => ({}),
+      shouldStop: () => false,
+    })) parts.push(part)
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].messages).toEqual([
+      { role: 'system', content: 'Continue the conversation.' },
+      { role: 'user', content: '第一章写了什么？' },
+      { role: 'assistant', content: '第一章写了林川进入山门。' },
+      { role: 'user', content: '那第二章呢？' },
+    ])
+    expect(parts).toContainEqual({ type: 'text', text: '第二章继续山门试炼。' })
   })
 
   it('keeps tools required and forces the proposal tool after required context is ready', async () => {

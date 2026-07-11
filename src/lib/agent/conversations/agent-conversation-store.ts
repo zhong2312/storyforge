@@ -1,4 +1,5 @@
 import type { AgentEvent } from '../events/agent-events'
+import type { AgentHistoryMessage } from '../runtime/agent-runtime-port'
 
 const STORAGE_PREFIX = 'storyforge:agent-conversations:v1:'
 const STATE_VERSION = 1
@@ -6,6 +7,8 @@ const MAX_GROUPS = 30
 const MAX_CONVERSATIONS = 60
 const MAX_TURNS_PER_CONVERSATION = 30
 const MAX_EVENTS_PER_TURN = 200
+const DEFAULT_HISTORY_MAX_TURNS = 12
+const DEFAULT_HISTORY_MAX_CHARACTERS = 32_000
 
 export interface AgentConversationTurn {
   readonly id: string
@@ -148,6 +151,33 @@ export function conversationTitle(message: string): string {
   return normalizeTitle(message.replace(/\s+/g, ' ').trim() || '新对话')
 }
 
+export function buildAgentConversationHistory(
+  turns: readonly AgentConversationTurn[],
+  options: { maxTurns?: number; maxCharacters?: number } = {},
+): AgentHistoryMessage[] {
+  const maxTurns = positiveInteger(options.maxTurns, DEFAULT_HISTORY_MAX_TURNS)
+  const maxCharacters = positiveInteger(options.maxCharacters, DEFAULT_HISTORY_MAX_CHARACTERS)
+  const selected: AgentConversationTurn[] = []
+  let characters = 0
+
+  for (let index = turns.length - 1; index >= 0 && selected.length < maxTurns; index -= 1) {
+    const turn = turns[index]
+    const userMessage = turn.userMessage.trim()
+    const assistantMessage = turn.assistantMessage.trim()
+    if (!userMessage || !assistantMessage || turn.error) continue
+    const turnCharacters = userMessage.length + assistantMessage.length
+    if (selected.length > 0 && characters + turnCharacters > maxCharacters) break
+    if (turnCharacters > maxCharacters) continue
+    selected.push(turn)
+    characters += turnCharacters
+  }
+
+  return selected.reverse().flatMap(turn => [
+    { role: 'user' as const, content: turn.userMessage.trim() },
+    { role: 'assistant' as const, content: turn.assistantMessage.trim() },
+  ])
+}
+
 function normalizeConversation(
   value: unknown,
   projectId: number,
@@ -176,6 +206,10 @@ function normalizeConversation(
     updatedAt: finiteNumber(value.updatedAt, Date.now()),
     turns,
   }
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return Number.isInteger(value) && value! > 0 ? value! : fallback
 }
 
 function normalizeTurn(value: unknown, forStorage: boolean): AgentConversationTurn | null {

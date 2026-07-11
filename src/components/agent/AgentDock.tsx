@@ -60,6 +60,7 @@ import {
 import { createAgentPromptProfile } from '../../lib/agent/prompts'
 import {
   conversationTitle,
+  buildAgentConversationHistory,
   createAgentConversation,
   createAgentConversationState,
   defaultConversationGroupId,
@@ -296,6 +297,7 @@ export default function AgentDock({
         project: { backend: 'dexie', projectId },
         scope,
         userMessage: message,
+        conversationHistory: buildAgentConversationHistory(targetConversation.turns),
         completionRequirement: options.completionRequirement,
         promptProfile: options.promptProfile,
       })

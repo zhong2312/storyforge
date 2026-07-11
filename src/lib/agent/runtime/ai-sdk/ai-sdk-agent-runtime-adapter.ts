@@ -106,6 +106,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
         ),
         instructions: buildInstructions(descriptors, input),
         prompt: input.userMessage,
+        conversationHistory: input.conversationHistory,
         descriptors,
         maxSteps: clampInteger(
           input.maxSteps,
