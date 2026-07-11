@@ -73,6 +73,8 @@ export interface AgentChangePreview {
   readonly mode: string
   readonly recordId?: number
   readonly data: Readonly<Record<string, unknown>> | readonly Readonly<Record<string, unknown>>[]
+  /** 创建提案时读取并固化的当前数据，用于审批差异对比。 */
+  readonly beforeData?: Readonly<Record<string, unknown>> | readonly Readonly<Record<string, unknown>>[]
 }
 
 export type ApprovalRequestedAgentEvent = BaseAgentEvent<'approval.requested', {

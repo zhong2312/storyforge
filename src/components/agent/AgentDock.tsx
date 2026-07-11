@@ -7,6 +7,7 @@ import {
   CircleAlert,
   CircleStop,
   FolderPlus,
+  GitCompareArrows,
   History,
   LoaderCircle,
   MessageSquarePlus,
@@ -79,6 +80,7 @@ import {
   proposalApprovalTitle,
   proposalPreviewMarkdown,
 } from '../../lib/agent/presentation/proposal-markdown'
+import { ProposalDiffDialog } from './ProposalDiffDialog'
 
 interface Props {
   projectId: number
@@ -974,6 +976,7 @@ function TurnView({
   const timeline = collectAgentTurnTimeline(turn.events)
   const [adjusting, setAdjusting] = useState(false)
   const [adjustment, setAdjustment] = useState('')
+  const [showDiff, setShowDiff] = useState(false)
   const preview = turn.waitingApproval?.payload.preview
   const previewText = proposalPreviewText(preview)
   const isChapterPreview = preview?.target === 'chapters' && previewText.length > 0
@@ -987,6 +990,7 @@ function TurnView({
     if (!turn.waitingApproval) {
       setAdjusting(false)
       setAdjustment('')
+      setShowDiff(false)
     }
   }, [turn.waitingApproval])
 
@@ -1089,6 +1093,17 @@ function TurnView({
             >
               放弃
             </button>
+            {preview && (
+              <button
+                type="button"
+                onClick={() => setShowDiff(true)}
+                disabled={running}
+                className="flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50"
+              >
+                <GitCompareArrows className="h-3.5 w-3.5" />
+                对比
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setAdjusting(value => !value)}
@@ -1109,6 +1124,10 @@ function TurnView({
             </button>
           </div>
         </div>
+      )}
+
+      {showDiff && preview && (
+        <ProposalDiffDialog preview={preview} onClose={() => setShowDiff(false)} />
       )}
 
       {turn.error && (

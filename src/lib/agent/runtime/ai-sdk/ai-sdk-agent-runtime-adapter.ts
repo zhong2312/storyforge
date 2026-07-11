@@ -406,7 +406,9 @@ function createPendingApproval(
     approvalId,
     approval: { approvalId, planHash },
     summary: proposalSummary(record),
-    preview: createProposalPreview(isRecord(record.input) ? record.input : toolInput),
+    preview: createProposalPreview(isRecord(record.input)
+      ? { ...record.input, beforeData: record.beforeData }
+      : toolInput),
   }
 }
 
@@ -421,6 +423,9 @@ function createProposalPreview(input: unknown): AgentChangePreview | undefined {
     mode: stringField(record, 'mode'),
     recordId: typeof record.recordId === 'number' ? record.recordId : undefined,
     data,
+    beforeData: isRecord(record.beforeData) || isRecordArray(record.beforeData)
+      ? record.beforeData
+      : undefined,
   })
 }
 

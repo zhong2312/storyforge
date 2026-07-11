@@ -248,10 +248,12 @@ describe('registry-driven StoryForge tools', () => {
       planHash: string
       input: { data: { wordCount: number } }
       preview: { canonicalFields: string[] }
+      beforeData: { content: string }
     }
 
     expect(plan.input.data.wordCount).toBe(8)
     expect(plan.preview.canonicalFields).toContain('wordCount')
+    expect(plan.beforeData.content).toBe('')
 
     await registry.execute(
       'storyforge.change.commit',

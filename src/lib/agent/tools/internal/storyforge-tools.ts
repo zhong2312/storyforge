@@ -2,6 +2,7 @@ import { adopt } from '../../../registry/adopt'
 import { assembleContext } from '../../../registry/assemble-context'
 import { CONTEXT_SOURCES } from '../../../registry/context-sources'
 import { FIELD_BY_TARGET, FIELD_REGISTRY } from '../../../registry/field-registry'
+import { REGISTRY_BY_NAME } from '../../../registry/project-tables'
 import { projectLocatorKey, type ProjectStoragePort } from '../../../storage/ports'
 import type { AdoptInput, FieldSpec } from '../../../registry/types'
 import { countWords, htmlToPlainText } from '../../../utils/html'
@@ -148,12 +149,14 @@ function createChangeProposeTool(
       if (!FIELD_BY_TARGET.has(adoptionInput.target)) {
         throw new Error(`[storyforge.change.propose] target is not registered: ${adoptionInput.target}`)
       }
-      return await plans.create({
+      const plan = await plans.create({
         project: context.project,
         baseRevision: await storage.getRevision(),
         input: adoptionInput,
         preview,
       })
+      const beforeData = await loadProposalBeforeData(storage, adoptionInput)
+      return beforeData === undefined ? plan : { ...plan, beforeData }
     },
   }
 }
@@ -225,6 +228,21 @@ async function resolveStorageProjectId(storage: ProjectStoragePort): Promise<num
     throw new Error('[storyforge-tools] local-folder project must contain exactly one project record')
   }
   return projects[0].id
+}
+
+async function loadProposalBeforeData(
+  storage: ProjectStoragePort,
+  input: AdoptInput,
+): Promise<Record<string, unknown> | undefined> {
+  const table = storage.table<Record<string, unknown> & { id?: number }>(input.target)
+  if (input.recordId != null) return await table.get(input.recordId)
+  if (input.mode === 'add' || input.mode === 'add-many' || input.mode === 'merge-diffs') return undefined
+
+  const candidates = await table.list({ where: { projectId: input.projectId } })
+  const tableSpec = REGISTRY_BY_NAME.get(input.target)
+  if (!tableSpec?.worldScoped) return candidates[0]
+  const worldGroupField = tableSpec.worldGroupField ?? 'worldGroupId'
+  return candidates.find(row => (row[worldGroupField] ?? null) === (input.worldGroupId ?? null))
 }
 
 function assertStorageBinding(storage: ProjectStoragePort, context: ToolExecutionContext): void {
