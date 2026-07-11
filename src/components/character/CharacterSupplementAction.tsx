@@ -48,6 +48,18 @@ export default function CharacterSupplementAction({ character, projectId, worldG
         entityId: character.id,
       },
       instruction: `只补全角色“${character.name}”所选维度。读取世界观、故事核心、角色现有设定${useEvidence ? '、该角色剧情事实和正文表现' : ''}，然后调用变更提案，以 recordId=${character.id}、target=characters、mode=merge-diffs 定点更新；不得新建角色，不得改动未选择字段。`,
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'characters',
+        mode: 'merge-diffs',
+        recordId: character.id,
+        requiredFields: dims,
+        requiredContextSources: [
+          'storyCore', 'creativeRules', 'worldview', 'powerSystem', 'codex',
+          'characters', 'worldRules',
+          ...(useEvidence ? ['characterFacts', 'characterPassages'] : []),
+        ],
+      },
       payload: {
         character,
         dimensions: dims,

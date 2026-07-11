@@ -129,6 +129,16 @@ export default function CharacterPanel({ project, view = 'generator' }: Props) {
         worldGroupId: targetWorld,
       },
       instruction: '设计一个适合当前故事的新角色。读取世界观、故事核心、现有角色和规则，避开已有角色的功能重复，然后调用变更提案新增角色，不要覆盖已有角色。',
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'characters',
+        mode: 'add',
+        requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis'],
+        requiredContextSources: [
+          'storyCore', 'creativeRules', 'storyArcs', 'worldview', 'powerSystem',
+          'codex', 'characters', 'worldRules', 'locations',
+        ],
+      },
       payload: {
         userHint: hint.trim() || undefined,
         rosterGap,

@@ -71,4 +71,16 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(dock).toContain('采纳最终版本')
     expect(dock).toContain("decision: 'edited'")
   })
+
+  it('角色设计和补全操作必须完成角色变更提案', () => {
+    const design = source('src/components/character/CharacterPanel.tsx')
+    const supplement = source('src/components/character/CharacterSupplementAction.tsx')
+
+    expect(design).toContain("target: 'characters'")
+    expect(design).toContain("mode: 'add'")
+    expect(design).toContain("requiredFields: ['name', 'roleWeight', 'moralAxis', 'orderAxis']")
+    expect(supplement).toContain("mode: 'merge-diffs'")
+    expect(supplement).toContain('recordId: character.id')
+    expect(supplement).toContain('requiredFields: dims')
+  })
 })
