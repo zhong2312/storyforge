@@ -44,6 +44,14 @@ describe('AiSdkAgentRuntimeAdapter', () => {
       'run.completed',
     ]))
     expect(events.map(event => event.sequence)).toEqual(events.map((_, index) => index + 1))
+    const preparation = events.find(event => (
+      event.type === 'phase.completed' && event.payload.phase === 'prepare'
+    ))
+    expect(preparation?.type).toBe('phase.completed')
+    if (preparation?.type !== 'phase.completed') throw new Error('missing preparation phase')
+    expect(preparation.payload.summary).toContain('1 个通用工具入口')
+    expect(preparation.payload.summary).toContain('查看设定目录')
+    expect(preparation.payload.summary).toContain('storyforge.settings.catalog')
   })
 
   it('pauses after a change proposal and commits only after matching approval', async () => {

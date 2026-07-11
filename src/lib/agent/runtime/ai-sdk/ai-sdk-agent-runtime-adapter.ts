@@ -94,7 +94,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
       const descriptors = registry.listAvailable(context)
       yield this.append(runId, input.conversationId, 'phase.completed', {
         phase: 'prepare',
-        summary: `已加载 ${descriptors.length} 个工具`,
+        summary: toolPreparationSummary(descriptors),
       })
 
       const parts = this.#streamer({
@@ -403,6 +403,26 @@ function proposalSummary(output: Record<string, unknown>): string {
     ? preview.canonicalFields.filter(value => typeof value === 'string').join('、')
     : ''
   return `修改 ${target}（${itemCount} 项${fields ? `：${fields}` : ''}）`
+}
+
+function toolPreparationSummary(descriptors: readonly ToolDescriptor[]): string {
+  const tools = descriptors.map(descriptor => (
+    `- **${escapeMarkdownText(descriptor.title)}**（\`${descriptor.name}\`）`
+  ))
+  const approvalNote = descriptors.some(descriptor => descriptor.name === PROPOSE_TOOL)
+    && !descriptors.some(descriptor => descriptor.name === COMMIT_TOOL)
+    ? '\n\n> `storyforge.change.commit` 仅在用户采纳方案后由宿主启用，模型不能绕过审批直接写入。'
+    : ''
+  return [
+    `当前可调用 **${descriptors.length} 个通用工具入口**。目录工具覆盖注册表中的全部设定能力，并非只有 ${descriptors.length} 项业务功能。`,
+    '',
+    ...tools,
+  ].join('\n') + approvalNote
+}
+
+function escapeMarkdownText(value: string): string {
+  const specials = new Set('\\`*_{}[]()#+-.!|>')
+  return [...value].map(character => specials.has(character) ? `\\${character}` : character).join('')
 }
 
 function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentRunInput): string {

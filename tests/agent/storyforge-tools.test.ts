@@ -53,6 +53,9 @@ describe('registry-driven StoryForge tools', () => {
     }
 
     expect(output.readSources.some(source => source.key === 'worldview')).toBe(true)
+    expect(registry.get('storyforge.settings.catalog')?.title).toBe(
+      `设定能力目录（${output.readSources.length} 个读取源 / ${output.writeTargets.length} 个写入目标）`,
+    )
     expect(output.readSources.some(source => source.key === 'chapterIndex')).toBe(true)
     expect(output.writeTargets.find(target => target.target === 'worldviews')?.fields)
       .toContainEqual(expect.objectContaining({ field: 'worldOrigin' }))

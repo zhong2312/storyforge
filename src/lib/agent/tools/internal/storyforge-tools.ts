@@ -28,7 +28,7 @@ export function createStoryForgeTools(
 function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unknown> {
   return {
     name: 'storyforge.settings.catalog',
-    title: '查看 StoryForge 设定能力',
+    title: `设定能力目录（${CONTEXT_SOURCES.length} 个读取源 / ${FIELD_BY_TARGET.size} 个写入目标）`,
     description: '列出注册表中可读取的上下文源和可修改的设定字段。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     risk: 'read',

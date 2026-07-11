@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import AutoResizeTextarea from '../shared/AutoResizeTextarea'
+import MarkdownContent from '../shared/MarkdownContent'
 import {
   isTerminalAgentEvent,
   type AgentChangePreview,
@@ -69,6 +70,10 @@ import {
   type AgentTimelineToolItem,
 } from '../../lib/agent/conversations'
 import { htmlToPlainText } from '../../lib/utils/html'
+import {
+  proposalApprovalTitle,
+  proposalPreviewMarkdown,
+} from '../../lib/agent/presentation/proposal-markdown'
 
 interface Props {
   projectId: number
@@ -954,6 +959,7 @@ function TurnView({
   const preview = turn.waitingApproval?.payload.preview
   const previewText = proposalPreviewText(preview)
   const isChapterPreview = preview?.target === 'chapters' && previewText.length > 0
+  const previewMarkdown = proposalPreviewMarkdown(preview)
   const fallbackMessage = timeline.finalMessages.length === 0
     && !turn.events.some(event => event.type === 'message.delta' || event.type === 'message.completed')
     ? turn.assistantMessage
@@ -981,13 +987,11 @@ function TurnView({
       {timeline.phases.length > 0 && <PhaseTimeline phases={timeline.phases} running={running} />}
 
       {timeline.finalMessages.map(message => (
-        <div key={message.id} className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">
-          {message.text}
-        </div>
+        <MarkdownContent key={message.id} markdown={message.text} className="px-1 text-sm" />
       ))}
 
       {fallbackMessage && (
-        <div className="whitespace-pre-wrap px-1 text-sm leading-6 text-text-primary">{fallbackMessage}</div>
+        <MarkdownContent markdown={fallbackMessage} className="px-1 text-sm" />
       )}
 
       {turn.waitingApproval && (
@@ -996,9 +1000,11 @@ function TurnView({
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-text-primary">
-                {isChapterPreview ? '正文已生成，是否采纳？' : '变更方案待确认'}
+                {proposalApprovalTitle(preview)}
               </div>
-              <p className="mt-1 text-xs leading-5 text-text-secondary">{turn.waitingApproval.payload.summary}</p>
+              {!isChapterPreview && !previewMarkdown && (
+                <p className="mt-1 text-xs leading-5 text-text-secondary">{turn.waitingApproval.payload.summary}</p>
+              )}
             </div>
           </div>
 
@@ -1011,6 +1017,12 @@ function TurnView({
               <div className="max-h-80 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-6 text-text-primary">
                 {previewText}
               </div>
+            </div>
+          )}
+
+          {previewMarkdown && (
+            <div className="mt-3 max-h-[32rem] overflow-y-auto border-y border-warning/25 py-2.5 pr-1">
+              <MarkdownContent markdown={previewMarkdown} className="text-xs" />
             </div>
           )}
 
@@ -1132,13 +1144,9 @@ function PhaseTimeline({ phases, running }: { phases: AgentTimelinePhase[]; runn
                   {item.text.trim()}
                 </p>
               ) : item.kind === 'summary' ? (
-                <div key={item.id} className="whitespace-pre-wrap text-[11px] leading-5 text-text-muted">
-                  {item.text.trim()}
-                </div>
+                <MarkdownContent key={item.id} markdown={item.text.trim()} className="text-[11px] text-text-muted" />
               ) : (
-                <div key={item.id} className="whitespace-pre-wrap border-l-2 border-accent/35 pl-2 text-xs leading-5 text-text-primary">
-                  {item.text.trim()}
-                </div>
+                <MarkdownContent key={item.id} markdown={item.text.trim()} className="border-l-2 border-accent/35 pl-2 text-xs" />
               ))}
             </div>
           </details>
