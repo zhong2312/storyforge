@@ -48,7 +48,7 @@ export type BuiltInCodexKey =
   // 世界观各方面的"全貌+词条"分类（每个面板子页一个）
   | 'natStructure' | 'natDimension' | 'natTerrain' | 'natWater' | 'natClimate' // 自然环境各方面
   | 'humEra' | 'humEvent' | 'humSociety' | 'humConflict'                       // 人文环境各方面
-  | 'originPower' | 'originDeity'                                              // 世界起源:力量体系/神明信仰
+  | 'originSource' | 'originPower' | 'originDeity'                             // 世界起源:世界来源/力量体系/神明信仰
 
 /** 词条分类（树状，内置 + 用户自定义） */
 export interface CodexCategory {
@@ -328,7 +328,16 @@ export const BUILTIN_CATEGORIES: BuiltInCategorySeed[] = [
     ],
   },
 
-  // ── 世界起源：力量体系 / 神明信仰 ──
+  // ── 世界起源：世界来源 / 力量体系 / 神明信仰 ──
+  {
+    domain: 'origin', builtInKey: 'originSource', name: '世界来源', icon: '🌌',
+    fields: [
+      { key: 'type', label: '来源类型', type: 'select', options: ['创世神话', '自然演化', '文明起点', '异界衍生', '人为创造', '其他'] },
+      { key: 'era', label: '起源时期', type: 'text' },
+      { key: 'event', label: '核心起源事件', type: 'longtext' },
+      { key: 'impact', label: '后世影响', type: 'longtext' },
+    ],
+  },
   {
     domain: 'origin', builtInKey: 'originPower', name: '力量层级', icon: '⚡',
     fields: [

@@ -30,7 +30,7 @@ describe('Codex B0 · 内置分类 seed', () => {
     expect(builtins.length).toBe(BUILTIN_CATEGORIES.length)
     // 关键内置类都在
     const keys = builtins.map(c => c.builtInKey)
-    for (const k of ['mineral', 'herb', 'beast', 'race', 'faction', 'city', 'artifact']) {
+    for (const k of ['mineral', 'herb', 'beast', 'race', 'faction', 'city', 'artifact', 'originSource']) {
       expect(keys).toContain(k)
     }
   })

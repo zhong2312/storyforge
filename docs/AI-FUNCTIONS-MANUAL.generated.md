@@ -161,9 +161,9 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `style.learn` | `src/components/style/StyleLearningPanel.tsx:77` |
 | `world-group.expand` | `src/components/world-group/WorldGroupDetail.tsx:98` |
 | `world-group.suggest` | `src/components/world-group/WorldGroupOverview.tsx:57` |
-| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:255`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:288`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:296` |
-| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:405` |
-| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:429` |
+| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:255`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:288`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:309` |
+| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:418` |
+| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:442` |
 
 ### 动态 category 调用
 
@@ -174,4 +174,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `c868077`
+生成时间基准:commit `f8768ed`

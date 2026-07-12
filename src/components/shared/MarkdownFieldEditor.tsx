@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   Bold,
   Eye,
@@ -7,9 +7,12 @@ import {
   Link,
   List,
   ListOrdered,
+  Maximize2,
+  Minimize2,
   Pencil,
   Quote,
 } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import MarkdownContent from './MarkdownContent'
 
 interface Props {
@@ -33,8 +36,15 @@ export default function MarkdownFieldEditor({
 }: Props) {
   const [mode, setMode] = useState<EditorMode>(value.trim() ? 'preview' : 'edit')
   const [draft, setDraft] = useState(value)
+  const [expanded, setExpanded] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
+  const draftRef = useRef(draft)
+  const valueRef = useRef(value)
+  const onChangeRef = useRef(onChange)
+  draftRef.current = draft
+  valueRef.current = value
+  onChangeRef.current = onChange
 
   useEffect(() => {
     if (composingRef.current || document.activeElement === textareaRef.current) return
@@ -45,9 +55,30 @@ export default function MarkdownFieldEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
-  const commit = () => {
-    if (!composingRef.current && draft !== value) onChange(draft)
-  }
+  const commit = useCallback(() => {
+    if (!composingRef.current && draftRef.current !== valueRef.current) {
+      onChangeRef.current(draftRef.current)
+    }
+  }, [])
+
+  const closeExpanded = useCallback(() => {
+    commit()
+    setExpanded(false)
+  }, [commit])
+
+  useEffect(() => {
+    if (!expanded) return
+    const previousOverflow = document.body.style.overflow
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeExpanded()
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [closeExpanded, expanded])
 
   const changeMode = (next: EditorMode) => {
     if (next === mode) return
@@ -89,28 +120,39 @@ export default function MarkdownFieldEditor({
 
   const heightClass = fill ? 'min-h-80 flex-1' : compact ? 'h-48' : 'h-72'
 
-  return (
-    <section className={`overflow-hidden rounded-lg border border-border bg-bg-surface ${fill ? 'flex min-h-80 flex-1 flex-col' : ''}`}>
+  const renderEditor = (isExpanded: boolean) => (
+    <section className={`overflow-hidden rounded-lg border border-border bg-bg-surface ${isExpanded ? 'flex min-h-0 flex-1 flex-col' : fill ? 'flex min-h-80 flex-1 flex-col' : ''}`}>
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-bg-elevated/55 px-3 py-1.5">
         <span className="text-xs font-medium text-text-secondary">{label}</span>
-        <div className="flex rounded-md border border-border bg-bg-base p-0.5" aria-label={`${label}显示模式`}>
+        <div className="flex items-center gap-1">
+          <div className="flex rounded-md border border-border bg-bg-base p-0.5" aria-label={`${label}显示模式`}>
+            <button
+              type="button"
+              onClick={() => changeMode('preview')}
+              className={`inline-flex h-7 w-8 items-center justify-center rounded transition-colors ${mode === 'preview' ? 'bg-bg-surface text-accent shadow-theme-sm' : 'text-text-muted hover:text-text-primary'}`}
+              title="预览 Markdown"
+              aria-label="预览 Markdown"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => changeMode('edit')}
+              className={`inline-flex h-7 w-8 items-center justify-center rounded transition-colors ${mode === 'edit' ? 'bg-bg-surface text-accent shadow-theme-sm' : 'text-text-muted hover:text-text-primary'}`}
+              title="编辑 Markdown"
+              aria-label="编辑 Markdown"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => changeMode('preview')}
-            className={`inline-flex h-7 w-8 items-center justify-center rounded transition-colors ${mode === 'preview' ? 'bg-bg-surface text-accent shadow-theme-sm' : 'text-text-muted hover:text-text-primary'}`}
-            title="预览 Markdown"
-            aria-label="预览 Markdown"
+            onClick={isExpanded ? closeExpanded : () => setExpanded(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+            title={isExpanded ? '还原编辑器' : '放大编辑'}
+            aria-label={isExpanded ? '还原编辑器' : '放大编辑'}
           >
-            <Eye className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => changeMode('edit')}
-            className={`inline-flex h-7 w-8 items-center justify-center rounded transition-colors ${mode === 'edit' ? 'bg-bg-surface text-accent shadow-theme-sm' : 'text-text-muted hover:text-text-primary'}`}
-            title="编辑 Markdown"
-            aria-label="编辑 Markdown"
-          >
-            <Pencil className="h-3.5 w-3.5" />
+            {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
         </div>
       </div>
@@ -128,7 +170,7 @@ export default function MarkdownFieldEditor({
         </div>
       )}
 
-      <div className={`${heightClass} min-h-0 overflow-y-auto overscroll-contain`}>
+      <div className={`${isExpanded ? 'min-h-0 flex-1' : heightClass} min-h-0 overflow-y-auto overscroll-contain`}>
         {mode === 'preview' ? (
           draft.trim() ? (
             <div
@@ -178,6 +220,28 @@ export default function MarkdownFieldEditor({
         )}
       </div>
     </section>
+  )
+
+  return (
+    <>
+      {renderEditor(false)}
+      {expanded && createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${label}放大编辑`}
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeExpanded()
+          }}
+        >
+          <div className="flex h-[min(900px,94vh)] w-full max-w-6xl min-h-0 flex-col">
+            {renderEditor(true)}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 

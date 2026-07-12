@@ -135,8 +135,8 @@ export default function WorldviewOriginPanel({ project }: Props) {
         </p>
         <div className="mt-3 max-w-xl">
           <CodexSearchBar
-            categoryKeys={['originPower', 'originDeity']}
-            onJump={(catKey) => setActive(catKey === 'originDeity' ? 'divine' : 'power')}
+            categoryKeys={['originSource', 'originPower', 'originDeity']}
+            onJump={(catKey) => setActive(catKey === 'originSource' ? 'origin' : catKey === 'originDeity' ? 'divine' : 'power')}
           />
         </div>
       </div>
@@ -180,6 +180,19 @@ export default function WorldviewOriginPanel({ project }: Props) {
               project={project}
               contextSummary={buildCtx('origin')}
               onStreamingChange={streaming => handleStreamingChange('origin', streaming)}
+              codexContent={(
+                <WorldviewCodexSection
+                  title="世界来源 · 具体词条"
+                  description="把创世来源、文明起点与关键起源事件逐条登记，并纳入 AI 生成上下文。"
+                >
+                  <CodexPanel
+                    project={project}
+                    fixedCategoryKeys={['originSource']}
+                    extractionSourceText={worldOrigin}
+                    embedded
+                  />
+                </WorldviewCodexSection>
+              )}
             />
           </div>
 

@@ -28,6 +28,7 @@ import type { Project } from '../../lib/types'
 import type { HistoricalTimelineEvent, HistoricalKeyword } from '../../lib/types/history'
 import { db } from '../../lib/db/schema'
 import { useDialog } from '../shared/Dialog'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 
 interface Props {
   project: Project
@@ -516,32 +517,22 @@ export default function WorldRulesPanel({ project }: Props) {
               )}
 
               {/* 📜 取自真实 */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  📜 取自真实（历史考据 / 现实原型）
-                </label>
-                <textarea
-                  value={currentEntry.historicalAnchors}
-                  onChange={e => handleFieldChange('historicalAnchors', e.target.value)}
-                  placeholder="这个维度中有哪些内容是取自真实历史或现实的？例如：使用唐朝开元年间真实官制三省六部"
-                  rows={5}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-                />
-              </div>
+              <MarkdownFieldEditor
+                value={currentEntry.historicalAnchors}
+                onChange={value => { void handleFieldChange('historicalAnchors', value) }}
+                placeholder="这个维度中有哪些内容是取自真实历史或现实的？例如：使用唐朝开元年间真实官制三省六部"
+                label="📜 取自真实（历史考据 / 现实原型）"
+                compact
+              />
 
               {/* ✨ 架空改造 */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  ✨ 架空改造（虚构 / 改编 / 原创设定）
-                </label>
-                <textarea
-                  value={currentEntry.fictionalAdaptations}
-                  onChange={e => handleFieldChange('fictionalAdaptations', e.target.value)}
-                  placeholder="这个维度中有哪些内容是虚构或改编的？例如：在真实官制基础上增设灵修院，专管修士事务"
-                  rows={5}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-                />
-              </div>
+              <MarkdownFieldEditor
+                value={currentEntry.fictionalAdaptations}
+                onChange={value => { void handleFieldChange('fictionalAdaptations', value) }}
+                placeholder="这个维度中有哪些内容是虚构或改编的？例如：在真实官制基础上增设灵修院，专管修士事务"
+                label="✨ 架空改造（虚构 / 改编 / 原创设定）"
+                compact
+              />
 
               {/* ⚖️ 冲突优先级 */}
               <div>
@@ -581,18 +572,13 @@ export default function WorldRulesPanel({ project }: Props) {
       </div>
 
       {/* 全局补充说明 */}
-      <div className="border border-border rounded-xl p-4 bg-bg-base">
-        <label className="block text-sm font-medium text-text-secondary mb-1.5">
-          📝 全局补充说明（对 AI 的额外约束，适用于所有维度）
-        </label>
-        <textarea
-          value={profile.globalNote || ''}
-          onChange={e => updateGlobalNote(e.target.value)}
-          placeholder="例如：本作以唐代为蓝本但加入仙侠元素，凡是涉及朝堂制度的一律遵循史实，力量体系完全虚构。"
-          rows={3}
-          className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-        />
-      </div>
+      <MarkdownFieldEditor
+        value={profile.globalNote || ''}
+        onChange={value => { void updateGlobalNote(value) }}
+        placeholder="例如：本作以唐代为蓝本但加入仙侠元素，凡是涉及朝堂制度的一律遵循史实，力量体系完全虚构。"
+        label="📝 全局补充说明（对 AI 的额外约束，适用于所有维度）"
+        compact
+      />
 
       {/* 预览面板 */}
       {showPreview && (

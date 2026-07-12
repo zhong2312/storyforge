@@ -1,13 +1,26 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import MarkdownFieldEditor from '../../src/components/shared/MarkdownFieldEditor'
 import WorldviewEditorTabs from '../../src/components/shared/WorldviewEditorTabs'
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
 
 describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文', () => {
+  const containers: HTMLDivElement[] = []
+
+  beforeAll(() => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  })
+
+  afterEach(() => {
+    containers.splice(0).forEach(container => container.remove())
+    document.body.style.overflow = ''
+  })
+
   it('默认渲染 Markdown 预览并限制正文区域独立滚动', () => {
     const html = renderToStaticMarkup(
       <MarkdownFieldEditor
@@ -23,6 +36,41 @@ describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文
     expect(html).toContain('<h2')
     expect(html).toContain('<table')
     expect(html).toContain('aria-label="编辑 Markdown"')
+    expect(html).toContain('aria-label="放大编辑"')
+  })
+
+  it('放大编辑器与原编辑器共享草稿，关闭弹窗时保存', async () => {
+    const onChange = vi.fn()
+    const container = document.createElement('div')
+    containers.push(container)
+    document.body.append(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MarkdownFieldEditor value="" onChange={onChange} label="测试正文" />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="放大编辑"]')?.click()
+    })
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="测试正文放大编辑"]')
+    expect(dialog).toBeTruthy()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    const textarea = dialog?.querySelector<HTMLTextAreaElement>('textarea')
+    expect(textarea).toBeTruthy()
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      valueSetter?.call(textarea, '## 放大后的设定')
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      dialog?.querySelector<HTMLButtonElement>('[aria-label="还原编辑器"]')?.click()
+    })
+
+    expect(document.querySelector('[role="dialog"][aria-label="测试正文放大编辑"]')).toBeNull()
+    expect(onChange).toHaveBeenLastCalledWith('## 放大后的设定')
+    await act(async () => root.unmount())
   })
 
   it('世界观正文与词条使用页签，正文支持填满剩余高度', () => {
@@ -70,5 +118,24 @@ describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文
     expect(codex).toContain('label="详细描述"')
     expect(codex).toContain('label="Markdown 内容"')
     expect(codex).not.toContain('<CTextarea')
+  })
+
+  it('真实与幻想的全部长文本字段使用 Markdown 编辑器', () => {
+    const rules = source('src/components/worldview/WorldRulesPanel.tsx')
+    expect(rules.match(/<MarkdownFieldEditor/g)).toHaveLength(3)
+    expect(rules).toContain('currentEntry.historicalAnchors')
+    expect(rules).toContain('currentEntry.fictionalAdaptations')
+    expect(rules).toContain('profile.globalNote')
+    expect(rules).not.toContain('<textarea')
+  })
+
+  it('世界来源接入独立词条分类并显示正文/词条页签', () => {
+    const origin = source('src/components/worldview/WorldviewOriginPanel.tsx')
+    const codex = source('src/lib/types/codex.ts')
+    expect(origin).toContain("categoryKeys={['originSource', 'originPower', 'originDeity']}")
+    expect(origin).toContain("fixedCategoryKeys={['originSource']}")
+    expect(origin).toContain('title="世界来源 · 具体词条"')
+    expect(codex).toContain("| 'originSource' | 'originPower' | 'originDeity'")
+    expect(codex).toContain("builtInKey: 'originSource', name: '世界来源'")
   })
 })
