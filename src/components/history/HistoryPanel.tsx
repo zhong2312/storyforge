@@ -7,16 +7,11 @@ import {
 import { useHistoryStore } from '../../stores/project-singletons'
 import { useHistoricalStore } from '../../stores/historical'
 import { useChapterStore } from '../../stores/chapter'
-import { useWorldviewStore } from '../../stores/worldview'
 import { useWorldGroupStore } from '../../stores/world-group'
-import { usePromptStore } from '../../stores/prompt'
-import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
-import { renderPrompt } from '../../lib/ai/prompt-engine'
 import type { Project, HistoricalTimelineEvent, HistoricalEra, HistoricalKeyword, HistoricalKeywordCategory } from '../../lib/types'
 import { HISTORICAL_ERA_LABELS, KEYWORD_CATEGORY_LABELS } from '../../lib/types/history'
-import AIStreamOutput from '../shared/AIStreamOutput'
 import { useDialog } from '../shared/Dialog'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 interface Props {
   project: Project
@@ -80,64 +75,9 @@ export default function HistoryPanel({ project }: Props) {
   // ── UI 状态 ──
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [expandedKeywordId, setExpandedKeywordId] = useState<number | null>(null)
-  // 双 agent 各自维护一个流：consult = 历史考据；storm = 头脑风暴
-  const [consultEventId, setConsultEventId] = useState<number | null>(null)
-  const [stormEventId, setStormEventId] = useState<number | null>(null)
-  const [consultKeywordId, setConsultKeywordId] = useState<number | null>(null)
-  const [stormKeywordId, setStormKeywordId] = useState<number | null>(null)
-
   // ── 筛选状态 ──
   const [filterCategory, setFilterCategory] = useState<HistoricalKeywordCategory | 'all'>('all')
   const [filterEra, setFilterEra] = useState<HistoricalEra | 'all'>('all')
-
-  const historySessionScope = scopeGroupId ?? 'project'
-  const consultAI = useAIStream(createAISessionKey(project.id!, 'history.consult', historySessionScope))
-  const stormAI = useAIStream(createAISessionKey(project.id!, 'history.storm', historySessionScope))
-  const { worldview, loadAll: loadWorldview } = useWorldviewStore()
-
-  useEffect(() => {
-    const restoreTarget = (
-      operation: string | null,
-      setEventId: (id: number | null) => void,
-      setKeywordId: (id: number | null) => void,
-    ) => {
-      if (!operation) return
-      const [kind, rawId] = operation.split(':')
-      const id = Number(rawId)
-      if (!Number.isFinite(id)) return
-      if (kind === 'event') {
-        setEventId(id)
-        setKeywordId(null)
-      } else if (kind === 'keyword') {
-        setKeywordId(id)
-        setEventId(null)
-      }
-    }
-    restoreTarget(consultAI.operation, setConsultEventId, setConsultKeywordId)
-    restoreTarget(stormAI.operation, setStormEventId, setStormKeywordId)
-  }, [consultAI.operation, stormAI.operation])
-
-  // 多世界：让 worldview store 跟随当前世界标签，保证历史 AI 考证读到对的世界设定
-  useEffect(() => {
-    if (isMW) loadWorldview(project.id!, scopeGroupId)
-  }, [isMW, scopeGroupId, project.id, loadWorldview])
-
-  /** 从世界观 store 提取与历史相关的上下文，供 AI 参考 */
-  const getWorldContext = (): string => {
-    if (!worldview) return ''
-    const parts: string[] = []
-    if (worldview.worldOrigin)    parts.push(`【世界来源】${worldview.worldOrigin.slice(0, 200)}`)
-    if (worldview.powerHierarchy) parts.push(`【力量体系】${worldview.powerHierarchy.slice(0, 150)}`)
-    if (worldview.historyLine)    parts.push(`【世界历史线】${worldview.historyLine.slice(0, 200)}`)
-    if (worldview.worldEvents)    parts.push(`【世界大事记】${worldview.worldEvents.slice(0, 200)}`)
-    if (worldview.races)          parts.push(`【种族与民族】${worldview.races.slice(0, 100)}`)
-    if (worldview.factionLayout)  parts.push(`【势力分布】${worldview.factionLayout.slice(0, 100)}`)
-    if (overview)                 parts.push(`【历史总述】${overview.slice(0, 200)}`)
-    if (eraSystem)                parts.push(`【纪年体系】${eraSystem.slice(0, 150)}`)
-    return parts.length
-      ? `\n\n=== 本项目世界观设定（请结合这些背景进行分析）===\n${parts.join('\n')}`
-      : ''
-  }
 
   // 事件/关键词/章节按项目整体加载（一次），在组件内按世界过滤
   useEffect(() => {
@@ -204,146 +144,97 @@ export default function HistoryPanel({ project }: Props) {
     setExpandedKeywordId(newId)
   }
 
+  const dispatchHistoryAgent = (
+    record: HistoricalTimelineEvent | HistoricalKeyword,
+    target: 'historicalTimelineEvents' | 'historicalKeywords',
+    kind: 'consult' | 'storm',
+  ) => {
+    if (!record.id) return
+    const isConsult = kind === 'consult'
+    const resultField = isConsult ? 'aiConsult' : 'aiBrainstorm'
+    const itemName = 'title' in record ? record.title : record.keyword
+    const actionLabel = isConsult ? '历史考据' : '头脑风暴'
+    const eraLabel = HISTORICAL_ERA_LABELS[record.era as HistoricalEra] || record.era
+    const itemMeta = 'title' in record
+      ? [
+          `- 标题：${record.title}`,
+          `- 历史时期：${eraLabel}`,
+          `- 数字化年份：${record.year}`,
+          `- 时间描述：${record.date}`,
+          `- 是否真实史实：${record.isHistorical ? '是' : '否（虚构/架空）'}`,
+          record.customTimeRange ? `- 时间范围：${record.customTimeRange}` : '',
+          record.location ? `- 地点：${record.location}` : '',
+          record.source ? `- 史料来源：${record.source}` : '',
+        ].filter(Boolean).join('\n')
+      : [
+          `- 关键词：${record.keyword}`,
+          `- 分类：${KEYWORD_CATEGORY_LABELS[record.category] || record.category}`,
+          `- 适用历史时期：${eraLabel}`,
+          record.customTimeRange ? `- 时间范围：${record.customTimeRange}` : '',
+          record.location ? `- 地点：${record.location}` : '',
+        ].filter(Boolean).join('\n')
+    dispatchAgentIntent({
+      type: `history.${kind}`,
+      title: `Agent ${actionLabel} · ${itemName}`,
+      promptModuleKey: isConsult ? 'history.consult' : 'history.storm',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'history',
+        field: resultField,
+        worldGroupId: record.worldGroupId ?? scopeGroupId,
+        entityId: record.id,
+      },
+      instruction: [
+        `针对${'title' in record ? '历史事件' : '历史关键词'}“${itemName}”完成${actionLabel}，并生成可直接保存的正式 Markdown 结果。`,
+        '先读取 historical、worldview、worldRules、storyCore 和 codex，结合作者的条目定稿、概念说明及本功能补充指令。',
+        `最终调用 storyforge.change.propose，使用 target=${target}、mode=replace、recordId=${record.id}，data 只能包含 ${resultField}。`,
+        `不要只给建议后停止，必须把完整${actionLabel}结果放入审批方案。`,
+      ].join('\n'),
+      completionRequirement: {
+        kind: 'change-proposal',
+        target,
+        mode: 'replace',
+        recordId: record.id,
+        requiredFields: [resultField],
+        requiredDataPaths: [[resultField]],
+        requiredContextSources: ['historical', 'worldview', 'worldRules', 'storyCore', 'codex'],
+        deliverableKind: 'structured-record',
+      },
+      payload: {
+        record,
+        itemMeta,
+        finalText: record.description || '（条目定稿暂未填写）',
+        conceptNote: record.conceptNote || '',
+        consultPrompt: isConsult ? record.consultPrompt || '' : '',
+        stormPrompt: isConsult ? '' : record.stormPrompt || '',
+        worldContext: '以项目工具读取到的世界观、历史、真实与幻想规则及词条为准。',
+        resultField,
+        action: actionLabel,
+        historyOverview: overview,
+        eraSystem,
+      },
+    })
+  }
+
   // ── AI 历史考据（consult agent）——
   // System / user prompt 来自「提示词库」history.consult 模板，作者在提示词库可编辑。
   const handleAIConsult = (evt: HistoricalTimelineEvent) => {
-    if (!evt.id) return
-    setConsultEventId(evt.id)
-    setConsultKeywordId(null)
-    consultAI.setOperation(`event:${evt.id}`)
-
-    const eraLabel = HISTORICAL_ERA_LABELS[evt.era as HistoricalEra] || evt.era
-    const itemMeta = [
-      `- 标题：${evt.title}`,
-      `- 历史时期：${eraLabel}`,
-      `- 数字化年份：${evt.year} (公元 ${evt.year > 0 ? evt.year : '前 ' + Math.abs(evt.year)} 年)`,
-      `- 时间描述：${evt.date}`,
-      evt.customTimeRange ? `- 具体时间范围/区间：${evt.customTimeRange}` : '',
-      evt.location ? `- 地理位置/范围：${evt.location}` : '',
-      `- 是否标记为真实史实：${evt.isHistorical ? '是' : '否（作者已声明为虚构 / 架空）'}`,
-      `- 现有史料来源：${evt.source || '无'}`,
-    ].filter(Boolean).join('\n')
-
-    const tpl = usePromptStore.getState().getActive('history.consult')
-    const { messages } = renderPrompt(tpl, {
-      itemMeta,
-      finalText: evt.description || '（条目定稿暂未填写）',
-      conceptNote: (evt.conceptNote || '').trim(),
-      consultPrompt: (evt.consultPrompt || '').trim(),
-      worldContext: getWorldContext().replace(/^\n\n=== [^\n]+ ===\n/, ''),
-    })
-
-    consultAI.start(messages, undefined, { category: 'history.consult', projectId: project.id! })
+    dispatchHistoryAgent(evt, 'historicalTimelineEvents', 'consult')
   }
 
   // ── AI 头脑风暴（storm agent）——
   const handleAIStorm = (evt: HistoricalTimelineEvent) => {
-    if (!evt.id) return
-    setStormEventId(evt.id)
-    setStormKeywordId(null)
-    stormAI.setOperation(`event:${evt.id}`)
-
-    const eraLabel = HISTORICAL_ERA_LABELS[evt.era as HistoricalEra] || evt.era
-    const itemMeta = [
-      `- 标题：${evt.title}`,
-      `- 历史时期：${eraLabel}`,
-      `- 数字化年份：${evt.year} (公元 ${evt.year > 0 ? evt.year : '前 ' + Math.abs(evt.year)} 年)`,
-      `- 时间描述：${evt.date}`,
-      evt.customTimeRange ? `- 具体时间范围/区间：${evt.customTimeRange}` : '',
-      evt.location ? `- 地理位置/范围：${evt.location}` : '',
-      `- 作者标记：${evt.isHistorical ? '基于真实史实' : '虚构 / 架空，发散自由度更高'}`,
-    ].filter(Boolean).join('\n')
-
-    const tpl = usePromptStore.getState().getActive('history.storm')
-    const { messages } = renderPrompt(tpl, {
-      itemMeta,
-      finalText: evt.description || '（条目定稿暂未填写）',
-      conceptNote: (evt.conceptNote || '').trim(),
-      stormPrompt: (evt.stormPrompt || '').trim(),
-      worldContext: getWorldContext().replace(/^\n\n=== [^\n]+ ===\n/, ''),
-    })
-
-    stormAI.start(messages, undefined, { category: 'history.storm', projectId: project.id! })
+    dispatchHistoryAgent(evt, 'historicalTimelineEvents', 'storm')
   }
 
   // ── AI 关键词历史考据 ──
   const handleAIKeywordConsult = (kw: HistoricalKeyword) => {
-    if (!kw.id) return
-    setConsultKeywordId(kw.id)
-    setConsultEventId(null)
-    consultAI.setOperation(`keyword:${kw.id}`)
-
-    const eraLabel = HISTORICAL_ERA_LABELS[kw.era as HistoricalEra] || kw.era
-    const categoryLabel = KEYWORD_CATEGORY_LABELS[kw.category as HistoricalKeywordCategory] || kw.category
-    const itemMeta = [
-      `- 关键词：${kw.keyword}`,
-      `- 分类：${categoryLabel}`,
-      `- 适用历史时期：${eraLabel}`,
-      kw.customTimeRange ? `- 具体时间范围/区间：${kw.customTimeRange}` : '',
-      kw.location ? `- 地理位置/范围：${kw.location}` : '',
-    ].filter(Boolean).join('\n')
-
-    const tpl = usePromptStore.getState().getActive('history.consult')
-    const { messages } = renderPrompt(tpl, {
-      itemMeta,
-      finalText: kw.description || '（条目定稿暂未填写）',
-      conceptNote: (kw.conceptNote || '').trim(),
-      consultPrompt: (kw.consultPrompt || '').trim(),
-      worldContext: getWorldContext().replace(/^\n\n=== [^\n]+ ===\n/, ''),
-    })
-
-    consultAI.start(messages, undefined, { category: 'history.consult', projectId: project.id! })
+    dispatchHistoryAgent(kw, 'historicalKeywords', 'consult')
   }
 
   // ── AI 关键词头脑风暴 ──
   const handleAIKeywordStorm = (kw: HistoricalKeyword) => {
-    if (!kw.id) return
-    setStormKeywordId(kw.id)
-    setStormEventId(null)
-    stormAI.setOperation(`keyword:${kw.id}`)
-
-    const eraLabel = HISTORICAL_ERA_LABELS[kw.era as HistoricalEra] || kw.era
-    const categoryLabel = KEYWORD_CATEGORY_LABELS[kw.category as HistoricalKeywordCategory] || kw.category
-    const itemMeta = [
-      `- 关键词：${kw.keyword}`,
-      `- 分类：${categoryLabel}`,
-      `- 适用历史时期：${eraLabel}`,
-      kw.customTimeRange ? `- 具体时间范围/区间：${kw.customTimeRange}` : '',
-      kw.location ? `- 地理位置/范围：${kw.location}` : '',
-    ].filter(Boolean).join('\n')
-
-    const tpl = usePromptStore.getState().getActive('history.storm')
-    const { messages } = renderPrompt(tpl, {
-      itemMeta,
-      finalText: kw.description || '（条目定稿暂未填写）',
-      conceptNote: (kw.conceptNote || '').trim(),
-      stormPrompt: (kw.stormPrompt || '').trim(),
-      worldContext: getWorldContext().replace(/^\n\n=== [^\n]+ ===\n/, ''),
-    })
-
-    stormAI.start(messages, undefined, { category: 'history.storm', projectId: project.id! })
-  }
-
-  const handleAcceptConsult = (text: string) => {
-    if (consultEventId) {
-      updateEvent(consultEventId, { aiConsult: text })
-      setConsultEventId(null)
-    } else if (consultKeywordId) {
-      updateKeyword(consultKeywordId, { aiConsult: text })
-      setConsultKeywordId(null)
-    }
-    consultAI.reset()
-  }
-
-  const handleAcceptStorm = (text: string) => {
-    if (stormEventId) {
-      updateEvent(stormEventId, { aiBrainstorm: text })
-      setStormEventId(null)
-    } else if (stormKeywordId) {
-      updateKeyword(stormKeywordId, { aiBrainstorm: text })
-      setStormKeywordId(null)
-    }
-    stormAI.reset()
+    dispatchHistoryAgent(kw, 'historicalKeywords', 'storm')
   }
 
   // ── 过滤关键词 ──
@@ -367,7 +258,7 @@ export default function HistoryPanel({ project }: Props) {
             <div>
               <h1 className="text-xl font-semibold text-text-primary">📜 历史年表与时间线</h1>
               <p className="text-xs text-text-muted mt-0.5">
-                管理真实历史背景或架空历史事件，支持 AI 历史考证与细节头脑风暴。
+                管理真实历史背景或架空历史事件，支持 Agent 历史考证与细节头脑风暴。
               </p>
             </div>
           </div>
@@ -788,20 +679,20 @@ export default function HistoryPanel({ project }: Props) {
                                 <button
                                   type="button"
                                   onClick={() => handleAIConsult(evt)}
-                                  disabled={consultAI.isStreaming || !canEdit}
+                                  disabled={!canEdit}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500/20 transition-colors disabled:opacity-50"
                                 >
                                   <ShieldCheck className="w-3.5 h-3.5" />
-                                  AI 历史考据
+                                  Agent 历史考据
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleAIStorm(evt)}
-                                  disabled={stormAI.isStreaming || !canEdit}
+                                  disabled={!canEdit}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 text-purple-400 text-xs font-medium rounded-lg hover:bg-purple-500/20 transition-colors disabled:opacity-50"
                                 >
                                   <Sparkles className="w-3.5 h-3.5" />
-                                  AI 头脑风暴
+                                  Agent 头脑风暴
                                 </button>
                               </div>
 
@@ -817,49 +708,13 @@ export default function HistoryPanel({ project }: Props) {
                               )}
                             </div>
 
-                            {/* 历史考据 agent 的输出窗 */}
-                            {consultEventId === evt.id && (consultAI.output || consultAI.isStreaming || consultAI.error) && (
-                              <div className="mt-3">
-                                <p className="text-[10px] text-blue-400 mb-1 flex items-center gap-1">
-                                  <ShieldCheck className="w-3 h-3" /> 历史考据 agent
-                                </p>
-                                <AIStreamOutput
-                                  output={consultAI.output}
-                                  isStreaming={consultAI.isStreaming}
-                                  error={consultAI.error}
-                                  tokenUsage={consultAI.tokenUsage}
-                                  onStop={consultAI.stop}
-                                  onAccept={handleAcceptConsult}
-                                  onRetry={() => handleAIConsult(evt)}
-                                />
-                              </div>
-                            )}
-
-                            {/* 头脑风暴 agent 的输出窗 */}
-                            {stormEventId === evt.id && (stormAI.output || stormAI.isStreaming || stormAI.error) && (
-                              <div className="mt-3">
-                                <p className="text-[10px] text-purple-400 mb-1 flex items-center gap-1">
-                                  <Sparkles className="w-3 h-3" /> 头脑风暴 agent
-                                </p>
-                                <AIStreamOutput
-                                  output={stormAI.output}
-                                  isStreaming={stormAI.isStreaming}
-                                  error={stormAI.error}
-                                  tokenUsage={stormAI.tokenUsage}
-                                  onStop={stormAI.stop}
-                                  onAccept={handleAcceptStorm}
-                                  onRetry={() => handleAIStorm(evt)}
-                                />
-                              </div>
-                            )}
-
                             {/* 已保存的「历史考据」结果 */}
-                            {evt.aiConsult && consultEventId !== evt.id && (
+                            {evt.aiConsult && (
                               <div className="mt-3 bg-bg-base border border-blue-400/30 rounded-lg p-3 space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-medium text-blue-400 flex items-center gap-1">
                                     <ShieldCheck className="w-3 h-3" />
-                                    AI 历史考据结果
+                                    Agent 历史考据结果
                                   </span>
                                   {canEdit && (
                                     <button
@@ -878,12 +733,12 @@ export default function HistoryPanel({ project }: Props) {
                             )}
 
                             {/* 已保存的「头脑风暴」结果 */}
-                            {evt.aiBrainstorm && stormEventId !== evt.id && (
+                            {evt.aiBrainstorm && (
                               <div className="mt-3 bg-bg-base border border-purple-400/30 rounded-lg p-3 space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-medium text-purple-400 flex items-center gap-1">
                                     <Sparkles className="w-3 h-3" />
-                                    AI 头脑风暴结果
+                                    Agent 头脑风暴结果
                                   </span>
                                   {canEdit && (
                                     <button
@@ -1220,20 +1075,20 @@ export default function HistoryPanel({ project }: Props) {
                               <button
                                 type="button"
                                 onClick={() => handleAIKeywordConsult(kw)}
-                                disabled={consultAI.isStreaming || !canEdit}
+                                disabled={!canEdit}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500/20 transition-colors disabled:opacity-50"
                               >
                                 <ShieldCheck className="w-3.5 h-3.5" />
-                                AI 历史考据
+                                Agent 历史考据
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleAIKeywordStorm(kw)}
-                                disabled={stormAI.isStreaming || !canEdit}
+                                disabled={!canEdit}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 text-purple-400 text-xs font-medium rounded-lg hover:bg-purple-500/20 transition-colors disabled:opacity-50"
                               >
                                 <Sparkles className="w-3.5 h-3.5" />
-                                AI 头脑风暴
+                                Agent 头脑风暴
                               </button>
                             </div>
 
@@ -1249,49 +1104,13 @@ export default function HistoryPanel({ project }: Props) {
                             )}
                           </div>
 
-                          {/* 历史考据 agent 的输出窗 */}
-                          {consultKeywordId === kw.id && (consultAI.output || consultAI.isStreaming || consultAI.error) && (
-                            <div className="mt-3">
-                              <p className="text-[10px] text-blue-400 mb-1 flex items-center gap-1">
-                                <ShieldCheck className="w-3 h-3" /> 历史考据 agent
-                              </p>
-                              <AIStreamOutput
-                                output={consultAI.output}
-                                isStreaming={consultAI.isStreaming}
-                                error={consultAI.error}
-                                tokenUsage={consultAI.tokenUsage}
-                                onStop={consultAI.stop}
-                                onAccept={handleAcceptConsult}
-                                onRetry={() => handleAIKeywordConsult(kw)}
-                              />
-                            </div>
-                          )}
-
-                          {/* 头脑风暴 agent 的输出窗 */}
-                          {stormKeywordId === kw.id && (stormAI.output || stormAI.isStreaming || stormAI.error) && (
-                            <div className="mt-3">
-                              <p className="text-[10px] text-purple-400 mb-1 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3" /> 头脑风暴 agent
-                              </p>
-                              <AIStreamOutput
-                                output={stormAI.output}
-                                isStreaming={stormAI.isStreaming}
-                                error={stormAI.error}
-                                tokenUsage={stormAI.tokenUsage}
-                                onStop={stormAI.stop}
-                                onAccept={handleAcceptStorm}
-                                onRetry={() => handleAIKeywordStorm(kw)}
-                              />
-                            </div>
-                          )}
-
                           {/* 已保存的「历史考据」结果 */}
-                          {kw.aiConsult && consultKeywordId !== kw.id && (
+                          {kw.aiConsult && (
                             <div className="mt-3 bg-bg-base border border-blue-400/30 rounded-lg p-3 space-y-1.5">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-medium text-blue-400 flex items-center gap-1">
                                   <ShieldCheck className="w-3 h-3" />
-                                  AI 历史考据结果
+                                  Agent 历史考据结果
                                 </span>
                                 {canEdit && (
                                   <button
@@ -1310,7 +1129,7 @@ export default function HistoryPanel({ project }: Props) {
                           )}
 
                           {/* 已保存的「头脑风暴」结果 */}
-                          {kw.aiBrainstorm && stormKeywordId !== kw.id && (
+                          {kw.aiBrainstorm && (
                             <div className="mt-3 bg-bg-base border border-purple-400/30 rounded-lg p-3 space-y-1.5">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-medium text-purple-400 flex items-center gap-1">

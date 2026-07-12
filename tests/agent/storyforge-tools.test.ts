@@ -92,6 +92,43 @@ describe('registry-driven StoryForge tools', () => {
     expect(output.text).toContain('封存潮汐神印')
   })
 
+  it('rag.search exact mode paginates every full-project match instead of truncating at topK', async () => {
+    for (let index = 1; index <= 25; index += 1) {
+      await db.characters.add({
+        projectId: 1,
+        name: `巡夜人${index}`,
+        role: 'supporting',
+        roleWeight: 'secondary',
+        moralAxis: 'neutral',
+        orderAxis: 'lawful',
+        ending: `共同持有精确检索暗号-赤潮-${index}`,
+        createdAt: 100 + index,
+        updatedAt: 100 + index,
+      } as never)
+    }
+
+    const first = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: 0, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+    const second = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: first.nextOffset, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+    const third = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: second.nextOffset, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+
+    expect(first).toMatchObject({ hitCount: 10, totalHits: 25, offset: 0, nextOffset: 10 })
+    expect(second).toMatchObject({ hitCount: 10, totalHits: 25, offset: 10, nextOffset: 20 })
+    expect(third).toMatchObject({ hitCount: 5, totalHits: 25, offset: 20, nextOffset: null })
+    expect(`${first.text}\n${second.text}\n${third.text}`).toContain('[characters#')
+  })
+
   it('catalog derives readable sources and writable settings from registries', async () => {
     const output = await registry.execute(
       'storyforge.settings.catalog',

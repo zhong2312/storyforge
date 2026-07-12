@@ -50,6 +50,20 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(dock).toContain('agentScopeFromIntent(intent)')
   })
 
+  it('未配置模型时所有公共 AI 入口统一跳转设置页', () => {
+    const workspace = source('src/pages/WorkspacePage.tsx')
+    const dock = source('src/components/agent/AgentDock.tsx')
+    const stream = source('src/hooks/useAIStream.ts')
+    const readiness = source('src/lib/ai/config-readiness.ts')
+
+    expect(workspace).toContain('subscribeAIConfigRequired')
+    expect(workspace).toContain("setActiveModule('settings')")
+    expect(workspace).toContain('intent.promptModuleKey ?? intent.type')
+    expect(dock).toContain('requestAIConfigSetup(config)')
+    expect(stream).toContain('requestAIConfigSetup(config)')
+    expect(readiness).toContain("'storyforge:ai-config-required'")
+  })
+
   it('Agent Dock 提供功能分组会话历史与逐阶段输出', () => {
     const dock = source('src/components/agent/AgentDock.tsx')
     const conversations = source('src/lib/agent/conversations/agent-conversation-store.ts')
@@ -99,5 +113,42 @@ describe('R-AGENT-INTENT · 原有功能进入右侧 Agent', () => {
     expect(supplement).toContain("mode: 'merge-diffs'")
     expect(supplement).toContain('recordId: character.id')
     expect(supplement).toContain('requiredFields: dims')
+  })
+
+  it('世界观分组的全部 AI 入口统一进入 Agent', () => {
+    const files = [
+      'src/components/worldview/WorldRulesPanel.tsx',
+      'src/components/worldview/WorldviewOriginPanel.tsx',
+      'src/components/worldview/WorldviewNaturalPanel.tsx',
+      'src/components/worldview/WorldviewHumanityPanel.tsx',
+      'src/components/history/HistoryPanel.tsx',
+      'src/components/geography/WorldMapPanel.tsx',
+      'src/components/codex/CodexPanel.tsx',
+    ]
+    const contents = files.map(source)
+
+    for (const content of contents) {
+      expect(content).not.toContain('useAIStream')
+      expect(content).not.toContain('AIStreamOutput')
+      expect(content).not.toContain('streamChat')
+    }
+
+    for (const path of [
+      'src/components/worldview/WorldRulesPanel.tsx',
+      'src/components/history/HistoryPanel.tsx',
+      'src/components/geography/WorldMapPanel.tsx',
+      'src/components/codex/CodexPanel.tsx',
+    ]) expect(source(path)).toContain('dispatchAgentIntent')
+    for (const path of [
+      'src/components/worldview/WorldviewOriginPanel.tsx',
+      'src/components/worldview/WorldviewNaturalPanel.tsx',
+      'src/components/worldview/WorldviewHumanityPanel.tsx',
+    ]) expect(source(path)).toContain('WorldviewAgentControls')
+
+    expect(source('src/components/worldview/WorldviewAgentControls.tsx')).toContain('dispatchAgentIntent')
+    expect(source('src/components/worldview/WorldviewAgentControls.tsx')).toContain("target: 'worldviews'")
+    expect(source('src/components/history/HistoryPanel.tsx')).toContain("target: 'historicalTimelineEvents' | 'historicalKeywords'")
+    expect(source('src/components/geography/WorldMapPanel.tsx')).toContain("target: 'worldNodes'")
+    expect(source('src/components/codex/CodexPanel.tsx')).toContain("target: 'codexEntries'")
   })
 })

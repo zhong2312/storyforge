@@ -1,10 +1,11 @@
 import { CTextarea } from '../shared/CompositionInput'
 import { useState } from 'react'
-import { Save, X, ChevronDown } from 'lucide-react'
+import { Save, X, ChevronDown, LoaderCircle, WandSparkles } from 'lucide-react'
 import { useProjectStore } from '../../stores/project'
 import { useWorldGroupStore } from '../../stores/world-group'
 import type { Project } from '../../lib/types'
 import { GENRE_OPTIONS } from '../../lib/types'
+import { projectInitializationProgress, useProjectInitializationStore } from '../../stores/project-initialization'
 
 // 按 group 分组
 const GENRE_GROUPS = Array.from(
@@ -18,9 +19,10 @@ const GENRE_GROUPS = Array.from(
 interface ProjectInfoPanelProps {
   project: Project
   onUpdate: (project: Project) => void
+  onOpenAIInitialization: () => void
 }
 
-export default function ProjectInfoPanel({ project, onUpdate }: ProjectInfoPanelProps) {
+export default function ProjectInfoPanel({ project, onUpdate, onOpenAIInitialization }: ProjectInfoPanelProps) {
   const { updateProject } = useProjectStore()
   const [form, setForm] = useState({
     name: project.name,
@@ -31,6 +33,9 @@ export default function ProjectInfoPanel({ project, onUpdate }: ProjectInfoPanel
   })
   const [saving, setSaving] = useState(false)
   const [showGenreDropdown, setShowGenreDropdown] = useState(false)
+  const initializationTask = useProjectInitializationStore(state => state.task)
+  const projectTask = initializationTask?.projectId === project.id ? initializationTask : null
+  const initializationProgress = projectInitializationProgress(projectTask)
 
   const handleSave = async () => {
     if (!project.id) return
@@ -68,14 +73,26 @@ export default function ProjectInfoPanel({ project, onUpdate }: ProjectInfoPanel
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-text-primary">基本信息</h2>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors text-sm font-medium"
-        >
-          <Save className="w-4 h-4" />
-          {saving ? '保存中...' : '保存'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenAIInitialization}
+            className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+          >
+            {projectTask?.status === 'running'
+              ? <LoaderCircle className="h-4 w-4 animate-spin" />
+              : <WandSparkles className="h-4 w-4" />}
+            {projectTask?.status === 'running' ? `AI 初始化 ${initializationProgress.percent}%` : 'AI 初始化'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors text-sm font-medium"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5">

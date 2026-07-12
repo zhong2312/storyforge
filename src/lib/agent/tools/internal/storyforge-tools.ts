@@ -303,20 +303,24 @@ async function resolveStorageProjectId(storage: ProjectStoragePort): Promise<num
 
 function createRagSearchTool(storage: ProjectStoragePort): StoryForgeTool<{
   query: string
+  matchMode?: 'semantic' | 'exact'
   sourceTables?: string[]
   worldGroupId?: number | null
   chapterId?: number
   topK?: number
+  offset?: number
+  limit?: number
 }, unknown> {
   const sourceTables = projectRagSourceTables()
   return {
     name: 'storyforge.rag.search',
     title: `检索全项目数据（${sourceTables.length} 个数据表）`,
-    description: '通过 PROJECT_TABLES 派生的全项目 RAG 索引检索正文、大纲、角色、设定、事实和参考资料。',
+    description: '通过 PROJECT_TABLES 派生的全项目索引检索正文、大纲、角色、设定、事实和参考资料。semantic 用于相关性召回；exact 用于不漏项的全库精确扫描，并必须按 nextOffset 分页读完。',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', minLength: 1 },
+        matchMode: { type: 'string', enum: ['semantic', 'exact'] },
         sourceTables: {
           type: 'array',
           items: { type: 'string', enum: sourceTables },
@@ -325,6 +329,8 @@ function createRagSearchTool(storage: ProjectStoragePort): StoryForgeTool<{
         worldGroupId: { oneOf: [{ type: 'number' }, { type: 'null' }] },
         chapterId: { type: 'number', minimum: 1 },
         topK: { type: 'number', minimum: 1, maximum: 20 },
+        offset: { type: 'number', minimum: 0 },
+        limit: { type: 'number', minimum: 1, maximum: 20 },
       },
       required: ['query'],
       additionalProperties: false,
@@ -332,7 +338,9 @@ function createRagSearchTool(storage: ProjectStoragePort): StoryForgeTool<{
     risk: 'read',
     availability: 'both',
     requiredScopes: ['project:read'],
-    summarizeInput: input => `RAG 检索：${input.query}`,
+    summarizeInput: input => input.matchMode === 'exact'
+      ? `精确扫描全库：${input.query}${input.offset ? `（偏移 ${input.offset}）` : ''}`
+      : `RAG 检索：${input.query}`,
     summarizeOutput: output => `已召回 ${(output as { hitCount?: number }).hitCount ?? 0} 条项目数据`,
     async execute(context, input) {
       assertStorageBinding(storage, context)
@@ -348,16 +356,26 @@ function createRagSearchTool(storage: ProjectStoragePort): StoryForgeTool<{
         chapterId,
         sourceKeys: ['ragSearch'],
         retrievalQuery: input.query,
+        retrievalMatchMode: input.matchMode ?? 'semantic',
         retrievalSourceTables: input.sourceTables,
         retrievalTopK: input.topK,
+        retrievalOffset: input.offset,
+        retrievalLimit: input.limit,
       })
       const hitCount = assembled.text
         ? (assembled.text.match(/^- \[/gm) ?? []).length
         : 0
+      const exactMeta = input.matchMode === 'exact'
+        ? parseExactSearchMeta(assembled.text)
+        : null
       return {
         query: input.query,
+        matchMode: input.matchMode ?? 'semantic',
         sourceTables: input.sourceTables ?? sourceTables,
-        hitCount,
+        hitCount: exactMeta?.returned ?? hitCount,
+        totalHits: exactMeta?.total ?? hitCount,
+        offset: exactMeta?.offset ?? 0,
+        nextOffset: exactMeta?.nextOffset ?? null,
         text: assembled.text,
         included: assembled.included,
         resolvedScope: { worldGroupId, chapterId },
@@ -477,6 +495,22 @@ function assertWorldRulesProposal(
     if (priority != null && !allowedPriorities.has(String(priority).trim())) {
       throw new Error(`[storyforge.change.propose] entries.${nodeId}.priority 必须是 historical、balanced 或 fictional`)
     }
+  }
+}
+
+function parseExactSearchMeta(text: string): {
+  total: number
+  offset: number
+  returned: number
+  nextOffset: number | null
+} | null {
+  const match = text.match(/total=(\d+)｜offset=(\d+)｜returned=(\d+)｜next=(\d+|end)/)
+  if (!match) return null
+  return {
+    total: Number(match[1]),
+    offset: Number(match[2]),
+    returned: Number(match[3]),
+    nextOffset: match[4] === 'end' ? null : Number(match[4]),
   }
 }
 

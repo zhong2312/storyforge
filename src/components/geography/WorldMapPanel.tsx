@@ -5,20 +5,11 @@
 
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { Sparkles, Loader2, RefreshCw, Map, Box, Globe } from 'lucide-react'
-import { useGeographyStore } from '../../stores/project-singletons'
-import { useWorldviewStore } from '../../stores/worldview'
 import { useWorldNodeStore } from '../../stores/world-node'
 import { useWorldGroupStore } from '../../stores/world-group'
-import { useAIStream } from '../../hooks/useAIStream'
-import { createAISessionKey } from '../../stores/ai-generation-session'
-import { db } from '../../lib/db/schema'
 import WorldGroupSwitcher from '../world-group/WorldGroupSwitcher'
-import {
-  buildVoronoiMapPrompt,
-  parseVoronoiMapConfig,
-} from '../../lib/ai/adapters/voronoi-map-adapter'
-import { buildCodexContext } from '../../lib/ai/codex-context'
-import type { Project, Location, Worldview, Geography } from '../../lib/types'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
+import type { Project } from '../../lib/types'
 import type { MapGenConfig } from '../../lib/world-map/engine'
 import WorldTreeSidebar from './WorldTreeSidebar'
 
@@ -32,21 +23,13 @@ interface Props {
 type ViewMode = '3d' | 'voronoi'
 
 export default function WorldMapPanel({ project }: Props) {
-  const { geography } = useGeographyStore()
-  const { worldview } = useWorldviewStore()
-  const { nodes, activeWorldId, loadNodes, ensureRootWorld, updateNode } = useWorldNodeStore()
+  const { nodes, activeWorldId, loadNodes, ensureRootWorld } = useWorldNodeStore()
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
-  const ai = useAIStream(createAISessionKey(
-    project.id!,
-    'geography.world-map',
-    activeWorldId ?? activeGroupId ?? 'root',
-  ))
 
   const [viewMode, setViewMode] = useState<ViewMode>('voronoi')
 
   // 当前活跃世界的 Voronoi 配置
   const [voronoiConfig, setVoronoiConfig] = useState<Partial<MapGenConfig> | undefined>(undefined)
-  const [parseError, setParseError] = useState<string | null>(null)
 
   // 多世界模式下世界树按世界组隔离；单世界传 null 走原逻辑
   const scopedGroupId = project.enableMultiWorld ? activeGroupId : null
@@ -78,52 +61,47 @@ export default function WorldMapPanel({ project }: Props) {
   }, [activeNode])
 
   // ── AI 生成地图 ─────────────────────────────────────────
-  const handleGenerate = async () => {
-    // 多世界模式：读取当前世界组的世界观 + 地理（store 里的可能不是本世界组的）
-    // 单世界模式：直接用 store（同原逻辑）
-    let wv: Partial<Worldview> | null = worldview
-    let geo: Geography | undefined = geography ?? undefined
-    if (project.enableMultiWorld && scopedGroupId != null) {
-      const allWv = await db.worldviews.where('projectId').equals(project.id!).toArray()
-      wv = allWv.find(w => w.worldGroupId === scopedGroupId) ?? null
-      const allGeo = await db.geographies.where('projectId').equals(project.id!).toArray()
-      geo = allGeo.find(g => g.worldGroupId === scopedGroupId)
-    }
-
-    const overview = geo?.overview || ''
-    let locations: Location[] = []
-    try {
-      locations = JSON.parse(geo?.locations || '[]')
-    } catch { /* empty */ }
-
-    setParseError(null)
-    // 读全:把当前世界作用域下的自然/人文词条(具体山川/势力/城池)也喂给地图生成
-    const codexCtx = await buildCodexContext(project.id!, scopedGroupId, { maxChars: 2000 })
-    const messages = buildVoronoiMapPrompt(wv, overview, locations, codexCtx)
-    const result = await ai.start(messages, undefined, { category: 'geography.world-map', projectId: project.id! })
-    if (!result) return
-
-    try {
-      const config = parseVoronoiMapConfig(result)
-      if (activeNode) {
-        config.mapName = activeNode.name
-      }
-      setVoronoiConfig(config)
-
-      // 持久化到世界节点
-      if (activeWorldId) {
-        await updateNode(activeWorldId, {
-          mapConfigJSON: JSON.stringify(config),
-        })
-      }
-    } catch (err) {
-      console.error('Failed to parse AI Voronoi config:', err)
-      setParseError(`AI 返回的地图参数解析失败，请重试。错误：${err instanceof Error ? err.message : '未知错误'}`)
-    }
+  const handleGenerate = () => {
+    if (!activeNode || !activeWorldId) return
+    dispatchAgentIntent({
+      type: 'geography.world-map',
+      title: `Agent 生成地图 · ${activeNode.name}`,
+      promptModuleKey: 'geography.world-map',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'world-map',
+        field: 'mapConfigJSON',
+        worldGroupId: scopedGroupId,
+        entityId: activeWorldId,
+      },
+      instruction: [
+        `为世界节点“${activeNode.name}”生成 Voronoi 地图引擎配置。`,
+        '先读取 worldview、codex、worldRules、historical 和 locations，必须保留已登记的国家、势力、城池、山川和河流名称。',
+        `最终调用 storyforge.change.propose，使用 target=worldNodes、mode=replace、recordId=${activeWorldId}，data 只能包含 mapConfigJSON。`,
+        'mapConfigJSON 必须是可被 JSON.parse 解析的对象或 JSON 字符串，包含 seed、mapName、pointCount、landRatio、continentCount、stateCount、burgDensity、temperatureShift、precipitationFactor、heightmapTemplate、namingStyle、stateNames、burgNames、riverNames。',
+        'heightmapTemplate 只能取 continents、pangea、archipelago、volcano、isthmus、peninsula、mediterranean、atoll、shattered、highland；namingStyle 只能取 chinese、japanese、european、arabic、highFantasy、darkFantasy。',
+        '不要只展示 JSON 后停止，必须生成可审批方案。',
+      ].join('\n'),
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'worldNodes',
+        mode: 'replace',
+        recordId: activeWorldId,
+        requiredFields: ['mapConfigJSON'],
+        requiredDataPaths: [['mapConfigJSON']],
+        requiredContextSources: ['worldview', 'codex', 'worldRules', 'historical', 'locations'],
+        deliverableKind: 'structured-record',
+      },
+      payload: {
+        worldName: activeNode.name,
+        worldNode: activeNode,
+        currentMapConfig: voronoiConfig ?? null,
+      },
+    })
   }
 
   // ── 渲染 ─────────────────────────────────────────────────
-  const generateButtonLabel = voronoiConfig ? 'AI 重新生成' : 'AI 生成地图'
+  const generateButtonLabel = voronoiConfig ? 'Agent 重新生成' : 'Agent 生成地图'
 
   return (
     <div className="h-full flex flex-col">
@@ -165,15 +143,10 @@ export default function WorldMapPanel({ project }: Props) {
 
           <button
             onClick={handleGenerate}
-            disabled={ai.isStreaming}
+            disabled={!activeWorldId}
             className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
-            {ai.isStreaming ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                AI 分析中...
-              </>
-            ) : voronoiConfig ? (
+            {voronoiConfig ? (
               <>
                 <RefreshCw className="w-4 h-4" />
                 {generateButtonLabel}
@@ -181,41 +154,13 @@ export default function WorldMapPanel({ project }: Props) {
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                AI 生成地图
+                Agent 生成地图
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* AI 错误提示 */}
-      {(ai.error || parseError) && (
-        <div className="mb-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
-          {ai.error || parseError}
-        </div>
-      )}
-
-      {/* AI 流式输出进度 */}
-      {ai.isStreaming && (
-        <div className="mb-3 p-3 bg-accent/10 border border-accent/20 rounded-lg">
-          <div className="flex items-center gap-2 text-sm text-accent mb-1">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            AI 正在分析世界设定，生成地图参数...
-            {ai.output.length > 0 && (
-              <span className="text-xs text-text-muted">≈ ~{Math.round(ai.output.length * 1.5).toLocaleString()} tokens</span>
-            )}
-          </div>
-          <div className="text-xs text-text-muted max-h-20 overflow-y-auto font-mono">
-            {ai.output.slice(0, 200)}
-            {ai.output.length > 200 && '...'}
-          </div>
-        </div>
-      )}
-      {ai.tokenUsage && !ai.isStreaming && (
-        <div className="mb-2 text-[10px] text-text-muted">
-          Token: ↑{ai.tokenUsage.inputTokens.toLocaleString()} ↓{ai.tokenUsage.outputTokens.toLocaleString()}
-        </div>
-      )}
 
       {/* 主内容区域：世界树 + 地图 */}
       <div className="flex-1 flex min-h-0 rounded-lg overflow-hidden border border-border">

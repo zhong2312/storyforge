@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "desktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/portable-builder/build-portable.ps1 -SourceRoot . -OutputRoot .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

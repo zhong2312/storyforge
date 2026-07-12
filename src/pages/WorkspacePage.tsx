@@ -13,6 +13,9 @@ import { useCharacterRelationStore } from '../stores/character-relation'
 import { useReferenceStore } from '../stores/reference'
 import { useEmotionBeatStore } from '../stores/emotion-beat'
 import { useWorldRulesStore } from '../stores/world-rules'
+import { useHistoricalStore } from '../stores/historical'
+import { useWorldNodeStore } from '../stores/world-node'
+import { useCodexStore } from '../stores/codex'
 import { useAutoBackup } from '../hooks/useAutoBackup'
 import { useGistAutoBackup } from '../hooks/useGistAutoBackup'
 import { useFolderAutoBackup } from '../hooks/useFolderAutoBackup'
@@ -20,8 +23,10 @@ import { Bot, PanelRight } from 'lucide-react'
 import Sidebar, { type SidebarModule } from '../components/layout/Sidebar'
 import PropertiesPanel from '../components/layout/PropertiesPanel'
 import ProjectInfoPanel from '../components/project/ProjectInfoPanel'
+import ProjectInitializationProgressIndicator from '../components/project/ProjectInitializationProgressIndicator'
 // 旧「作品学习」面板已整合进 ReferencePanel（Phase 20，子系统于 v32 下线）
 const ReferencePanel = lazy(() => import('../components/project/ReferencePanel'))
+const ProjectInitializationDialog = lazy(() => import('../components/project/ProjectInitializationDialog'))
 const SettingsPage = lazy(() => import('../components/settings/SettingsPage'))
 const UsageStatsPage = lazy(() => import('../components/settings/UsageStatsPage'))
 const VersionHistoryPanel = lazy(() => import('../components/system/VersionHistoryPanel'))
@@ -52,6 +57,7 @@ const WorldMapPanel = lazy(() => import('../components/geography/WorldMapPanel')
 const StatePanel = lazy(() => import('../components/state/StatePanel'))
 const StoryArcPanel = lazy(() => import('../components/outline/StoryArcPanel'))
 const CharacterDrivenPlotPanel = lazy(() => import('../components/outline/CharacterDrivenPlotPanel'))
+const BookEditorPanel = lazy(() => import('../components/editor/BookEditorPanel'))
 const InspirationPanel = lazy(() => import('../components/project/InspirationPanel'))
 const LocationPanel = lazy(() => import('../components/location/LocationPanel'))
 const InventoryPanel = lazy(() => import('../components/items/InventoryPanel'))
@@ -67,6 +73,10 @@ import {
   subscribeAgentIntents,
   type AgentIntent,
 } from '../lib/agent/intents'
+import { isAIConfigReady, subscribeAIConfigRequired } from '../lib/ai/config-readiness'
+import { modelRefForCategory } from '../lib/ai/model-scenes'
+import { useAIConfigStore } from '../stores/ai-config'
+import { useProjectInitializationStore } from '../stores/project-initialization'
 
 export default function WorkspacePage() {
   const { projectId } = useParams()
@@ -80,14 +90,32 @@ export default function WorkspacePage() {
     typeof window !== 'undefined' && window.innerWidth < 1024 ? null : 'agent'
   ))
   const [pendingAgentIntent, setPendingAgentIntent] = useState<AgentIntent | null>(null)
+  const [initializationOpen, setInitializationOpen] = useState(false)
   const activeWorldGroupId = useWorldGroupStore(state => state.activeGroupId)
 
   useEffect(() => subscribeAgentIntents(intent => {
     const currentId = Number(projectId)
     if (!Number.isFinite(currentId) || !isIntentForDexieProject(intent, currentId)) return
+    const configState = useAIConfigStore.getState()
+    const modelRef = modelRefForCategory(
+      intent.promptModuleKey ?? intent.type,
+      configState.sceneBindings,
+      configState.activeModelRef,
+    )
+    const config = configState.resolveConfigForScene('chat', modelRef)
+    if (!isAIConfigReady(config)) {
+      setActiveModule('settings')
+      setRightPanel(null)
+      return
+    }
     setPendingAgentIntent(intent)
     setRightPanel('agent')
   }), [projectId])
+
+  useEffect(() => subscribeAIConfigRequired(() => {
+    setActiveModule('settings')
+    setRightPanel(null)
+  }), [])
 
   // 从 Zustand Store 中动态获取当前项目，实现全局响应式更新
   const project = useMemo(() => {
@@ -162,6 +190,16 @@ export default function WorkspacePage() {
       })
 
       setLoading(false)
+      const initializationTask = useProjectInitializationStore.getState().task
+      if (initializationTask && initializationTask.projectId === p.id && initializationTask.status === 'running') {
+        useProjectInitializationStore.getState().resume({
+          project: p,
+          onCommit: () => reloadInitializationProjectData(
+            p.id!,
+            p.enableMultiWorld ? useWorldGroupStore.getState().activeGroupId : null,
+          ),
+        })
+      }
     }
     load()
   }, [projectId, loadProject, navigate])
@@ -181,26 +219,10 @@ export default function WorkspacePage() {
 
   const reloadProjectData = async () => {
     const pid = project.id!
-    await Promise.allSettled([
-      useProjectStore.getState().loadProjects(),
-      useWorldviewStore.getState().loadAll(pid),
-      useCharacterStore.getState().loadAll(pid),
-      useOutlineStore.getState().loadAll(pid),
-      useChapterStore.getState().loadAll(pid),
-      useForeshadowStore.getState().loadAll(pid),
-      useGeographyStore.getState().loadAll(pid),
-      useHistoryStore.getState().loadAll(pid),
-      useCreativeRulesStore.getState().loadAll(pid),
-      useCharacterRelationStore.getState().loadAll(pid),
-      useReferenceStore.getState().loadAll(pid),
-      useEmotionBeatStore.getState().loadAll(pid),
-      useLocationStore.getState().loadAll(pid),
-      useWorldRulesStore.getState().loadProfile(pid, project.enableMultiWorld ? activeWorldGroupId : null),
-      useWorldGroupStore.getState().loadAll(pid),
-    ])
+    await reloadInitializationProjectData(pid, project.enableMultiWorld ? activeWorldGroupId : null)
   }
 
-  const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow', 'character-driven-plot'])
+  const immersiveModules = new Set<SidebarModule>(['chapters-list', 'editor', 'foreshadow', 'character-driven-plot', 'book-editor'])
   const isImmersiveModule = immersiveModules.has(activeModule)
   const fullHeightModules = new Set<SidebarModule>([
     'worldview-origin',
@@ -213,7 +235,24 @@ export default function WorkspacePage() {
   const renderMainPanel = () => {
     switch (activeModule) {
       case 'info':
-        return <ProjectInfoPanel project={project} onUpdate={() => useProjectStore.getState().loadProjects()} />
+        return <ProjectInfoPanel
+          project={project}
+          onUpdate={() => useProjectStore.getState().loadProjects()}
+          onOpenAIInitialization={() => {
+            const configState = useAIConfigStore.getState()
+            const modelRef = modelRefForCategory(
+              'worldview.dimension',
+              configState.sceneBindings,
+              configState.activeModelRef,
+            )
+            if (!isAIConfigReady(configState.resolveConfigForScene('chat', modelRef))) {
+              setActiveModule('settings')
+              setRightPanel(null)
+              return
+            }
+            setInitializationOpen(true)
+          }}
+        />
       case 'references':
         return <ReferencePanel project={project} />
       case 'inspiration':
@@ -267,6 +306,8 @@ export default function WorkspacePage() {
         return <OutlinePanel project={project} onOpenChapter={handleOpenChapter} />
       case 'character-driven-plot':
         return <CharacterDrivenPlotPanel project={project} />
+      case 'book-editor':
+        return <BookEditorPanel project={project} />
       case 'detailed-outline':
         return <DetailedOutlinePanel project={project} />
       case 'chapters-list':
@@ -370,6 +411,11 @@ export default function WorkspacePage() {
         </Suspense>
       </main>
 
+      <ProjectInitializationProgressIndicator
+        projectId={project.id!}
+        onOpen={() => setInitializationOpen(true)}
+      />
+
       {/* 右侧 Agent / 属性工作区 */}
       {rightPanel === 'agent' && (
         <Suspense fallback={<aside className="w-[380px] border-l border-border bg-bg-surface" />}>
@@ -395,6 +441,38 @@ export default function WorkspacePage() {
           onOpenAgent={() => setRightPanel('agent')}
         />
       )}
+      {initializationOpen && (
+        <ProjectInitializationDialog
+          project={project}
+          worldGroupId={project.enableMultiWorld ? activeWorldGroupId : null}
+          onClose={() => setInitializationOpen(false)}
+          onCommit={reloadProjectData}
+        />
+      )}
     </div>
   )
+}
+
+async function reloadInitializationProjectData(projectId: number, worldGroupId: number | null): Promise<void> {
+  await Promise.allSettled([
+    useProjectStore.getState().loadProjects(),
+    useWorldviewStore.getState().loadAll(projectId, worldGroupId),
+    useCharacterStore.getState().loadAll(projectId),
+    useOutlineStore.getState().loadAll(projectId),
+    useChapterStore.getState().loadAll(projectId),
+    useForeshadowStore.getState().loadAll(projectId),
+    useGeographyStore.getState().loadAll(projectId),
+    useHistoryStore.getState().loadAll(projectId, worldGroupId),
+    useCreativeRulesStore.getState().loadAll(projectId),
+    useCharacterRelationStore.getState().loadAll(projectId),
+    useReferenceStore.getState().loadAll(projectId),
+    useEmotionBeatStore.getState().loadAll(projectId),
+    useLocationStore.getState().loadAll(projectId),
+    useWorldRulesStore.getState().loadProfile(projectId, worldGroupId),
+    useWorldGroupStore.getState().loadAll(projectId),
+    useHistoricalStore.getState().loadEvents(projectId),
+    useHistoricalStore.getState().loadKeywords(projectId),
+    useWorldNodeStore.getState().loadNodes(projectId, worldGroupId),
+    useCodexStore.getState().loadAll(projectId),
+  ])
 }

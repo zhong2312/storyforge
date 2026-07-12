@@ -260,6 +260,12 @@ export interface AssembleContextInput {
   manualSourceText?: string
   /** 全项目 RAG 查询；仅由 ragSearch 上下文源消费。 */
   retrievalQuery?: string
+  /** 全项目检索方式：semantic=相关性召回，exact=穷举精确命中并支持分页。 */
+  retrievalMatchMode?: 'semantic' | 'exact'
+  /** 精确全库检索的分页偏移。 */
+  retrievalOffset?: number
+  /** 精确全库检索的单页条数，统一限制为 1-20。 */
+  retrievalLimit?: number
   /** 可选来源表过滤，表名必须来自 PROJECT_TABLES 派生的 RAG 覆盖范围。 */
   retrievalSourceTables?: string[]
   /** RAG 返回条数，统一限制为 1-20。 */

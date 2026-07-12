@@ -425,6 +425,15 @@ body {
   min-height: 100vh;
 }
 
+/* Wails WebView2 may retain document-flow space above #root after runtime injection.
+   Pin only the desktop root to the actual WebView viewport; Web/PWA keeps body scrolling. */
+html[data-storyforge-runtime="desktop"] #root {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* 滚动条样式 */
 ::-webkit-scrollbar {
   width: 6px;

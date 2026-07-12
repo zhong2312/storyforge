@@ -23,10 +23,13 @@ export type PromptModuleKey =
   | 'chapter.expand'
   | 'chapter.de-ai'
   | 'chapter.de-ai.detect'
+  // 全书编辑
+  | 'book.edit'
   // 伏笔
   | 'foreshadow.generate'
   // 地理 / 概念地图
   | 'geography.concept-map'
+  | 'geography.world-map'
   | 'geography.image-map-prompt'
   // —— 后续 Phase 启用 ——
   | 'worldview.generate'

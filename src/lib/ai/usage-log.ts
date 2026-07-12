@@ -29,6 +29,7 @@ interface CategoryMeta { label: string; color: string }
 const CATEGORY_RULES: Array<{ test: (k: string) => boolean; meta: CategoryMeta }> = [
   { test: k => k.startsWith('chapter.content') || k.startsWith('chapter.continue'), meta: { label: '正文生成', color: '#6E8BdE' } },
   { test: k => k.startsWith('chapter.'), meta: { label: '正文润色', color: '#7BA0C8' } },
+  { test: k => k.startsWith('book.edit'), meta: { label: '全书编辑', color: '#5F8F86' } },
   { test: k => k.startsWith('outline.'), meta: { label: '大纲生成', color: '#C8956E' } },
   { test: k => k.startsWith('detail.'), meta: { label: '细纲生成', color: '#C8A86E' } },
   { test: k => k.startsWith('worldview.'), meta: { label: '世界观生成', color: '#5EA88A' } },

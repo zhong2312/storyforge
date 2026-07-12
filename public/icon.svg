@@ -1,4 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0a0a0f"/>
-  <text x="256" y="340" font-size="280" text-anchor="middle" font-family="serif">🔥</text>
+  <defs>
+    <linearGradient id="fire" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="0.48" stop-color="#f59e42"/>
+      <stop offset="1" stop-color="#d9573f"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="488" height="488" rx="108" fill="#171820" stroke="#343641" stroke-width="8"/>
+  <path d="M257 67c21 50-13 72 17 106 17 19 27 37 24 58 22-18 30-45 24-75 42 38 63 83 47 124-16 43-59 70-112 70-61 0-112-36-112-91 0-42 25-73 54-102 24-24 42-50 39-87 25 18 37 39 35 64 16-19 19-41 4-67z" fill="url(#fire)"/>
+  <path d="M257 181c8 25-9 38 4 55 9 11 14 23 10 36 13-9 19-23 17-40 21 19 30 42 21 62-9 21-29 34-54 34-31 0-57-18-57-46 0-22 13-38 28-52 13-12 22-26 21-44 11 8 17 19 16 31 7-10 8-22 2-36z" fill="#fff0ad"/>
+  <path d="M72 311c60-20 122-15 184 25v105c-60-38-122-46-184-26z" fill="#f4efe3"/>
+  <path d="M440 311c-60-20-122-15-184 25v105c60-38 122-46 184-26z" fill="#ddd5c4"/>
+  <path d="M72 311c60-20 122-15 184 25m184-25c-60-20-122-15-184 25m0 0v105" fill="none" stroke="#8c8172" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M102 350c43-9 84-3 123 18m-123 20c43-9 84-3 123 18m185-56c-43-9-84-3-123 18m123 20c-43-9-84-3-123 18" fill="none" stroke="#b8ae9e" stroke-width="8" stroke-linecap="round"/>
 </svg>

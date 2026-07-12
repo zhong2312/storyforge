@@ -15,6 +15,7 @@ import { PROVIDER_PRESETS } from '../lib/types'
 import { createLog, updateLog } from '../lib/ai/logger'
 import { nanoid } from '../lib/utils/id'
 import { buildOpenAIEndpoint, normalizeOpenAIBaseUrl } from '../lib/ai/openai-endpoint'
+import { isStoryForgeDesktopLocation, type StoryForgeRuntimeLocation } from '../lib/desktop-runtime'
 
 const STORAGE_KEY = 'storyforge-ai-config'
 const PRESETS_KEY = 'storyforge-ai-presets'
@@ -26,16 +27,11 @@ const EMBEDDING_SESSION_KEY = 'storyforge-embedding-key-session'
 const MODEL_CATALOG_KEY = 'storyforge-ai-model-catalog-v1'
 const MODEL_CATALOG_SESSION_KEYS = 'storyforge-ai-model-catalog-session-keys'
 
-interface RuntimeLocation {
-  hostname?: string
-  port?: string
-  pathname?: string
-}
-
 export function isStoryForgePortableLocation(
-  runtimeLocation: RuntimeLocation | undefined = globalThis.location,
+  runtimeLocation: StoryForgeRuntimeLocation | undefined = globalThis.location,
 ): boolean {
   if (!runtimeLocation) return false
+  if (isStoryForgeDesktopLocation(runtimeLocation)) return true
   return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(runtimeLocation.hostname || '')
     && runtimeLocation.port === '17831'
     && (runtimeLocation.pathname || '').startsWith('/storyforge')
@@ -742,8 +738,8 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       let errorMsg: string
 
       if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-        errorMsg = url.startsWith('/openai-compatible-proxy/')
-          ? '本地 AI 代理请求失败 — 请确认当前页面由 StoryForge Portable 启动，且 17831 端口未被旧进程占用'
+        errorMsg = url.includes('/openai-compatible-proxy/')
+          ? 'StoryForge 桌面内置 AI 代理请求失败 — 请重启桌面应用，并确认安全软件未拦截本机 17831 端口'
           : '网络错误 — 可能原因：1) 网络不通 2) 该平台不支持浏览器直接调用(CORS) 3) Base URL 错误'
       } else if (error.name === 'AbortError') {
         errorMsg = '请求超时'

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Sparkles, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react'
 import { useAIStream } from '../../../hooks/useAIStream'
 import { useAIModelConfig } from '../../../hooks/useAIModelConfig'
-import { getAIConfigRequiredMessage, isAIConfigReady } from '../../../lib/ai/config-readiness'
+import { requestAIConfigSetup } from '../../../lib/ai/config-readiness'
 import type { PromptTemplate, PromptExample } from '../../../lib/types/prompt'
 import { useDialog } from '../../shared/Dialog'
 import { useToast } from '../../shared/Toast'
@@ -65,10 +65,7 @@ export default function PromptExamplesEditor({ template, onChange, readOnly }: P
   /** 让 AI 自动生成示例：用 meta-prompt 让 AI 基于模板生成 2 条示例 */
   const generateWithAI = async (kind: 'good' | 'bad') => {
     if (readOnly) return
-    if (!isAIConfigReady(aiConfig)) {
-      toast.error(getAIConfigRequiredMessage(aiConfig))
-      return
-    }
+    if (!requestAIConfigSetup(aiConfig)) return
     setGeneratingFor(kind)
 
     const metaPrompt = kind === 'good'

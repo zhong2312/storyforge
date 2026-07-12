@@ -197,6 +197,102 @@ describe('Phase 1.2a · 统一写回层', () => {
     expect(row?.fields).toBe(JSON.stringify({ rank: '神品' }))
   })
 
+  it('集合定点写回:历史 Agent 只更新指定记录的正式结果字段', async () => {
+    const projectId = await createProject()
+    const now = Date.now()
+    const firstId = await db.historicalTimelineEvents.add({
+      projectId,
+      era: 'custom',
+      year: 1,
+      date: '元年',
+      title: '开国',
+      description: '旧定稿',
+      isHistorical: false,
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+    const secondId = await db.historicalTimelineEvents.add({
+      projectId,
+      era: 'custom',
+      year: 2,
+      date: '二年',
+      title: '迁都',
+      description: '另一条定稿',
+      isHistorical: false,
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+
+    const result = await adopt({
+      projectId,
+      target: 'historicalTimelineEvents',
+      mode: 'replace',
+      recordId: firstId,
+      data: { aiConsult: '## 考据结果\n称谓需要调整。' },
+    })
+
+    expect(result.written).toHaveLength(1)
+    expect((await db.historicalTimelineEvents.get(firstId))?.aiConsult).toContain('称谓需要调整')
+    expect((await db.historicalTimelineEvents.get(firstId))?.description).toBe('旧定稿')
+    expect((await db.historicalTimelineEvents.get(secondId))?.aiConsult).toBeUndefined()
+  })
+
+  it('集合定点写回:世界地图 Agent 将对象配置规范化为 JSON 字符串', async () => {
+    const projectId = await createProject()
+    const now = Date.now()
+    const nodeId = await db.worldNodes.add({
+      projectId,
+      parentId: null,
+      name: '九州',
+      description: '主世界',
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+    } as any) as number
+
+    const result = await adopt({
+      projectId,
+      target: 'worldNodes',
+      mode: 'replace',
+      recordId: nodeId,
+      data: {
+        mapConfigJSON: {
+          seed: 'jiuzhou',
+          mapName: '九州',
+          heightmapTemplate: 'continents',
+          namingStyle: 'chinese',
+        },
+      },
+    })
+
+    expect(result.written).toHaveLength(1)
+    expect(JSON.parse((await db.worldNodes.get(nodeId))?.mapConfigJSON || '{}')).toMatchObject({
+      seed: 'jiuzhou',
+      mapName: '九州',
+    })
+  })
+
+  it('集合写回:世界地图 Agent 可以新增 parentId=null 的根世界', async () => {
+    const projectId = await createProject()
+    const result = await adopt({
+      projectId,
+      target: 'worldNodes',
+      mode: 'add',
+      data: {
+        parentId: null,
+        name: '九州',
+        description: '主世界',
+        sortOrder: 0,
+        mapConfigJSON: { seed: 'jiuzhou', mapName: '九州' },
+      },
+    })
+
+    expect(result.skipped).toHaveLength(0)
+    const root = await db.worldNodes.where('projectId').equals(projectId).first()
+    expect(root?.parentId).toBeNull()
+    expect(JSON.parse(root?.mapConfigJSON || '{}').seed).toBe('jiuzhou')
+  })
+
   it('集合写回:detailedOutlines 数组成员校验过滤不存在的角色 ID', async () => {
     const projectId = await createProject()
     const now = Date.now()

@@ -62,6 +62,19 @@ describe('R-AI-CONFIG · API Key 存储策略', () => {
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull()
   })
 
+  it('Wails WebView2 桌面环境使用 Portable 持久化策略', async () => {
+    vi.stubGlobal('location', {
+      hostname: 'wails.localhost',
+      protocol: 'wails:',
+      pathname: '/',
+    })
+    const useAIConfigStore = await freshStore()
+    useAIConfigStore.getState().setConfig({ apiKey: 'sk-desktop' })
+
+    expect(useAIConfigStore.getState().rememberApiKey).toBe(true)
+    expect(JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}').apiKey).toBe('sk-desktop')
+  })
+
   it('兼容旧版 localStorage 配置:已有 apiKey 初始化为已记住状态', async () => {
     localStorage.setItem(CONFIG_KEY, JSON.stringify({
       provider: 'deepseek',
