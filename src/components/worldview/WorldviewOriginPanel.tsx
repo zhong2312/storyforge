@@ -121,9 +121,9 @@ export default function WorldviewOriginPanel({ project }: Props) {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
+    <div className="flex h-full w-full flex-col space-y-4">
       {/* 顶部 */}
-      <div className="pb-4 border-b border-border/40">
+      <div className="shrink-0 border-b border-border/40 px-6 pb-4 pt-4">
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
             🌌 世界起源与核心设定
@@ -141,9 +141,9 @@ export default function WorldviewOriginPanel({ project }: Props) {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex flex-1 overflow-hidden">
         {/* ── 左侧边栏 ── */}
-        <div className="w-fit min-w-32 max-w-44 shrink-0 space-y-0.5 pt-1">
+        <nav className="w-max min-w-32 max-w-44 flex-shrink-0 overflow-y-auto border-r border-border py-4 pr-1">
           {FIELDS.map(f => {
             const isActive = active === f.key
             const isFieldStreaming = streamingKeys.has(f.key)
@@ -151,26 +151,23 @@ export default function WorldviewOriginPanel({ project }: Props) {
               <button
                 key={f.key}
                 onClick={() => setActive(f.key)}
-                className={`w-full flex items-center gap-2.5 px-2 py-2.5 rounded-lg text-left transition-all ${
+                className={`flex w-full items-center gap-1 border-l-2 px-4 py-2.5 text-left text-sm transition-colors ${
                   isActive
-                    ? 'bg-accent/8 border-l-2 border-accent'
-                    : 'hover:bg-bg-hover border-l-2 border-transparent'
+                    ? 'border-accent bg-accent/8 font-medium text-accent'
+                    : 'border-transparent text-text-secondary hover:bg-bg-elevated hover:text-text-primary'
                 }`}
               >
-                <span className="text-base shrink-0">{f.icon}</span>
-                <span className={`text-sm font-medium truncate flex-1 ${isActive ? 'text-accent' : 'text-text-primary'}`}>
-                  {f.label}
-                </span>
+                <span className="flex-1">{f.icon} {f.label}</span>
                 {isFieldStreaming && !isActive && (
                   <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
                 )}
               </button>
             )
           })}
-        </div>
+        </nav>
 
         {/* ── 右侧：所有字段同时渲染，hidden 控制显示 ── */}
-        <div className="min-h-0 min-w-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden p-6">
           {/* 世界来源 */}
           <div className={active === 'origin' ? 'h-full' : 'hidden'}>
             <TextFieldEditor

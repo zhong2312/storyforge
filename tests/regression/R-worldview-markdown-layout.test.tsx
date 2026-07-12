@@ -131,11 +131,21 @@ describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文
 
   it('世界来源接入独立词条分类并显示正文/词条页签', () => {
     const origin = source('src/components/worldview/WorldviewOriginPanel.tsx')
+    const humanity = source('src/components/worldview/WorldviewHumanityPanel.tsx')
     const codex = source('src/lib/types/codex.ts')
     expect(origin).toContain("categoryKeys={['originSource', 'originPower', 'originDeity']}")
     expect(origin).toContain("fixedCategoryKeys={['originSource']}")
     expect(origin).toContain('title="世界来源 · 具体词条"')
     expect(codex).toContain("| 'originSource' | 'originPower' | 'originDeity'")
     expect(codex).toContain("builtInKey: 'originSource', name: '世界来源'")
+    for (const layoutClass of [
+      'flex h-full w-full flex-col space-y-4',
+      'flex flex-1 overflow-hidden',
+      'min-h-0 min-w-0 flex-1 overflow-hidden p-6',
+    ]) {
+      expect(origin).toContain(layoutClass)
+      expect(humanity).toContain(layoutClass.replace('flex h-full w-full flex-col', 'flex flex-col w-full h-full'))
+    }
+    expect(origin).not.toContain('max-w-5xl')
   })
 })
