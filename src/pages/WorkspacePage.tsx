@@ -195,7 +195,7 @@ export default function WorkspacePage() {
       useReferenceStore.getState().loadAll(pid),
       useEmotionBeatStore.getState().loadAll(pid),
       useLocationStore.getState().loadAll(pid),
-      useWorldRulesStore.getState().loadProfile(pid),
+      useWorldRulesStore.getState().loadProfile(pid, project.enableMultiWorld ? activeWorldGroupId : null),
       useWorldGroupStore.getState().loadAll(pid),
     ])
   }

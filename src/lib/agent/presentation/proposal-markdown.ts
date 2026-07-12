@@ -2,6 +2,7 @@ import { CHARACTER_DIMENSIONS } from '../../character/character-dimensions'
 import type { FieldSpec } from '../../registry/types'
 import { FIELD_BY_TARGET } from '../../registry/field-registry'
 import type { AgentChangePreview } from '../events/agent-events'
+import { CONFLICT_PRIORITY_LABELS, WORLD_RULE_TREE, type WorldRuleNodeDef } from '../../types/world-rules'
 
 const CHARACTER_BASE_FIELDS = ['name', 'role', 'roleWeight', 'moralAxis', 'orderAxis'] as const
 
@@ -28,6 +29,7 @@ const TARGET_LABELS: Readonly<Record<string, string>> = {
   chapters: '章节',
   outlineNodes: '大纲',
   worldviews: '世界观',
+  worldRulesProfiles: '真实与幻想',
   storyCores: '故事核心',
 }
 
@@ -36,6 +38,7 @@ export function proposalPreviewMarkdown(preview: AgentChangePreview | undefined)
   const rawItems = Array.isArray(preview.data) ? preview.data : [preview.data]
   const items = rawItems.map(item => normalizeItem(preview.target, item))
   if (preview.target === 'characters') return characterPreviewMarkdown(items)
+  if (preview.target === 'worldRulesProfiles') return worldRulesPreviewMarkdown(items)
   return genericPreviewMarkdown(preview.target, items)
 }
 
@@ -89,6 +92,53 @@ function genericPreviewMarkdown(
   }).join('\n\n---\n\n')
 }
 
+function worldRulesPreviewMarkdown(
+  items: readonly Readonly<Record<string, unknown>>[],
+): string {
+  const paths = worldRuleNodePaths(WORLD_RULE_TREE)
+  return items.map(item => {
+    const sections = ['## 真实与幻想']
+    if (isPlainRecord(item.entries)) {
+      for (const [nodeId, rawEntry] of Object.entries(item.entries)) {
+        const heading = `${paths.get(nodeId) ?? nodeId}（${nodeId}）`
+        if (rawEntry == null) {
+          sections.push(`### ${escapeHeading(heading)}\n\n- **操作**：删除该维度规则`)
+          continue
+        }
+        if (!isPlainRecord(rawEntry)) continue
+        const fields: string[] = []
+        const historical = rawEntry.historicalAnchors ?? rawEntry['取自真实'] ?? rawEntry['史实锚点']
+        const fictional = rawEntry.fictionalAdaptations ?? rawEntry['架空改造'] ?? rawEntry['虚构设定']
+        const priority = rawEntry.priority ?? rawEntry['冲突优先级'] ?? rawEntry['冲突时优先']
+        if (hasDisplayValue(historical)) fields.push(markdownField('取自真实', displayValue('', historical)))
+        if (hasDisplayValue(fictional)) fields.push(markdownField('架空改造', displayValue('', fictional)))
+        if (hasDisplayValue(priority)) {
+          const label = CONFLICT_PRIORITY_LABELS[String(priority) as keyof typeof CONFLICT_PRIORITY_LABELS]
+            ?? displayValue('', priority)
+          fields.push(markdownField('冲突时优先', label))
+        }
+        if (fields.length > 0) sections.push(`### ${escapeHeading(heading)}\n\n${fields.join('\n')}`)
+      }
+    }
+    if (hasDisplayValue(item.globalNote)) {
+      sections.push(`### 全局补充说明\n\n${displayValue('', item.globalNote)}`)
+    }
+    return sections.join('\n\n')
+  }).join('\n\n---\n\n')
+}
+
+function worldRuleNodePaths(
+  nodes: readonly WorldRuleNodeDef[],
+  parentLabel?: string,
+  paths = new Map<string, string>(),
+): Map<string, string> {
+  for (const node of nodes) {
+    paths.set(node.id, parentLabel ? `${parentLabel} / ${node.label}` : `${node.label} / 总览`)
+    worldRuleNodePaths(node.children ?? [], node.label, paths)
+  }
+  return paths
+}
+
 function normalizeItem(target: string, item: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const fields = FIELD_BY_TARGET.get(target) ?? []
   const canonicalByInput = new Map<string, string>()
@@ -135,6 +185,10 @@ function displayValue(field: string, value: unknown): string {
 
 function hasDisplayValue(value: unknown): boolean {
   return displayValue('', value).length > 0
+}
+
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isSystemField(field: string): boolean {

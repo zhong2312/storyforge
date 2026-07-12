@@ -488,6 +488,7 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
   return [
     '你是 StoryForge 项目副驾。优先使用工具获取事实，不得猜测项目设定。',
     '每轮最多调用一次 storyforge.settings.catalog；目录返回后立即执行下一工具，不要重复复述“先查看”或再次查询目录。',
+    '“真实与幻想”及其大类、子类、总览属于 worldRulesProfiles，不属于 worldviews.rules。先从能力目录取得 nodeId，读取 worldRules，再用 storyforge.change.propose 对 worldRulesProfiles.entries 做节点级修改。',
     '用户按“第 N 章”指代章节且宿主未提供章节 ID 时，先调用 storyforge.context.read 读取 chapterIndex，并传 chapterOrdinal=N；再把返回的 outlineNodeId/chapterId 传给后续 context.read。',
     '写章节时：chapterId=未创建则对 chapters 使用 mode=add，并携带索引返回的 outlineNodeId、标题、正文、字数、draft 状态和章序；已有 chapterId 则使用 recordId 定点 replace，禁止新建重复章节。',
     '找到目标章节后立即读取写作所需上下文并产出变更提案；不得只描述下一步、不得用反复读取代替执行。',

@@ -99,7 +99,11 @@ describe('registry-driven StoryForge tools', () => {
       {},
     ) as {
       readSources: Array<{ key: string }>
-      writeTargets: Array<{ target: string; fields: Array<{ field: string }> }>
+      writeTargets: Array<{
+        target: string
+        fields: Array<{ field: string }>
+        writeContract?: { readSource: string; nodes: Array<{ nodeId: string; path: string }> }
+      }>
     }
 
     expect(output.readSources.some(source => source.key === 'worldview')).toBe(true)
@@ -109,6 +113,109 @@ describe('registry-driven StoryForge tools', () => {
     expect(output.readSources.some(source => source.key === 'chapterIndex')).toBe(true)
     expect(output.writeTargets.find(target => target.target === 'worldviews')?.fields)
       .toContainEqual(expect.objectContaining({ field: 'worldOrigin' }))
+    const worldRules = output.writeTargets.find(target => target.target === 'worldRulesProfiles')
+    expect(worldRules?.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'entries' }),
+      expect.objectContaining({ field: 'globalNote' }),
+    ]))
+    expect(worldRules?.writeContract?.readSource).toBe('worldRules')
+    expect(worldRules?.writeContract?.nodes).toContainEqual(expect.objectContaining({
+      nodeId: 'era',
+      path: '时代背景 / 总览',
+    }))
+    expect(worldRules?.writeContract?.nodes).toContainEqual(expect.objectContaining({
+      nodeId: 'era.period',
+      path: '时代背景 / 历史时期',
+    }))
+  })
+
+  it('proposes and commits a world-rules node patch without overwriting sibling nodes', async () => {
+    await db.worldRulesProfiles.add({
+      projectId: 1,
+      worldGroupId: null,
+      entries: {
+        'era.period': {
+          historicalAnchors: '沿用旧历法。',
+          fictionalAdaptations: '',
+          priority: 'historical',
+        },
+      },
+      customNodes: [],
+      globalNote: '原全局说明',
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const plan = await registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: {
+          entries: {
+            era: {
+              取自真实: '参考唐代三省六部。',
+              架空改造: '增设灵修院。',
+              冲突优先级: '均衡',
+            },
+          },
+        },
+      },
+    ) as { planId: string; approvalId: string; planHash: string }
+
+    await registry.execute(
+      'storyforge.change.commit',
+      context(['project:write'], {
+        approval: { approvalId: plan.approvalId, planHash: plan.planHash },
+      }),
+      { planId: plan.planId },
+    )
+
+    const profile = await db.worldRulesProfiles.where('projectId').equals(1).first()
+    expect(profile?.entries['era.period']).toMatchObject({ historicalAnchors: '沿用旧历法。' })
+    expect(profile?.entries.era).toEqual({
+      historicalAnchors: '参考唐代三省六部。',
+      fictionalAdaptations: '增设灵修院。',
+      priority: 'balanced',
+    })
+    expect(profile?.globalNote).toBe('原全局说明')
+
+    const contextOutput = await registry.execute(
+      'storyforge.context.read',
+      context(['project:read']),
+      { sourceKeys: ['worldRules'] },
+    ) as { text: string }
+    expect(contextOutput.text).toContain('时代背景 [nodeId=era]')
+    expect(contextOutput.text).toContain('历史时期 [nodeId=era.period]')
+  })
+
+  it('rejects an unknown world-rules node before asking the user to approve', async () => {
+    await expect(registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: {
+          entries: {
+            '时代背景/总览': {
+              historicalAnchors: '错误地把界面路径当成 nodeId',
+            },
+          },
+        },
+      },
+    )).rejects.toThrow('writeContract.nodes')
+
+    await expect(registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: { entries: { era: { priority: '随便处理' } } },
+      },
+    )).rejects.toThrow('historical、balanced 或 fictional')
   })
 
   it('context.read delegates to CONTEXT_SOURCES and assembleContext', async () => {

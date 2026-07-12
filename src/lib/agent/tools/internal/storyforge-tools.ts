@@ -10,6 +10,13 @@ import { projectRagSourceTables } from '../../../retrieval/retrieval'
 import { checkDeAISafety, scanDeAIText } from '../../../ai/de-ai-pipeline/deterministic-scan'
 import type { StoryForgeTool, ToolExecutionContext } from '../tool-types'
 import { AdoptionPlanStore, type AdoptionPlanPreview } from './adoption-plan-store'
+import {
+  CONFLICT_PRIORITY_LABELS,
+  WORLD_RULE_TREE,
+  getAllPredefinedIds,
+  type CustomWorldRuleNode,
+  type WorldRuleNodeDef,
+} from '../../../types/world-rules'
 
 export interface StoryForgeToolDependencies {
   readonly storage: ProjectStoragePort
@@ -93,7 +100,7 @@ function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unkn
   return {
     name: 'storyforge.settings.catalog',
     title: `设定能力目录（${CONTEXT_SOURCES.length} 个读取源 / ${FIELD_BY_TARGET.size} 个写入目标）`,
-    description: '列出注册表中可读取的上下文源和可修改的设定字段。',
+    description: '列出注册表中可读取的上下文源、可修改目标、字段结构和领域写入契约。修改真实与幻想、大类、子类或总览前必须读取本目录取得 nodeId。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     risk: 'read',
     availability: 'both',
@@ -110,10 +117,8 @@ function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unkn
           requiresOutlineNodeId: Boolean(source.requiresOutlineNodeId),
           requiresChapterId: Boolean(source.requiresChapterId),
         })),
-        writeTargets: Array.from(FIELD_BY_TARGET, ([target, fields]) => ({
-          target,
-          fields: fields.map(toFieldDescriptor),
-        })),
+        writeTargets: Array.from(FIELD_BY_TARGET, ([target, fields]) =>
+          writeTargetDescriptor(target, fields)),
       }
     },
   }
@@ -208,17 +213,18 @@ function createChangeProposeTool(
         projectId,
         worldGroupId: context.worldGroupId,
       })
-      const preview = previewAdoption(adoptionInput)
       if (!FIELD_BY_TARGET.has(adoptionInput.target)) {
         throw new Error(`[storyforge.change.propose] target is not registered: ${adoptionInput.target}`)
       }
+      const beforeData = await loadProposalBeforeData(storage, adoptionInput)
+      assertWorldRulesProposal(adoptionInput, beforeData)
+      const preview = previewAdoption(adoptionInput)
       const plan = await plans.create({
         project: context.project,
         baseRevision: await storage.getRevision(),
         input: adoptionInput,
         preview,
       })
-      const beforeData = await loadProposalBeforeData(storage, adoptionInput)
       return beforeData === undefined ? plan : { ...plan, beforeData }
     },
   }
@@ -422,6 +428,127 @@ function toFieldDescriptor(field: FieldSpec): Record<string, unknown> {
   }
 }
 
+function assertWorldRulesProposal(
+  input: AdoptInput,
+  beforeData: Record<string, unknown> | undefined,
+): void {
+  if (input.target !== 'worldRulesProfiles') return
+  if (input.mode !== 'replace') {
+    throw new Error('[storyforge.change.propose] 真实与幻想仅支持 mode=replace 的节点级合并')
+  }
+  if (Array.isArray(input.data)) {
+    throw new Error('[storyforge.change.propose] 真实与幻想 data 必须是单个对象')
+  }
+  if (!Object.prototype.hasOwnProperty.call(input.data, 'entries')) return
+  if (!isPlainObject(input.data.entries)) {
+    throw new Error('[storyforge.change.propose] worldRulesProfiles.entries 必须是以 nodeId 为键的对象')
+  }
+
+  const knownNodeIds = new Set(getAllPredefinedIds())
+  const customNodes = Array.isArray(input.data.customNodes)
+    ? input.data.customNodes
+    : Array.isArray(beforeData?.customNodes) ? beforeData.customNodes : []
+  for (const node of customNodes as CustomWorldRuleNode[]) {
+    if (node && typeof node.id === 'string') knownNodeIds.add(node.id)
+  }
+  const unknownNodeIds = Object.keys(input.data.entries).filter(nodeId => !knownNodeIds.has(nodeId))
+  if (unknownNodeIds.length > 0) {
+    throw new Error(
+      `[storyforge.change.propose] 未知真实与幻想 nodeId: ${unknownNodeIds.join('、')}；请读取 storyforge.settings.catalog 的 worldRulesProfiles.writeContract.nodes`,
+    )
+  }
+
+  const allowedEntryFields = new Set([
+    'historicalAnchors', '取自真实', '史实锚点',
+    'fictionalAdaptations', '架空改造', '虚构设定',
+    'priority', '冲突优先级', '冲突时优先',
+  ])
+  const allowedPriorities = new Set(['historical', 'balanced', 'fictional', '史实优先', '均衡', '架空优先'])
+  for (const [nodeId, entry] of Object.entries(input.data.entries)) {
+    if (entry == null) continue
+    if (!isPlainObject(entry)) {
+      throw new Error(`[storyforge.change.propose] entries.${nodeId} 必须是规则对象或 null`)
+    }
+    const unknownFields = Object.keys(entry).filter(field => !allowedEntryFields.has(field))
+    if (unknownFields.length > 0) {
+      throw new Error(`[storyforge.change.propose] entries.${nodeId} 包含未知字段: ${unknownFields.join('、')}`)
+    }
+    const priority = entry.priority ?? entry['冲突优先级'] ?? entry['冲突时优先']
+    if (priority != null && !allowedPriorities.has(String(priority).trim())) {
+      throw new Error(`[storyforge.change.propose] entries.${nodeId}.priority 必须是 historical、balanced 或 fictional`)
+    }
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function writeTargetDescriptor(target: string, fields: FieldSpec[]): Record<string, unknown> {
+  const descriptor: Record<string, unknown> = {
+    target,
+    label: target === 'worldRulesProfiles' ? '真实与幻想' : undefined,
+    worldScoped: Boolean(REGISTRY_BY_NAME.get(target)?.worldScoped),
+    fields: fields.map(toFieldDescriptor),
+  }
+  if (target === 'worldRulesProfiles') descriptor.writeContract = worldRulesWriteContract()
+  return descriptor
+}
+
+function worldRulesWriteContract(): Record<string, unknown> {
+  return {
+    purpose: '修改“真实与幻想”面板，包括大类、子类、总览和全局补充说明；不要写入 worldviews.rules。',
+    readSource: 'worldRules',
+    proposeTool: 'storyforge.change.propose',
+    target: 'worldRulesProfiles',
+    mode: 'replace',
+    mergeSemantics: 'entries 按 nodeId 局部合并，未提交的节点保持不变；把某 nodeId 设为 null 可删除该节点规则。',
+    dataShape: {
+      entries: {
+        '<nodeId>': {
+          historicalAnchors: '取自真实的历史或现实依据（Markdown）',
+          fictionalAdaptations: '架空改造或原创设定（Markdown）',
+          priority: 'historical | balanced | fictional',
+        },
+      },
+      globalNote: '可选；真实与幻想全局补充说明（Markdown）',
+    },
+    priorityLabels: CONFLICT_PRIORITY_LABELS,
+    example: {
+      target: 'worldRulesProfiles',
+      mode: 'replace',
+      data: {
+        entries: {
+          era: {
+            historicalAnchors: '以唐代官制和历法为现实依据。',
+            fictionalAdaptations: '在官制之上增设灵修院。',
+            priority: 'balanced',
+          },
+        },
+      },
+    },
+    nodes: flattenWorldRuleNodes(WORLD_RULE_TREE),
+  }
+}
+
+function flattenWorldRuleNodes(
+  nodes: readonly WorldRuleNodeDef[],
+  parentLabel?: string,
+): Array<Record<string, unknown>> {
+  return nodes.flatMap(node => {
+    const path = parentLabel ? `${parentLabel} / ${node.label}` : `${node.label} / 总览`
+    return [
+      {
+        nodeId: node.id,
+        label: node.label,
+        path,
+        hints: node.hints ?? [],
+      },
+      ...flattenWorldRuleNodes(node.children ?? [], node.label),
+    ]
+  })
+}
+
 function adoptionInputSchema(): Readonly<Record<string, unknown>> {
   return {
     type: 'object',
@@ -429,7 +556,10 @@ function adoptionInputSchema(): Readonly<Record<string, unknown>> {
       target: { type: 'string', enum: [...new Set(FIELD_REGISTRY.map(field => field.target))] },
       mode: { type: 'string', enum: ['replace', 'append', 'add', 'add-many', 'merge-diffs'] },
       recordId: { type: 'number' },
-      data: { oneOf: [{ type: 'object' }, { type: 'array', items: { type: 'object' } }] },
+      data: {
+        description: '按能力目录中目标的字段与 writeContract 组织数据。真实与幻想必须使用 worldRulesProfiles.entries.<nodeId>。',
+        oneOf: [{ type: 'object' }, { type: 'array', items: { type: 'object' } }],
+      },
     },
     required: ['target', 'mode', 'data'],
     additionalProperties: false,

@@ -141,6 +141,11 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   longtext('worldviews', 'internalConflicts', ['conflicts', '内部矛盾']),
   longtext('worldviews', 'itemDesign', ['items', 'artifactDesign', '道具设计']),
 
+  // worldRulesProfiles:「真实与幻想」按 nodeId 存储的维度规则。
+  { ...object('worldRulesProfiles', 'entries', ['真实与幻想', '维度规则']), label: '维度规则' },
+  { ...arr('worldRulesProfiles', 'customNodes', ['自定义维度', '自定义节点']), label: '自定义维度' },
+  { ...longtext('worldRulesProfiles', 'globalNote', ['全局补充说明', '全局约束']), label: '全局补充说明' },
+
   // storyCores: storyLines 作为旧字段别名归一到 mainPlot。
   longtext('storyCores', 'theme', ['主题']),
   longtext('storyCores', 'centralConflict', ['conflict', '核心冲突']),

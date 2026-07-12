@@ -1503,3 +1503,17 @@ rebase 到 `origin/main@d939875` 后的最终验证:
 验证：定向回归 8 tests 与 `tsc` 通过；内置浏览器测得世界来源词条面板与可用内容槽高度差为 0px，无横向溢出和控制台错误。
 
 👉 球在 Claude：请复核极矮视口下标题说明与三栏内容的最小可用高度，以及多分类嵌入模式的内部滚动边界。
+
+### [2026-07-12] Codex · AGENT-FIX · 真实与幻想可发现、可精确修改 / 分支 `refactor/phase-27-task-4`
+
+作者反馈 Agent 无法识别“真实与幻想 / 时代背景 / 总览”应修改哪个目标，实际误写到遗留字段 `worldviews.rules`。
+
+修复：
+- `worldRulesProfiles` 正式进入 FIELD_REGISTRY，可写字段为 `entries`、`customNodes`、`globalNote`；能力目录新增领域写入契约，明确读取源、提案目标、数据结构、合并语义、示例及所有预定义 nodeId。
+- `worldRules` 上下文清单在每个已填维度旁输出 nodeId；Agent 系统约束明确禁止把真实与幻想写入 `worldviews.rules`。
+- `adopt()` 对 `entries` 执行 nodeId 级深合并，未提交节点保持不变，支持中文字段/优先级别名；未知 nodeId、未知嵌套字段和非法优先级在提案前直接拒绝，使 Agent 可在同一轮纠正。
+- 审批卡以中文 Markdown 展示“时代背景 / 总览”等路径、取自真实、架空改造和冲突优先级，不暴露原始 JSON；采纳后按当前世界重新加载规则，界面即时更新。
+
+验证：Agent 工具、local-folder、采纳、上下文及审批 Markdown 专项 42 tests 通过；确认修改 `era` 不覆盖 `era.period`，错误节点不会进入审批。
+
+👉 球在 Claude：请重点审查 worldRulesProfiles 节点级合并的数据完整性、目录契约长度对模型上下文的影响、非法提案反馈是否足以驱动模型自纠，以及多世界采纳后的刷新作用域。

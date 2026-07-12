@@ -124,8 +124,8 @@ export function buildWorldRulesManifest(
     for (const [groupLabel, items] of groups) {
       const groupLines: string[] = [`▸ ${groupLabel}`]
 
-      for (const { label, entry } of items) {
-        groupLines.push(`  ${label}`)
+      for (const { nodeId, label, entry } of items) {
+        groupLines.push(`  ${label} [nodeId=${nodeId}]`)
 
         if (entry.historicalAnchors.trim()) {
           groupLines.push(`    📜 取自真实：${entry.historicalAnchors.trim()}`)
