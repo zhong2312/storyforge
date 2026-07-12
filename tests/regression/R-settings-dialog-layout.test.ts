@@ -24,11 +24,28 @@ describe('设置与弹窗布局回归', () => {
       },
       onClose: () => undefined,
     }))
-    expect(markup).toContain('bg-red-100 text-red-900')
-    expect(markup).toContain('bg-emerald-100 text-emerald-900')
+    const source = readFileSync('src/components/agent/ProposalDiffDialog.tsx', 'utf8')
+    expect(source).toContain("wordRemovedBackground: 'color-mix(in srgb, #dc2626 45%")
+    expect(source).toContain("wordAddedBackground: 'color-mix(in srgb, #16a34a 48%")
     expect(markup).toContain('aria-label="差异颜色图例"')
-    expect(markup).toContain('旧')
-    expect(markup).toContain('新')
+    expect(markup).toContain('data-testid="proposal-diff-viewer"')
+    expect(markup).toContain('仅看差异')
+    expect(markup).toContain('+1 字 / -1 字')
+  })
+
+  it('两侧内容相同时明确提示没有修改', () => {
+    const markup = renderToStaticMarkup(createElement(ProposalDiffDialog, {
+      preview: {
+        target: 'chapters',
+        mode: 'replace',
+        recordId: 1,
+        beforeData: { content: '<p>完全相同</p>' },
+        data: { content: '<p>完全相同</p>' },
+      },
+      onClose: () => undefined,
+    }))
+    expect(markup).toContain('候选内容与当前内容完全一致')
+    expect(markup).not.toContain('data-testid="proposal-diff-viewer"')
   })
 
   it('场景绑定作为模型配置之外的独立设置区域渲染', () => {
