@@ -86,6 +86,29 @@ describe('AgentIntent panel bridge', () => {
     expect(isIntentForDexieProject(intent, 8)).toBe(true)
   })
 
+  it('preserves exact nested completion paths that contain dotted node IDs', () => {
+    const intent = dispatchAgentIntent({
+      id: 'intent-world-rules',
+      type: 'worldRules.historicalAnchors',
+      title: 'AI 完善取自真实',
+      source: { project: { backend: 'dexie', projectId: 7 }, module: 'world-rules' },
+      instruction: '只补充历史时期的取自真实。',
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        requiredFields: ['entries'],
+        requiredDataPaths: [['entries', 'era.period', 'historicalAnchors']],
+      },
+    })
+
+    expect(intent.completionRequirement?.requiredDataPaths).toEqual([
+      ['entries', 'era.period', 'historicalAnchors'],
+    ])
+    expect(Object.isFrozen(intent.completionRequirement?.requiredDataPaths?.[0])).toBe(true)
+    expect(buildAgentIntentPrompt(intent)).toContain('entries → era.period → historicalAnchors')
+  })
+
   it('publishes approved commit scope for host post-processing', () => {
     const received: unknown[] = []
     const unsubscribe = subscribeAgentProjectCommits(commit => received.push(commit))

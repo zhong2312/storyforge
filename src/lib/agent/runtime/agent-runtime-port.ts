@@ -16,6 +16,8 @@ export interface AgentChangeProposalCompletionRequirement {
   readonly mode: 'replace' | 'append' | 'add' | 'add-many' | 'merge-diffs'
   readonly recordId?: number
   readonly requiredFields: readonly string[]
+  /** 嵌套结果的精确路径；每段独立存储，可安全包含点号（如 nodeId=era.period）。 */
+  readonly requiredDataPaths?: readonly (readonly string[])[]
   readonly minTextLength?: Readonly<Record<string, number>>
   readonly requiredContextSources?: readonly string[]
   /** 提案前必须成功返回 canPropose=true 的质量门工具。 */

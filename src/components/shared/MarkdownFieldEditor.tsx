@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import {
   Bold,
   Eye,
@@ -22,6 +22,7 @@ interface Props {
   label?: string
   compact?: boolean
   fill?: boolean
+  headerAction?: ReactNode
 }
 
 type EditorMode = 'preview' | 'edit'
@@ -33,6 +34,7 @@ export default function MarkdownFieldEditor({
   label = '设定正文',
   compact = false,
   fill = false,
+  headerAction,
 }: Props) {
   const [mode, setMode] = useState<EditorMode>(value.trim() ? 'preview' : 'edit')
   const [draft, setDraft] = useState(value)
@@ -123,8 +125,9 @@ export default function MarkdownFieldEditor({
   const renderEditor = (isExpanded: boolean) => (
     <section className={`overflow-hidden rounded-lg border border-border bg-bg-surface ${isExpanded ? 'flex min-h-0 flex-1 flex-col' : fill ? 'flex min-h-80 flex-1 flex-col' : ''}`}>
       <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-bg-elevated/55 px-3 py-1.5">
-        <span className="text-xs font-medium text-text-secondary">{label}</span>
-        <div className="flex items-center gap-1">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-secondary">{label}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {headerAction}
           <div className="flex rounded-md border border-border bg-bg-base p-0.5" aria-label={`${label}显示模式`}>
             <button
               type="button"

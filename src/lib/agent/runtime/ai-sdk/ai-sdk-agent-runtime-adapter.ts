@@ -581,6 +581,14 @@ function assertCompletionProposalInput(
       }
     }
   }
+  for (const path of requirement.requiredDataPaths ?? []) {
+    for (const item of dataItems) {
+      const value = valueAtPath(item, path)
+      if (value == null || (typeof value === 'string' && value.trim() === '')) {
+        throw new Error(`[agent-runtime] 完成条件未满足：提案缺少精确路径 ${path.join(' → ')}`)
+      }
+    }
+  }
 
   assertDeliverableContent(requirement, dataItems)
 }
@@ -663,9 +671,12 @@ function completionRequirementReminder(
   requirement: AgentChangeProposalCompletionRequirement,
 ): string {
   const record = requirement.recordId != null ? `，recordId=${requirement.recordId}` : ''
+  const paths = requirement.requiredDataPaths?.length
+    ? `\n必须包含精确数据路径：${requirement.requiredDataPaths.map(path => path.join(' → ')).join('、')}。`
+    : ''
   return [
     `提案参数必须为 target=${requirement.target}，mode=${requirement.mode}${record}。`,
-    `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。`,
+    `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。${paths}`,
     requirement.requiredPreProposalTools?.length
       ? `提案前必须调用并通过质量门：${requirement.requiredPreProposalTools.join('、')}；工具必须返回 canPropose=true。`
       : '',
@@ -680,6 +691,15 @@ function assertPreProposalToolsPassed(
   if (missing.length) {
     throw new Error(`提案前质量门尚未通过：${missing.join('、')}。请先调用工具并修正到 canPropose=true。`)
   }
+}
+
+function valueAtPath(root: Readonly<Record<string, unknown>>, path: readonly string[]): unknown {
+  let current: unknown = root
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined
+    current = current[segment]
+  }
+  return current
 }
 
 function textContentLength(value: unknown): number {

@@ -139,6 +139,11 @@ describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文
     expect(rules).toContain('currentEntry.fictionalAdaptations')
     expect(rules).toContain('profile.globalNote')
     expect(rules).not.toContain('<textarea')
+    expect(rules.match(/headerAction={<AgentFieldButton/g)).toHaveLength(3)
+    expect(rules).toContain('AI 判断冲突优先级')
+    expect(rules).toContain("dispatchAgentIntent({")
+    expect(rules).toContain("target: 'worldRulesProfiles'")
+    expect(rules).toContain("requiredDataPaths: isGlobal")
   })
 
   it('世界来源接入独立词条分类并显示正文/词条页签', () => {

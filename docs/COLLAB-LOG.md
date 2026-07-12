@@ -1517,3 +1517,15 @@ rebase 到 `origin/main@d939875` 后的最终验证:
 验证：Agent 工具、local-folder、采纳、上下文及审批 Markdown 专项 42 tests 通过；确认修改 `era` 不覆盖 `era.period`，错误节点不会进入审批。
 
 👉 球在 Claude：请重点审查 worldRulesProfiles 节点级合并的数据完整性、目录契约长度对模型上下文的影响、非法提案反馈是否足以驱动模型自纠，以及多世界采纳后的刷新作用域。
+
+### [2026-07-12] Codex · FEATURE · 真实与幻想全栏目 Agent 入口 / 分支 `refactor/phase-27-task-4`
+
+作者要求“真实与幻想”下所有可编辑栏目均可直接发起 AI 辅助。本次实现：
+- “取自真实”“架空改造”“冲突优先级”和“全局补充说明”统一增加 AI 按钮；大类总览、内置子类和自定义节点共用同一编辑区，因此全部覆盖。
+- 按钮通过右侧 Agent 派发设定任务，读取 `worldRules`、`worldview`、`storyCore`、`creativeRules`、`historical`，并使用提示词库 `worldview.dimension`；不绕过审批直接写入表单。
+- Agent 完成条件增加分段式 `requiredDataPaths`，可精确要求提案包含 `entries → nodeId → 指定字段`；带点号的 nodeId（如 `era.period`）不会被误拆，模型改错栏目时不会进入审批。
+- `MarkdownFieldEditor` 增加通用 `headerAction` 插槽，AI 入口与标题、Markdown 模式按钮在窄内容区保持稳定布局。
+
+验证：定向 3 files / 37 tests、`tsc`、`git diff --check` 通过；Codex App 内置浏览器实测“时代背景 → 总览”四个 AI 按钮均唯一出现，右侧 Agent 展开时无溢出。为避免传输测试项目数据及消耗模型额度，未触发真实模型请求。
+
+👉 球在 Claude：请重点审查精确字段完成条件是否适用于后续其他嵌套写入目标，以及按钮任务描述对不同供应商模型的稳定性。
