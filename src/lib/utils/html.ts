@@ -9,7 +9,23 @@ export function isHtml(s: string): boolean {
   return /<\/?[a-z][\s\S]*>/i.test(s)
 }
 
-/** 纯文本 → HTML：每行包装为 <p>，空行生成空段落，保留原意 */
+/** 清除章节正文中仅用于 Markdown 排版的段间空行。 */
+export function compactChapterParagraphs(content: string): string {
+  if (!content) return ''
+  if (!isHtml(content)) {
+    return content
+      .replace(/\r\n?/g, '\n')
+      .replace(/\n[\t ]*(?:\n[\t ]*)+/g, '\n')
+      .trim()
+  }
+
+  return content.replace(
+    /<(p|div)(?:\s[^>]*)?>(?:\s|&nbsp;|<br\s*\/?\s*>)*<\/\1>/gi,
+    '',
+  )
+}
+
+/** 纯文本 → HTML：每个非空行包装为一个相邻段落。 */
 export function plainTextToHtml(text: string): string {
   if (!text) return ''
   const escape = (s: string) =>
@@ -18,9 +34,10 @@ export function plainTextToHtml(text: string): string {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
   // 兼容 CRLF
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const lines = compactChapterParagraphs(text).split('\n')
   return lines
-    .map(l => (l.trim().length === 0 ? '<p></p>' : `<p>${escape(l)}</p>`))
+    .filter(line => line.trim().length > 0)
+    .map(line => `<p>${escape(line)}</p>`)
     .join('')
 }
 

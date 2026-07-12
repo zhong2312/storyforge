@@ -495,8 +495,14 @@ body {
 }
 
 .sf-manuscript-editor .tiptap-editor p {
-  margin: 0 0 var(--editor-user-paragraph-spacing, 1.15em);
+  margin: 0 0 var(--editor-user-paragraph-spacing, 0);
   text-indent: 2em;
+}
+
+/* 兼容旧 AI 正文中已保存的空段落；保留空编辑器的 placeholder。 */
+.sf-manuscript-editor .tiptap-editor p:empty:not(.is-editor-empty),
+.sf-manuscript-editor .tiptap-editor p:has(> br:only-child):not(.is-editor-empty) {
+  display: none;
 }
 
 /* ── 稿纸横线背景 ─────────────────────────────────── */

@@ -5,7 +5,7 @@ import { FIELD_BY_TARGET, FIELD_REGISTRY } from '../../../registry/field-registr
 import { REGISTRY_BY_NAME } from '../../../registry/project-tables'
 import { projectLocatorKey, type ProjectStoragePort } from '../../../storage/ports'
 import type { AdoptInput, FieldSpec } from '../../../registry/types'
-import { countWords, htmlToPlainText } from '../../../utils/html'
+import { compactChapterParagraphs, countWords, htmlToPlainText } from '../../../utils/html'
 import { projectRagSourceTables } from '../../../retrieval/retrieval'
 import { checkDeAISafety, scanDeAIText } from '../../../ai/de-ai-pipeline/deterministic-scan'
 import type { StoryForgeTool, ToolExecutionContext } from '../tool-types'
@@ -229,9 +229,11 @@ function normalizeDerivedFields(input: AdoptInput): AdoptInput {
 
   const normalizeItem = (item: Record<string, unknown>): Record<string, unknown> => {
     if (typeof item.content !== 'string') return item
+    const content = compactChapterParagraphs(item.content)
     return {
       ...item,
-      wordCount: countWords(htmlToPlainText(item.content)),
+      content,
+      wordCount: countWords(htmlToPlainText(content)),
     }
   }
 

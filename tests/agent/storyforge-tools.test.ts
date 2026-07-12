@@ -281,6 +281,7 @@ describe('registry-driven StoryForge tools', () => {
       createdAt: now,
       updatedAt: now,
     }) as number
+    const proposedContent = '<p>雨夜 山门</p><p><br></p><p>追兵将至</p>'
     const content = '<p>雨夜 山门</p><p>追兵将至</p>'
 
     const plan = await registry.execute(
@@ -290,18 +291,19 @@ describe('registry-driven StoryForge tools', () => {
         target: 'chapters',
         mode: 'replace',
         recordId: chapterId,
-        data: { content, wordCount: 1, status: 'draft' },
+        data: { content: proposedContent, wordCount: 1, status: 'draft' },
       },
     ) as {
       planId: string
       approvalId: string
       planHash: string
-      input: { data: { wordCount: number } }
+      input: { data: { content: string; wordCount: number } }
       preview: { canonicalFields: string[] }
       beforeData: { content: string }
     }
 
     expect(plan.input.data.wordCount).toBe(8)
+    expect(plan.input.data.content).toBe(content)
     expect(plan.preview.canonicalFields).toContain('wordCount')
     expect(plan.beforeData.content).toBe('')
 
