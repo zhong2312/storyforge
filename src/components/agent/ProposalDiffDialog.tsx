@@ -17,7 +17,10 @@ export function ProposalDiffDialog({ preview, onClose }: ProposalDiffDialogProps
           <GitCompareArrows className="h-5 w-5 text-accent" />
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-text-primary">变更差异对比</h2>
-            <p className="mt-0.5 text-xs text-text-muted">绿色为新增，红色为删除</p>
+            <div className="mt-1 flex items-center gap-3 text-xs text-text-muted" aria-label="差异颜色图例">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 border border-red-400 bg-red-200 dark:bg-red-900" />红色为删除</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 border border-emerald-500 bg-emerald-200 dark:bg-emerald-900" />绿色为新增</span>
+            </div>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1.5 text-text-muted hover:bg-bg-hover hover:text-text-primary" aria-label="关闭差异对比">
             <X className="h-4 w-4" />
@@ -59,8 +62,8 @@ function DiffPane({
               key={`${index}:${change.value.length}`}
               className={changed
                 ? side === 'before'
-                  ? 'bg-red-500/20 text-red-300'
-                  : 'bg-emerald-500/20 text-emerald-300'
+                  ? 'border-l-2 border-red-500 bg-red-100 text-red-900 dark:bg-red-950/70 dark:text-red-100'
+                  : 'border-l-2 border-emerald-500 bg-emerald-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-100'
                 : undefined}
             >
               {change.value}

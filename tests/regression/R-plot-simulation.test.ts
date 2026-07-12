@@ -219,7 +219,7 @@ function providerCatalog(): AIProviderConfig[] {
     id, name: id, model: modelName, temperature: 0.7, maxTokens: 2000, contextWindow: 64_000,
   })
   return [{
-    id: 'provider', name: '测试供应商', provider: 'custom', apiKey: 'test-key', baseUrl: 'https://example.test/v1',
+    id: 'provider', name: '测试供应商', provider: 'custom', apiFormat: 'openai-compatible', apiKey: 'test-key', baseUrl: 'https://example.test/v1',
     models: [model('narrator', 'narrator-model'), model('actor-a', 'actor-a-model'), model('actor-b', 'actor-b-model')],
   }]
 }

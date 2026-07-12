@@ -9,6 +9,7 @@ import type {
   AIModelRef,
   AIModelScene,
   AIModelSceneBindings,
+  AIProviderApiFormat,
 } from '../lib/types'
 import { PROVIDER_PRESETS } from '../lib/types'
 import { createLog, updateLog } from '../lib/ai/logger'
@@ -95,6 +96,20 @@ interface AIModelCatalogState {
   providers: AIProviderConfig[]
   bindings: AIModelSceneBindings
   active: AIModelRef
+  contextCompressionThreshold: number
+}
+
+type LegacyAIModelEntry = AIModelEntry & { contextCompressionThreshold?: number }
+
+function normalizeModelEntry(model: LegacyAIModelEntry): AIModelEntry {
+  return {
+    id: model.id,
+    name: model.name,
+    model: model.model,
+    temperature: model.temperature,
+    maxTokens: model.maxTokens,
+    contextWindow: model.contextWindow,
+  }
 }
 
 function modelEntryFromConfig(config: AIConfig, id: string, name = config.model): AIModelEntry {
@@ -105,7 +120,6 @@ function modelEntryFromConfig(config: AIConfig, id: string, name = config.model)
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     contextWindow: config.contextWindow,
-    contextCompressionThreshold: config.contextCompressionThreshold,
   }
 }
 
@@ -115,13 +129,19 @@ function migrateLegacyCatalog(config: AIConfig, presets: AIConfigPreset[]): AIMo
     id: `legacy-provider-${index + 1}`,
     name: item.name,
     provider: item.config.provider,
+    apiFormat: 'openai-compatible',
     apiKey: item.config.apiKey,
     baseUrl: item.config.baseUrl,
     models: [modelEntryFromConfig(item.config, `legacy-model-${index + 1}-1`, item.name === '默认供应商' ? item.config.model : item.name)],
   }))
   const activeProvider = providers[0]
   const active = { providerConfigId: activeProvider.id, modelId: activeProvider.models[0].id }
-  return { providers, bindings: {}, active }
+  return {
+    providers,
+    bindings: {},
+    active,
+    contextCompressionThreshold: config.contextCompressionThreshold ?? 0.8,
+  }
 }
 
 function loadModelCatalog(
@@ -143,6 +163,8 @@ function loadModelCatalog(
   try { sessionKeys = JSON.parse(sessionStorage.getItem(MODEL_CATALOG_SESSION_KEYS) || '{}') } catch { /* ignore */ }
   const hydrated = providers.map(provider => ({
     ...provider,
+    apiFormat: 'openai-compatible' as const,
+    models: (provider.models as LegacyAIModelEntry[]).map(normalizeModelEntry),
     apiKey: rememberApiKey
       ? (provider.apiKey || (provider.provider === fallback.provider && provider.baseUrl === fallback.baseUrl ? fallback.apiKey : ''))
       : (sessionKeys[provider.id] || (provider.provider === fallback.provider && provider.baseUrl === fallback.baseUrl ? fallback.apiKey : '')),
@@ -154,6 +176,11 @@ function loadModelCatalog(
     providers: hydrated,
     bindings: raw?.bindings ?? {},
     active: { providerConfigId: activeProvider.id, modelId: activeModel.id },
+    contextCompressionThreshold: raw?.contextCompressionThreshold
+      ?? (providers.flatMap(provider => provider.models) as LegacyAIModelEntry[])
+        .find(model => model.contextCompressionThreshold != null)?.contextCompressionThreshold
+      ?? fallback.contextCompressionThreshold
+      ?? 0.8,
   }
 }
 
@@ -186,7 +213,7 @@ function resolveCatalogConfig(catalog: AIModelCatalogState, ref: AIModelRef | un
     temperature: model.temperature,
     maxTokens: model.maxTokens,
     contextWindow: model.contextWindow,
-    contextCompressionThreshold: model.contextCompressionThreshold ?? 0.8,
+    contextCompressionThreshold: catalog.contextCompressionThreshold,
   }
 }
 
@@ -196,9 +223,10 @@ export function resolveAIModelConfig(
   active: AIModelRef,
   scene: AIModelScene,
   override?: AIModelRef,
+  contextCompressionThreshold = 0.8,
 ): AIConfig {
   return resolveCatalogConfig(
-    { providers, bindings, active },
+    { providers, bindings, active, contextCompressionThreshold },
     override ?? bindings[scene] ?? active,
   )
 }
@@ -218,9 +246,9 @@ function syncActiveCatalog(catalog: AIModelCatalogState, config: AIConfig): AIMo
         temperature: config.temperature,
         maxTokens: config.maxTokens,
         contextWindow: config.contextWindow,
-        contextCompressionThreshold: config.contextCompressionThreshold,
       }),
     }),
+    contextCompressionThreshold: config.contextCompressionThreshold ?? catalog.contextCompressionThreshold,
   }
 }
 
@@ -337,6 +365,7 @@ interface AIConfigStore {
   providerConfigs: AIProviderConfig[]
   sceneBindings: AIModelSceneBindings
   activeModelRef: AIModelRef
+  contextCompressionThreshold: number
   rememberApiKey: boolean
   presets: AIConfigPreset[]
   /** 当前生效的预设 id（null = 未对应任何预设/已改动） */
@@ -347,6 +376,7 @@ interface AIConfigStore {
   embedding: EmbeddingConfig
   setEmbeddingConfig: (partial: Partial<EmbeddingConfig>) => void
   setConfig: (config: Partial<AIConfig>) => void
+  setContextCompressionThreshold: (value: number) => void
   setRememberApiKey: (remember: boolean) => void
   switchProvider: (provider: AIProvider) => void
   testConnection: () => Promise<TestResult>
@@ -356,6 +386,7 @@ interface AIConfigStore {
   addModel: (providerConfigId: string, model: string) => string
   removeModel: (providerConfigId: string, modelId: string) => void
   renameProviderConfig: (id: string, name: string) => void
+  setProviderApiFormat: (id: string, apiFormat: AIProviderApiFormat) => void
   renameModel: (providerConfigId: string, modelId: string, name: string) => void
   setSceneBinding: (scene: AIModelScene, ref: AIModelRef | null) => void
   resolveConfigForScene: (scene: AIModelScene, override?: AIModelRef) => AIConfig
@@ -378,6 +409,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
   providerConfigs: initialCatalog.providers,
   sceneBindings: initialCatalog.bindings,
   activeModelRef: initialCatalog.active,
+  contextCompressionThreshold: initialCatalog.contextCompressionThreshold,
   rememberApiKey: initial.rememberApiKey,
   presets: initialPresets,
   activePresetId: null,
@@ -396,6 +428,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       providers: get().providerConfigs,
       bindings: get().sceneBindings,
       active: get().activeModelRef,
+      contextCompressionThreshold: get().contextCompressionThreshold,
     }, newConfig)
     persistConfig(newConfig, get().rememberApiKey)
     persistModelCatalog(catalog, get().rememberApiKey)
@@ -403,10 +436,24 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     set({ config: newConfig, providerConfigs: catalog.providers, activePresetId: null })
   },
 
+  setContextCompressionThreshold: (value: number) => {
+    const contextCompressionThreshold = Math.min(0.95, Math.max(0.5, value))
+    const catalog = {
+      providers: get().providerConfigs,
+      bindings: get().sceneBindings,
+      active: get().activeModelRef,
+      contextCompressionThreshold,
+    }
+    const config = { ...get().config, contextCompressionThreshold }
+    persistModelCatalog(catalog, get().rememberApiKey)
+    persistConfig(config, get().rememberApiKey)
+    set({ contextCompressionThreshold, config })
+  },
+
   setRememberApiKey: (remember: boolean) => {
     persistConfig(get().config, remember)
     persistEmbeddingConfig(get().embedding, remember)
-    persistModelCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef }, remember)
+    persistModelCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, remember)
     set({ rememberApiKey: remember })
   },
 
@@ -431,6 +478,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       providers: get().providerConfigs,
       bindings: get().sceneBindings,
       active: get().activeModelRef,
+      contextCompressionThreshold: get().contextCompressionThreshold,
     }, newConfig)
     persistConfig(newConfig, get().rememberApiKey)
     persistModelCatalog(catalog, get().rememberApiKey)
@@ -476,7 +524,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       apiKey: provider === get().config.provider ? get().config.apiKey : (preset.apiKey || ''),
     }
     persistConfig(newConfig, get().rememberApiKey)
-    const catalog = syncActiveCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef }, newConfig)
+    const catalog = syncActiveCatalog({ providers: get().providerConfigs, bindings: get().sceneBindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, newConfig)
     persistModelCatalog(catalog, get().rememberApiKey)
     set({ config: newConfig, providerConfigs: catalog.providers, activePresetId: null, editingPresetId: null })
   },
@@ -490,11 +538,13 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       provider,
       ...preset,
       apiKey: '',
+      contextCompressionThreshold: get().contextCompressionThreshold,
     }
     const entry: AIProviderConfig = {
       id: providerId,
       name: `${provider} ${get().providerConfigs.length + 1}`,
       provider,
+      apiFormat: 'openai-compatible',
       apiKey: base.apiKey,
       baseUrl: base.baseUrl,
       models: [modelEntryFromConfig(base, modelId)],
@@ -503,6 +553,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       providers: [...get().providerConfigs, entry],
       bindings: get().sceneBindings,
       active: { providerConfigId: providerId, modelId },
+      contextCompressionThreshold: get().contextCompressionThreshold,
     }
     persistModelCatalog(catalog, get().rememberApiKey)
     persistConfig(base, get().rememberApiKey)
@@ -518,7 +569,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       ? { providerConfigId: fallback.id, modelId: fallback.models[0].id }
       : get().activeModelRef
     const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => ref?.providerConfigId !== id)) as AIModelSceneBindings
-    const catalog = { providers, bindings, active }
+    const catalog = { providers, bindings, active, contextCompressionThreshold: get().contextCompressionThreshold }
     const config = resolveCatalogConfig(catalog, active)
     persistModelCatalog(catalog, get().rememberApiKey)
     persistConfig(config, get().rememberApiKey)
@@ -526,7 +577,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
   },
 
   selectModel: (ref) => {
-    const catalog = { providers: get().providerConfigs, bindings: get().sceneBindings, active: ref }
+    const catalog = { providers: get().providerConfigs, bindings: get().sceneBindings, active: ref, contextCompressionThreshold: get().contextCompressionThreshold }
     const config = resolveCatalogConfig(catalog, ref)
     persistModelCatalog(catalog, get().rememberApiKey)
     persistConfig(config, get().rememberApiKey)
@@ -541,7 +592,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       models: [...provider.models, modelEntryFromConfig({ ...get().config, provider: provider.provider, baseUrl: provider.baseUrl, apiKey: provider.apiKey, model }, modelId)],
     })
     const active = { providerConfigId, modelId }
-    const catalog = { providers, bindings: get().sceneBindings, active }
+    const catalog = { providers, bindings: get().sceneBindings, active, contextCompressionThreshold: get().contextCompressionThreshold }
     const config = resolveCatalogConfig(catalog, active)
     persistModelCatalog(catalog, get().rememberApiKey)
     persistConfig(config, get().rememberApiKey)
@@ -564,7 +615,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     const bindings = Object.fromEntries(Object.entries(get().sceneBindings).filter(([, ref]) => (
       ref?.providerConfigId !== providerConfigId || ref.modelId !== modelId
     ))) as AIModelSceneBindings
-    const catalog = { providers, bindings, active }
+    const catalog = { providers, bindings, active, contextCompressionThreshold: get().contextCompressionThreshold }
     const config = resolveCatalogConfig(catalog, active)
     persistModelCatalog(catalog, get().rememberApiKey)
     persistConfig(config, get().rememberApiKey)
@@ -573,7 +624,13 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
 
   renameProviderConfig: (id, name) => {
     const providers = get().providerConfigs.map(provider => provider.id === id ? { ...provider, name: name.trim() || provider.name } : provider)
-    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef }, get().rememberApiKey)
+    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, get().rememberApiKey)
+    set({ providerConfigs: providers })
+  },
+
+  setProviderApiFormat: (id, apiFormat) => {
+    const providers = get().providerConfigs.map(provider => provider.id === id ? { ...provider, apiFormat } : provider)
+    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, get().rememberApiKey)
     set({ providerConfigs: providers })
   },
 
@@ -582,7 +639,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       ...provider,
       models: provider.models.map(model => model.id === modelId ? { ...model, name: name.trim() || model.model } : model),
     })
-    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef }, get().rememberApiKey)
+    persistModelCatalog({ providers, bindings: get().sceneBindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, get().rememberApiKey)
     set({ providerConfigs: providers })
   },
 
@@ -590,7 +647,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     const bindings = { ...get().sceneBindings }
     if (ref) bindings[scene] = ref
     else delete bindings[scene]
-    persistModelCatalog({ providers: get().providerConfigs, bindings, active: get().activeModelRef }, get().rememberApiKey)
+    persistModelCatalog({ providers: get().providerConfigs, bindings, active: get().activeModelRef, contextCompressionThreshold: get().contextCompressionThreshold }, get().rememberApiKey)
     set({ sceneBindings: bindings })
   },
 
@@ -600,6 +657,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     get().activeModelRef,
     scene,
     override,
+    get().contextCompressionThreshold,
   ),
 
   testConnection: async (): Promise<TestResult> => {

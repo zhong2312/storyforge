@@ -1,5 +1,4 @@
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
-import { AI_MODEL_SCENES, type AIModelRef } from '../../lib/types'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { useDialog } from '../shared/Dialog'
 import { PROVIDER_OPTIONS } from './provider-options'
@@ -8,7 +7,6 @@ export default function ModelCatalogSection() {
   const {
     providerConfigs,
     activeModelRef,
-    sceneBindings,
     addProviderConfig,
     removeProviderConfig,
     selectModel,
@@ -16,15 +14,8 @@ export default function ModelCatalogSection() {
     removeModel,
     renameProviderConfig,
     renameModel,
-    setSceneBinding,
   } = useAIConfigStore()
   const dialog = useDialog()
-  const modelChoices = providerConfigs.flatMap(provider => provider.models.map(model => ({
-    ref: { providerConfigId: provider.id, modelId: model.id },
-    value: `${provider.id}::${model.id}`,
-    label: `${provider.name} / ${model.name}`,
-  })))
-
   const promptName = async (title: string, current: string, apply: (value: string) => void) => {
     const value = await dialog.prompt({ title, defaultValue: current })
     if (value?.trim()) apply(value.trim())
@@ -45,7 +36,7 @@ export default function ModelCatalogSection() {
     <div className="mb-5 border-b border-border/60 pb-5">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <h4 className="text-sm font-medium text-text-primary">基础配置</h4>
+          <h4 className="text-sm font-medium text-text-primary">供应商与模型目录</h4>
           <p className="mt-0.5 text-[11px] text-text-muted">可添加多个供应商，并为每个供应商登记多个模型。</p>
         </div>
         <button
@@ -94,37 +85,6 @@ export default function ModelCatalogSection() {
           </div>
         ))}
       </div>
-
-      <div className="mt-5">
-        <h4 className="text-sm font-medium text-text-primary">场景绑定</h4>
-        <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-          {AI_MODEL_SCENES.map(scene => {
-            const binding = sceneBindings[scene.value]
-            const value = binding ? `${binding.providerConfigId}::${binding.modelId}` : ''
-            return (
-              <label key={scene.value} className="block">
-                <span className="mb-1 flex items-center justify-between text-xs text-text-secondary">
-                  {scene.label}<span className="text-[10px] text-text-muted">{scene.description}</span>
-                </span>
-                <select
-                  value={value}
-                  onChange={event => setSceneBinding(scene.value, parseModelRef(event.target.value))}
-                  className="w-full rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
-                >
-                  <option value="">跟随当前选择</option>
-                  {modelChoices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
-                </select>
-              </label>
-            )
-          })}
-        </div>
-      </div>
     </div>
   )
-}
-
-function parseModelRef(value: string): AIModelRef | null {
-  if (!value) return null
-  const [providerConfigId, modelId] = value.split('::')
-  return providerConfigId && modelId ? { providerConfigId, modelId } : null
 }

@@ -63,13 +63,16 @@ export interface AIModelEntry {
   temperature: number
   maxTokens: number
   contextWindow?: number
-  contextCompressionThreshold?: number
 }
+
+/** 当前请求链路支持的供应商 API 报文格式。 */
+export type AIProviderApiFormat = 'openai-compatible'
 
 export interface AIProviderConfig {
   id: string
   name: string
   provider: AIProvider
+  apiFormat: AIProviderApiFormat
   apiKey: string
   baseUrl: string
   models: AIModelEntry[]

@@ -8,11 +8,14 @@ import { isAIConfigReady } from '../../lib/ai/config-readiness'
 import { getLogs, subscribeLogs, clearLogs, formatLog } from '../../lib/ai/logger'
 import { applyStoryForgeTheme, resolveStoryForgeTheme, THEME_OPTIONS, type StoryForgeTheme } from '../../lib/theme'
 import ModelCatalogSection from './ModelCatalogSection'
+import SceneBindingSection from './SceneBindingSection'
 import { PROVIDER_OPTIONS } from './provider-options'
 export { PROVIDER_OPTIONS } from './provider-options'
 
 export default function AIConfigPanel() {
   const { config, setConfig, switchProvider, testConnection,
+    providerConfigs, activeModelRef, setProviderApiFormat,
+    contextCompressionThreshold, setContextCompressionThreshold,
     rememberApiKey, setRememberApiKey } = useAIConfigStore()
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -26,6 +29,7 @@ export default function AIConfigPanel() {
   const logs = useSyncExternalStore(subscribeLogs, getLogs)
 
   const currentProviderInfo = PROVIDER_OPTIONS.find((p) => p.value === config.provider)
+  const activeProviderConfig = providerConfigs.find(provider => provider.id === activeModelRef.providerConfigId)
 
   const handleTest = async () => {
     setTesting(true)
@@ -61,7 +65,12 @@ export default function AIConfigPanel() {
 
         <ModelCatalogSection />
 
-        <div className="space-y-4">
+        <div className="space-y-5">
+          <section className="space-y-4 rounded-lg border border-border/70 bg-bg-base/20 p-4" aria-labelledby="provider-config-title">
+            <div>
+              <h4 id="provider-config-title" className="text-sm font-semibold text-text-primary">供应商配置</h4>
+              <p className="mt-0.5 text-[11px] text-text-muted">连接地址、接口格式和密钥由供应商下的所有模型共用。</p>
+            </div>
           <div>
             <label className="block text-sm text-text-secondary mb-1.5">提供商</label>
             <select
@@ -81,6 +90,18 @@ export default function AIConfigPanel() {
                 {currentProviderInfo.hint}
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">API 格式</label>
+            <select
+              value={activeProviderConfig?.apiFormat ?? 'openai-compatible'}
+              onChange={event => activeProviderConfig && setProviderApiFormat(activeProviderConfig.id, event.target.value as 'openai-compatible')}
+              className="w-full px-3 py-2 bg-bg-base border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent transition-colors"
+            >
+              <option value="openai-compatible">OpenAI 兼容（Chat Completions）</option>
+            </select>
+            <p className="mt-1 text-[11px] text-text-muted">当前客户端统一使用 OpenAI 兼容报文；原生 Anthropic / Gemini 格式尚未开放。</p>
           </div>
 
           <div>
@@ -113,7 +134,7 @@ export default function AIConfigPanel() {
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div>
             <div>
               <label className="block text-sm text-text-secondary mb-1.5">Base URL</label>
               <input
@@ -180,6 +201,14 @@ export default function AIConfigPanel() {
                 )
               })()}
             </div>
+          </div>
+          </section>
+
+          <section className="space-y-4 rounded-lg border border-border/70 bg-bg-base/20 p-4" aria-labelledby="model-config-title">
+            <div>
+              <h4 id="model-config-title" className="text-sm font-semibold text-text-primary">模型配置</h4>
+              <p className="mt-0.5 text-[11px] text-text-muted">模型 ID、温度、输出上限和上下文窗口随当前模型保存。</p>
+            </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1.5">模型</label>
               {PROVIDER_MODELS[config.provider] ? (
@@ -222,9 +251,8 @@ export default function AIConfigPanel() {
                 />
               )}
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm text-text-secondary mb-1.5">
                 Temperature: {config.temperature}
@@ -296,25 +324,30 @@ export default function AIConfigPanel() {
             <p className="text-[11px] text-text-muted mt-1">
               识别不到的模型默认按 8K 计算,会误报「上下文超出窗口」。本地模型(LM Studio / Ollama)请在此填真实窗口,如 128000 / 262144。
             </p>
-            <div className="mt-3">
+          </div>
+          </section>
+
+          <section className="rounded-lg border border-border/70 bg-bg-base/20 p-4" aria-labelledby="context-policy-title">
+            <div>
+              <h4 id="context-policy-title" className="text-sm font-semibold text-text-primary">全局上下文管理</h4>
               <label className="mb-1.5 block text-sm text-text-secondary">
                 Agent 上下文压缩阈值
-                <span className="ml-1 text-accent">{Math.round((config.contextCompressionThreshold ?? 0.8) * 100)}%</span>
+                <span className="ml-1 text-accent">{Math.round(contextCompressionThreshold * 100)}%</span>
               </label>
               <input
                 type="range"
                 min={50}
                 max={95}
                 step={5}
-                value={Math.round((config.contextCompressionThreshold ?? 0.8) * 100)}
-                onChange={(event) => setConfig({ contextCompressionThreshold: Number(event.target.value) / 100 })}
+                value={Math.round(contextCompressionThreshold * 100)}
+                onChange={(event) => setContextCompressionThreshold(Number(event.target.value) / 100)}
                 className="w-full accent-accent"
               />
               <p className="mt-1 text-[11px] text-text-muted">
                 会话、工具结果、系统指令和输出预留达到模型上下文窗口的该比例后，自动把较早内容压缩为摘要。
               </p>
             </div>
-          </div>
+          </section>
 
           {/* 测试连接 */}
           <div className="pt-2 space-y-2">
@@ -364,6 +397,8 @@ export default function AIConfigPanel() {
           </div>
         </div>
       </div>
+
+      <SceneBindingSection />
 
       {/* NS-5 · 语义检索(embedding) 配置卡 */}
       <EmbeddingConfigCard />

@@ -82,7 +82,7 @@ export function ChapterHistoryDialog({ chapterId, chapterTitle, onClose }: Chapt
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[280px_minmax(0,1fr)] md:grid-rows-1" data-testid="chapter-history-content">
           <aside className="max-h-56 overflow-y-auto border-b border-border bg-bg-base/40 p-3 md:max-h-none md:border-b-0 md:border-r">
             {loading && <p className="px-2 py-6 text-center text-xs text-text-muted">正在读取历史...</p>}
             {!loading && revisions.length === 0 && (
@@ -115,7 +115,7 @@ export function ChapterHistoryDialog({ chapterId, chapterTitle, onClose }: Chapt
             </div>
           </aside>
 
-          <main className="flex min-w-0 flex-col">
+          <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
             {selected ? (
               <>
                 <div className="flex items-center justify-between border-b border-border px-5 py-3">
@@ -133,7 +133,7 @@ export function ChapterHistoryDialog({ chapterId, chapterTitle, onClose }: Chapt
                     {restoring ? '恢复中...' : '恢复此版本'}
                   </button>
                 </div>
-                <article className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-8 py-6 font-serif text-sm leading-8 text-text-secondary">
+                <article className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-8 py-6 font-serif text-sm leading-8 text-text-secondary" data-testid="chapter-history-scroll-region">
                   {htmlToPlainText(selected.content) || '（空白正文）'}
                 </article>
               </>

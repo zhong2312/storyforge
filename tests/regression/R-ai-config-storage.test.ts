@@ -189,6 +189,51 @@ describe('R-AI-CONFIG · API Key 存储策略', () => {
     expect(state.resolveConfigForScene('outline').model).toBe(state.config.model)
   })
 
+  it('压缩阈值为目录全局配置，切换模型后保持不变', async () => {
+    const useAIConfigStore = await freshStore()
+    const providerId = useAIConfigStore.getState().activeModelRef.providerConfigId
+    const secondModelId = useAIConfigStore.getState().addModel(providerId, 'writer-long-context')
+    useAIConfigStore.getState().setContextCompressionThreshold(0.7)
+    const firstModelId = useAIConfigStore.getState().providerConfigs[0].models[0].id
+
+    useAIConfigStore.getState().selectModel({ providerConfigId: providerId, modelId: firstModelId })
+    expect(useAIConfigStore.getState().contextCompressionThreshold).toBe(0.7)
+    expect(useAIConfigStore.getState().config.contextCompressionThreshold).toBe(0.7)
+
+    const catalog = JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}')
+    expect(catalog.contextCompressionThreshold).toBe(0.7)
+    expect(catalog.providers[0].models.find((model: { id: string }) => model.id === secondModelId))
+      .not.toHaveProperty('contextCompressionThreshold')
+  })
+
+  it('把旧模型级压缩阈值迁移为全局配置，并补齐供应商 API 格式', async () => {
+    localStorage.setItem(CATALOG_KEY, JSON.stringify({
+      providers: [{
+        id: 'old-provider', name: '旧供应商', provider: 'custom', apiKey: '', baseUrl: 'https://example.com/v1',
+        models: [{ id: 'old-model', name: '旧模型', model: 'writer', temperature: 0.5, maxTokens: 4096, contextCompressionThreshold: 0.65 }],
+      }],
+      bindings: {},
+      active: { providerConfigId: 'old-provider', modelId: 'old-model' },
+    }))
+
+    const useAIConfigStore = await freshStore()
+    expect(useAIConfigStore.getState().contextCompressionThreshold).toBe(0.65)
+    expect(useAIConfigStore.getState().providerConfigs[0].apiFormat).toBe('openai-compatible')
+    const migrated = JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}')
+    expect(migrated.contextCompressionThreshold).toBe(0.65)
+    expect(migrated.providers[0].apiFormat).toBe('openai-compatible')
+    expect(migrated.providers[0].models[0]).not.toHaveProperty('contextCompressionThreshold')
+  })
+
+  it('供应商 API 格式随目录持久化', async () => {
+    const useAIConfigStore = await freshStore()
+    const providerId = useAIConfigStore.getState().activeModelRef.providerConfigId
+    useAIConfigStore.getState().setProviderApiFormat(providerId, 'openai-compatible')
+
+    const catalog = JSON.parse(localStorage.getItem(CATALOG_KEY) || '{}')
+    expect(catalog.providers[0].apiFormat).toBe('openai-compatible')
+  })
+
   it('多供应商 API Key 在会话模式下不写入 localStorage', async () => {
     const useAIConfigStore = await freshStore()
     useAIConfigStore.getState().setConfig({ apiKey: 'sk-private' })

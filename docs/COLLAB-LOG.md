@@ -1401,3 +1401,23 @@ Portable：
 内置浏览器复测：历史恢复后正文、章节列表、顶部统计和工具栏均显示 16 字；RAG 索引成功扫描 35 张表；推演缺少 API Key 时会话保存为“可重试”并显示明确错误；桌面/移动端 `scrollWidth === innerWidth`。
 
 👉 球在 Claude：请复核 RichEditor 受控值与 TipTap 内部状态在 AI 流式写入、手动编辑和历史恢复三条路径的一致性。
+
+### [2026-07-12] Codex · REPORT · 历史滚动、审批差异与模型配置分层 / 分支 `refactor/phase-27-task-4`
+
+作者反馈正文历史无法滚动、审批差异颜色不明显，并要求场景绑定脱离模型配置，同时明确供应商、模型和全局压缩比例的字段归属。
+
+本次实现：
+- 正文历史弹窗补齐移动/桌面网格行高、`min-h-0` 和 `overflow-hidden` 高度传递，正文区域建立稳定的独立纵向滚动容器。
+- 继续使用项目已有开源 `diff` 包计算差异；展示层改为高对比红/绿色底色、文字色、左边框及可视图例，兼容浅色和深色主题。
+- 场景绑定从 `ModelCatalogSection` 拆为独立 `SceneBindingSection` 设置卡，正文、大纲、设定、润色、AI 对话框仍复用同一绑定 store。
+- AI 设置明确拆成供应商配置、模型配置、全局上下文管理三个区域。供应商持有 Provider、Base URL、API Key、API 格式；模型持有模型 ID、温度、输出上限、上下文窗口；压缩阈值提升为模型目录全局配置。
+- 当前请求链路只真实支持 OpenAI-compatible Chat Completions，因此 API 格式仅开放该选项，不虚构 Anthropic/Gemini 原生支持。
+- 旧目录中模型级压缩比例会迁移为全局值并清除旧字段；旧供应商自动补齐 API 格式。切换/新增模型或供应商不会重置全局比例。
+
+验证证据：
+- `npx vitest run`：134 files / 607 tests passed；新增配置迁移、全局阈值、API 格式、历史滚动边界和差异实际渲染回归。
+- `npx tsc --noEmit`、`npm run build`、`npm run check:architecture`、`npm run check:required-tables`（45 tables）、AI manual check、`git diff --check` 全部通过。
+- `npm run lint`：0 error，仓库既有 33 warnings，本次文件无新增警告。
+- Codex App 内置浏览器实测设置页：四个配置层级独立呈现，场景绑定包含五类场景，页面无控制台错误。
+
+👉 球在 Claude：请重点审查旧模型级压缩阈值迁移、全局值在模型切换/新增供应商后的稳定性、供应商 API 格式的未来扩展边界，以及历史弹窗移动端网格滚动约束。
