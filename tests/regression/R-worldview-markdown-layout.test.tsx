@@ -91,6 +91,18 @@ describe('R-WORLDVIEW-MARKDOWN · 世界观词条优先与限高 Markdown 正文
     expect(editor).toContain('min-h-80 flex-1 min-h-0 overflow-y-auto')
   })
 
+  it('嵌入词条区占满页签剩余高度，不使用固定高度', () => {
+    const section = source('src/components/shared/WorldviewCodexSection.tsx')
+    const tabs = source('src/components/shared/WorldviewEditorTabs.tsx')
+    const panel = source('src/components/codex/CodexPanel.tsx')
+    expect(tabs).toContain('flex h-full min-h-0 flex-col overflow-hidden')
+    expect(section).toContain('flex h-full min-h-0 flex-col gap-3 pb-2')
+    expect(section).toContain('min-h-0 flex-1')
+    expect(panel).toContain("'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border'")
+    expect(panel).not.toContain('h-[26rem]')
+    expect(panel).not.toContain('h-[30rem]')
+  })
+
   it('世界起源、自然环境和人文环境共用词条优先布局与 Markdown 编辑器', () => {
     const files = [
       'src/components/worldview/WorldviewOriginPanel.tsx',

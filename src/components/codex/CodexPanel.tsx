@@ -254,7 +254,7 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
 
   return (
     <div className={embedded
-      ? `flex flex-col ${lockedSingle ? 'h-[26rem]' : 'h-[30rem]'} border border-border rounded-lg overflow-hidden`
+      ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border'
       : 'h-full flex flex-col'}>
       {/* 顶部：领域切换(嵌入且锁定领域时隐藏;单分类锁定时整条隐藏) */}
       {!lockedSingle && (

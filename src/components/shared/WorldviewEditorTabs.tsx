@@ -45,7 +45,7 @@ export default function WorldviewEditorTabs({
         {activeTab === 'body' ? (
           <div className="flex h-full min-h-0 flex-col">{body}</div>
         ) : (
-          <div className="h-full min-h-0 overflow-y-auto overscroll-contain pr-1">{codex}</div>
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">{codex}</div>
         )}
       </div>
     </div>
