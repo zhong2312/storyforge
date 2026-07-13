@@ -7,6 +7,7 @@ import { projectLocatorKey, type ProjectStoragePort } from '../../../storage/por
 import type { AdoptInput, FieldSpec } from '../../../registry/types'
 import { countWords, htmlToPlainText } from '../../../utils/html'
 import { projectRagSourceTables } from '../../../retrieval/retrieval'
+import { checkDeAISafety, scanDeAIText } from '../../../ai/de-ai-pipeline/deterministic-scan'
 import type { StoryForgeTool, ToolExecutionContext } from '../tool-types'
 import { AdoptionPlanStore, type AdoptionPlanPreview } from './adoption-plan-store'
 
@@ -23,9 +24,69 @@ export function createStoryForgeTools(
     createSettingsCatalogTool(),
     createContextReadTool(dependencies.storage),
     createRagSearchTool(dependencies.storage),
+    createDeAIInspectTool(dependencies.storage),
     createChangeProposeTool(dependencies.storage, plans),
     createChangeCommitTool(dependencies.storage, plans),
   ])
+}
+
+function createDeAIInspectTool(storage: ProjectStoragePort): StoryForgeTool<{
+  originalText?: string
+  candidateText?: string
+  protectedTerms?: string[]
+}, unknown> {
+  return {
+    name: 'storyforge.prose.deai.inspect',
+    title: '去 AI 味全文扫描与安全复检',
+    description: '扫描小说正文中的模板化与机械写作风险；传入候选稿时，对比数字、专名、篇幅、段落和对白结构并决定能否进入提案。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        originalText: { type: 'string', minLength: 1 },
+        candidateText: { type: 'string', minLength: 1 },
+        protectedTerms: { type: 'array', items: { type: 'string', minLength: 1 }, uniqueItems: true },
+      },
+      additionalProperties: false,
+    },
+    risk: 'read',
+    availability: 'both',
+    requiredScopes: ['project:read'],
+    summarizeInput: input => input.candidateText ? '复检去 AI 味候选稿' : '扫描原文 AI 写作风险',
+    summarizeOutput: output => {
+      const result = output as { blocked?: boolean; beforeScan?: { riskScore?: number }; afterScan?: { riskScore?: number } }
+      return result.afterScan
+        ? `风险 ${result.beforeScan?.riskScore ?? 0} → ${result.afterScan.riskScore ?? 0}${result.blocked ? '，安全复检未通过' : '，安全复检通过'}`
+        : `原文风险 ${result.beforeScan?.riskScore ?? 0}`
+    },
+    async execute(context, input) {
+      assertStorageBinding(storage, context)
+      const chapter = context.chapterId != null
+        ? await storage.table<{ id?: number; content?: string }>('chapters').get(context.chapterId)
+        : undefined
+      const storedText = chapter?.content ? htmlToPlainText(chapter.content) : ''
+      const originalText = storedText || input.originalText?.trim() || ''
+      if (!originalText) throw new Error('[storyforge.prose.deai.inspect] original text is required outside chapter scope')
+      const originalSource = storedText ? 'chapter-storage' : 'tool-input'
+      const beforeScan = scanDeAIText(originalText)
+      if (!input.candidateText) return { phase: 'scan', originalSource, beforeScan }
+
+      const afterScan = scanDeAIText(input.candidateText)
+      const safety = checkDeAISafety(originalText, input.candidateText, input.protectedTerms)
+      return {
+        phase: 'verify',
+        originalSource,
+        beforeScan,
+        afterScan,
+        safety,
+        fixedIssueCount: Math.max(0, beforeScan.issues.length - afterScan.issues.length),
+        qualityImproved: afterScan.riskScore < beforeScan.riskScore,
+        blocked: safety.blocked,
+        blockedReason: safety.warnings.join('；') || undefined,
+        canPropose: !safety.blocked,
+        disclaimer: '本结果仅代表文本风险与完整性检查，不代表任何第三方 AI 检测结论。',
+      }
+    },
+  }
 }
 
 function createSettingsCatalogTool(): StoryForgeTool<Record<string, never>, unknown> {

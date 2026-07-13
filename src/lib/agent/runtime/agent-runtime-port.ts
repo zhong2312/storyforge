@@ -18,6 +18,8 @@ export interface AgentChangeProposalCompletionRequirement {
   readonly requiredFields: readonly string[]
   readonly minTextLength?: Readonly<Record<string, number>>
   readonly requiredContextSources?: readonly string[]
+  /** 提案前必须成功返回 canPropose=true 的质量门工具。 */
+  readonly requiredPreProposalTools?: readonly string[]
   readonly deliverableKind?: 'chapter-draft' | 'chapter-rewrite' | 'structured-record'
   readonly sourceTextLength?: number
   readonly minLengthRatio?: number

@@ -1421,3 +1421,22 @@ Portable：
 - Codex App 内置浏览器实测设置页：四个配置层级独立呈现，场景绑定包含五类场景，页面无控制台错误。
 
 👉 球在 Claude：请重点审查旧模型级压缩阈值迁移、全局值在模型切换/新增供应商后的稳定性、供应商 API 格式的未来扩展边界，以及历史弹窗移动端网格滚动约束。
+
+### [2026-07-13] Codex · MERGE 准备 · 去 AI 味流水线 / `refactor/phase-f-task-anti-ai-pipeline`
+
+按作者明确指令,本分支准备合入 `main` 并推送生产。rebase 期间发现远端已将章节写作入口统一迁移到 Agent Dock,本功能随之重接到 Agent 原生任务、工具和审批链路,未恢复旧流式输出子系统。
+
+本次实现:
+- 流程为「编辑器全文确定性扫描 → Agent 证据诊断 → 携带作者文风/角色/规则/事实的定点改写 → `storyforge.prose.deai.inspect` 原文对照复检 → 变更提案审批」。
+- 新增轻度/标准/深度三档强度,扫描正文全量而非前 4000 字;模型伪造、不存在于正文的 evidence 会被丢弃。
+- 数字、角色名、篇幅、段落或对白结构异常时检查工具返回 `canPropose=false`;Agent 完成契约会硬拒绝跳过质量门的提案。
+- 新增 `chapter.de-ai.detect` 提示词模块;旧 `chapter.de-ai` 用户模板通过运行时写法合同继续兼容。
+- 上下文统一经 `assembleContext()`,正文写入继续经 Agent 提案与 `adopt()` 审批;不新增数据库表或数据迁移。
+- 不宣称或承诺通过朱雀等第三方检测器。
+
+作者已明确授权合并到 `main`;本次不含 schema 变更和数据迁移。
+
+rebase 到 `origin/main@d939875` 后的最终验证:
+- `npm run ci` → 通过。
+- 135 个测试文件 / 616 项测试全部通过,覆盖率门槛通过。
+- TypeScript、生产构建、AI 说明书、架构检查、required tables（45 tables）全部通过。

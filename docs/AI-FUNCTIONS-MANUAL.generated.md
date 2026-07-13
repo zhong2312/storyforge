@@ -8,7 +8,7 @@
 
 ## 一、Prompt 模板清单（PromptModuleKey 事实源）
 
-共 40 个 moduleKey。
+共 41 个 moduleKey。
 
 | moduleKey | 名称 | 说明 | 读取变量 |
 |---|---|---|---|
@@ -22,7 +22,8 @@
 | `chapter.memory` | 内置-章节连续性记忆 | 一次调用同时提取章节摘要、下一章承接 handoff 与计划正文对账；引文 offset 由系统回查，不信任模型位置。 | `chapterTitle` `chapterPlan` `nextChapterPlan` `chapterText` |
 | `chapter.polish` | 内置-文本润色 | 按用户指令润色文本，保持原意不变。 | `instruction` `text` |
 | `chapter.expand` | 内置-文本扩写 | 将文本扩展丰富，增加细节、心理与环境，情节走向不变。 | `userHint` `text` |
-| `chapter.de-ai` | 内置-去 AI 味改写 | 把 AI 味重的文本改写得更像真人写的。 | `text` |
+| `chapter.de-ai` | 内置-去 AI 味改写 | 依据全文扫描和结构诊断定点改写，并保护原文事实、格式与作者文风。 | `text` `styleContext` `issuesBlock` `deterministicReport` `strength` `protectedTerms` |
+| `chapter.de-ai.detect` | 内置-去 AI 味结构诊断 | 结合全文确定性扫描，对正文做带原文证据的结构化诊断；改写前后共用。 | `phase` `originalText` `deterministicReport` `text` |
 | `foreshadow.generate` | 内置-伏笔建议 | 基于世界观、角色和已有伏笔，建议 3-5 个新伏笔。 | `projectName` `genres` `worldContext` `characters` `existingForeshadows` `hasNoForeshadows` |
 | `geography.concept-map` | 内置-概念地图 SVG | 基于地点列表生成奇幻风格的 SVG 概念地图。 | `overview` `locationList` |
 | `geography.image-map-prompt` | 内置-地图图像 Prompt | 生成 Midjourney/DALL-E/SD 的世界地图绘图 prompt。 | `imageStyle` `projectName` `locationNames` `locationTypes` |
@@ -173,4 +174,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `b9721f7`
+生成时间基准:commit `c868077`

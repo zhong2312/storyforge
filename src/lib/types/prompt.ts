@@ -22,6 +22,7 @@ export type PromptModuleKey =
   | 'chapter.polish'
   | 'chapter.expand'
   | 'chapter.de-ai'
+  | 'chapter.de-ai.detect'
   // 伏笔
   | 'foreshadow.generate'
   // 地理 / 概念地图

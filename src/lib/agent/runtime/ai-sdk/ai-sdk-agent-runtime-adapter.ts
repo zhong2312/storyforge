@@ -81,6 +81,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
     let proposal: PendingApproval | undefined
     let lastCompletionError = ''
     const readContextSources = new Set<string>()
+    const passedPreProposalTools = new Set<string>()
 
     yield this.append(runId, input.conversationId, 'run.started', { userMessage: input.userMessage })
     yield this.append(runId, input.conversationId, 'phase.started', {
@@ -122,6 +123,7 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
           if (toolName === PROPOSE_TOOL && input.completionRequirement) {
             try {
               assertCompletionProposalInput(input.completionRequirement, toolInput, readContextSources)
+              assertPreProposalToolsPassed(input.completionRequirement, passedPreProposalTools)
             } catch (error) {
               lastCompletionError = errorMessage(error)
               throw error
@@ -132,6 +134,10 @@ export class AiSdkAgentRuntimeAdapter implements AgentRuntimePort {
             for (const source of acknowledgedContextSources(toolInput, output)) {
               readContextSources.add(source)
             }
+          }
+          if (input.completionRequirement?.requiredPreProposalTools?.includes(toolName)
+            && asRecord(output).canPropose === true) {
+            passedPreProposalTools.add(toolName)
           }
           if (toolName === PROPOSE_TOOL) {
             proposal = createPendingApproval(input, registry, output, toolInput)
@@ -472,6 +478,9 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
         input.completionRequirement.requiredContextSources?.length
           ? `直接用 ${CONTEXT_READ_TOOL} 读取宿主指定的 requiredContextSources；这些项目读取工具已经由宿主授权，不得向用户索要读取权限、原文或粘贴内容。不要先查目录，并尽量一次读取：${input.completionRequirement.requiredContextSources.join(', ')}。`
           : '',
+        input.completionRequirement.requiredPreProposalTools?.length
+          ? `创建提案前必须调用并通过质量门：${input.completionRequirement.requiredPreProposalTools.join(', ')}；只有工具返回 canPropose=true 才能提案。`
+          : '',
         '在提案工具调用前完成正式内容生成，把完整候选版本放进 data；流程说明、方案询问、权限请求、占位内容和“下一步将生成”都不是可采纳交付物。',
       ].filter(Boolean).join('\n')
     : ''
@@ -656,7 +665,20 @@ function completionRequirementReminder(
   return [
     `提案参数必须为 target=${requirement.target}，mode=${requirement.mode}${record}。`,
     `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。`,
-  ].join('\n')
+    requirement.requiredPreProposalTools?.length
+      ? `提案前必须调用并通过质量门：${requirement.requiredPreProposalTools.join('、')}；工具必须返回 canPropose=true。`
+      : '',
+  ].filter(Boolean).join('\n')
+}
+
+function assertPreProposalToolsPassed(
+  requirement: AgentChangeProposalCompletionRequirement,
+  passedTools: ReadonlySet<string>,
+): void {
+  const missing = (requirement.requiredPreProposalTools ?? []).filter(tool => !passedTools.has(tool))
+  if (missing.length) {
+    throw new Error(`提案前质量门尚未通过：${missing.join('、')}。请先调用工具并修正到 canPropose=true。`)
+  }
 }
 
 function textContentLength(value: unknown): number {
@@ -700,6 +722,7 @@ function defaultMaxSteps(requirement: AgentCompletionRequirement | undefined): n
     Math.max(
       DEFAULT_REQUIRED_MAX_STEPS,
       (requirement.requiredContextSources?.length ?? 0) + REQUIRED_COMPLETION_STEP_RESERVE,
+      (requirement.requiredPreProposalTools?.length ?? 0) + REQUIRED_COMPLETION_STEP_RESERVE,
     ),
   )
 }

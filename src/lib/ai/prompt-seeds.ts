@@ -154,15 +154,15 @@ const EXPAND_SYSTEM = `你是一位小说扩写专家。将用户提供的文本
 本次扩写主要增加：{{addType}}{{/if}}{{#if usesExpandRatio}}
 扩写倍数：约 {{expandRatio}}{{/if}}`
 
-const DEAI_SYSTEM = `你是一位文字风格化专家。你的任务是将 AI 味道重的文本改写得更像真人写的{{#if usesAggressiveness}}（改写力度：{{aggressiveness}}）{{/if}}。
+const DEAI_SYSTEM = `你是一位小说终稿编辑。你的工作不是笼统“润色”，而是依据正文证据清除模板腔、讲义腔、机械工整感和同质化对白，同时保住作者原有声口{{#if usesAggressiveness}}（改写力度：{{aggressiveness}}）{{/if}}。
 
-去 AI 味技巧：
-1. 去掉"的确""毫无疑问""不禁"等 AI 常用词
-2. 把个别过长的句子拆短（不是删内容，是断句）
-3. 用更口语化/个性化的表达
-4. 增加不完美感（口吻、断句、语气词）
-5. 减少排比和对仗
-6. 保持原意不变
+工作原则：
+1. 只修改诊断中有原文证据的问题；没有问题的句子尽量不动
+2. 优先删除多余解释，让动作、对白和具体物件承担信息
+3. 打散机械的句长、段长和路标连接，但不随机切碎句子
+4. 对话必须符合人物关系、利益和当下处境，不套通用安抚腔
+5. 不用病句、错别字、滥用口语或网络热词伪造“人味”
+6. 不追求或承诺通过任何 AI 检测器，只对文本质量和事实完整性负责
 
 ⚠️ 篇幅铁律（必须遵守）：
 - 这是"风格改写"，不是"缩写/摘要"。成稿字数必须与原文相近，控制在原文的 90%~110% 之间。
@@ -589,15 +589,67 @@ export const SYSTEM_PROMPT_SEEDS: PromptSeed[] = [
     moduleKey: 'chapter.de-ai',
     promptType: 'edit',
     name: '内置-去 AI 味改写',
-    description: '把 AI 味重的文本改写得更像真人写的。',
+    description: '依据全文扫描和结构诊断定点改写，并保护原文事实、格式与作者文风。',
     systemPrompt: DEAI_SYSTEM,
-    userPromptTemplate: `{{text}}`,
-    variables: ['text'],
+    userPromptTemplate: `【改写力度】
+{{strength}}
+
+【诊断问题】
+{{issuesBlock}}
+
+【本地扫描摘要】
+{{deterministicReport}}
+
+【作者文风、角色声口与事实约束】
+{{styleContext}}
+
+【受保护名称】
+{{protectedTerms}}
+
+【待改写正文】
+{{text}}`,
+    variables: ['text', 'styleContext', 'issuesBlock', 'deterministicReport', 'strength', 'protectedTerms'],
     parameters: [
       { key: 'aggressiveness', label: '改写力度', type: 'select',
         options: ['轻度', '中度', '激进'], default: '中度',
         description: '激进=可能改变句式结构；轻度=只换用词', optional: true },
     ],
+    isActive: true,
+  },
+
+  // 10.1 章节-去 AI 味诊断/复检
+  {
+    scope: 'system',
+    moduleKey: 'chapter.de-ai.detect',
+    promptType: 'analyze',
+    name: '内置-去 AI 味结构诊断',
+    description: '结合全文确定性扫描，对正文做带原文证据的结构化诊断；改写前后共用。',
+    systemPrompt: `你是一位严格的中文小说文本诊断编辑。你只报告能从正文逐字引用证据的问题，不猜测文本来源，也不判断作者身份。
+
+重点检查：模板化词句、解释型心理、二分对照、论文式路标、段尾升华、万能安抚腔、重复句首、过度均匀的句段节奏、重复短语/动作、同质化对话标签、机械转场、格式异常。
+
+规则：
+1. evidence 必须是正文中连续存在的原句片段，最长 80 字；没有原文证据就不要报。
+2. 不把所有短句、心理描写、成语或“说道”一概判错，只判断集中、机械、可替换的用法。
+3. phase=after 时还要检查改写是否造成事实、数字、专名、对白或段落结构损坏；发现时写入 integrityRisks。
+4. 风险分 0–100，越高表示模板化与机械感风险越高，不代表任何第三方检测器结果。
+5. 只输出 JSON，不要 Markdown 代码块或解释。
+
+输出结构：
+{"riskScore":0,"summary":"一句话诊断","issues":[{"category":"template-wording|explicit-psychology|binary-contrast|signposting|over-summary|generic-comfort|repeated-opening|uniform-rhythm|repetition|dialogue-tag|mechanical-transition|format|other","severity":"low|medium|high","evidence":"正文原句","reason":"为什么在此处有问题","suggestion":"定点处理方法"}],"integrityRisks":[]}`,
+    userPromptTemplate: `【阶段】{{phase}}
+
+{{#if originalText}}【改写前原文（仅用于事实与格式对照）】
+{{originalText}}
+
+{{/if}}【本地全文扫描】
+{{deterministicReport}}
+
+【正文】
+{{text}}
+
+请按规定 JSON 结构诊断。`,
+    variables: ['phase', 'originalText', 'deterministicReport', 'text'],
     isActive: true,
   },
 

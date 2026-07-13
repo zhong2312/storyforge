@@ -205,6 +205,9 @@ function freezeCompletionRequirement(
     requiredContextSources: requirement.requiredContextSources
       ? Object.freeze([...requirement.requiredContextSources])
       : undefined,
+    requiredPreProposalTools: requirement.requiredPreProposalTools
+      ? Object.freeze([...requirement.requiredPreProposalTools])
+      : undefined,
   })
 }
 

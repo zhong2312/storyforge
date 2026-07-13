@@ -33,14 +33,37 @@ describe('registry-driven StoryForge tools', () => {
     await db.delete()
   })
 
-  it('exposes immutable descriptors for the five generic registry tools', () => {
+  it('exposes immutable descriptors for the generic registry tools', () => {
     expect(registry.listAvailable(context(['project:read'])).map(tool => tool.name)).toEqual([
       'storyforge.settings.catalog',
       'storyforge.context.read',
       'storyforge.rag.search',
+      'storyforge.prose.deai.inspect',
       'storyforge.change.propose',
     ])
     expect(registry.get('storyforge.change.commit')?.requiredScopes).toEqual(['project:write'])
+  })
+
+  it('deai.inspect blocks proposals when numbers, names, or most prose are lost', async () => {
+    const originalText = '林砚在第3天带着12枚铜钱来到渡口。'.repeat(10)
+    const chapterId = await db.chapters.add({ projectId: 1, content: `<p>${originalText}</p>` } as never) as number
+    const output = await registry.execute(
+      'storyforge.prose.deai.inspect',
+      context(['project:read'], { chapterId }),
+      { originalText: '他到了渡口。', candidateText: '他到了渡口。', protectedTerms: ['林砚'] },
+    ) as {
+      blocked: boolean
+      canPropose: boolean
+      originalSource: string
+      safety: { missingNumbers: string[]; missingProtectedTerms: string[]; lengthRatio: number }
+    }
+
+    expect(output.blocked).toBe(true)
+    expect(output.canPropose).toBe(false)
+    expect(output.originalSource).toBe('chapter-storage')
+    expect(output.safety.missingNumbers).toEqual(expect.arrayContaining(['3', '12']))
+    expect(output.safety.missingProtectedTerms).toContain('林砚')
+    expect(output.safety.lengthRatio).toBeLessThan(0.75)
   })
 
   it('rag.search retrieves current project data through the registered context source', async () => {

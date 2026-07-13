@@ -27,6 +27,7 @@ const ALL_MODULE_KEYS: { value: PromptModuleKey; label: string }[] = [
   { value: 'chapter.polish',              label: '章节 · 润色' },
   { value: 'chapter.expand',              label: '章节 · 扩写' },
   { value: 'chapter.de-ai',               label: '章节 · 去 AI 味' },
+  { value: 'chapter.de-ai.detect',        label: '章节 · 去 AI 味诊断' },
   { value: 'foreshadow.generate',         label: '伏笔 · 建议' },
   { value: 'geography.concept-map',       label: '地理 · 概念地图 SVG' },
   { value: 'geography.image-map-prompt',  label: '地理 · 图像 Prompt' },

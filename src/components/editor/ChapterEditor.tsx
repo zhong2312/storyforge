@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote, History } from 'lucide-react'
+import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote, History, Flame } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
 import { useStateCardStore } from '../../stores/state-card'
@@ -29,6 +29,8 @@ import { ChapterHistoryDialog } from './ChapterHistoryDialog'
 import { useDialog } from '../shared/Dialog'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { useAIModelConfig } from '../../hooks/useAIModelConfig'
+import { scanDeAIText } from '../../lib/ai/de-ai-pipeline/deterministic-scan'
+import type { DeAIStrength } from '../../lib/ai/de-ai-pipeline/types'
 import StateDiffModal from '../state/StateDiffModal'
 import RichEditor, { type RichEditorHandle } from './RichEditor'
 import EmotionBeatCard from './EmotionBeatCard'
@@ -57,6 +59,18 @@ const CHAPTER_STATUS_STYLE: Record<ChapterStatus, string> = {
   revised: 'bg-info/10 text-info',
   polished: 'bg-accent/10 text-accent',
   final: 'bg-success/10 text-success',
+}
+
+const DE_AI_STRENGTH_OPTIONS: { value: DeAIStrength; label: string; title: string }[] = [
+  { value: 'light', label: '轻度', title: '只修明确问题，最大限度保留原句' },
+  { value: 'standard', label: '标准', title: '定点改写问题句并调整局部节奏' },
+  { value: 'deep', label: '深度', title: '允许重组段内句序，但不改变剧情结构' },
+]
+
+const DE_AI_STRENGTH_LABELS: Record<DeAIStrength, string> = {
+  light: '轻度：只修明确证据，尽量保留原句和段落。',
+  standard: '标准：定点重写问题句，并调整局部节奏和对白声口。',
+  deep: '深度：允许重组段内句序和节奏，但不得改变剧情结构与事实。',
 }
 
 interface Props {
@@ -106,6 +120,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [showReviewPanel, setShowReviewPanel] = useState(false)
   const [showNotePanel, setShowNotePanel] = useState(false)
   const [planReconciliationCurrent, setPlanReconciliationCurrent] = useState(false)
+  const [deAIStrength, setDeAIStrength] = useState<DeAIStrength>('standard')
   const aiConfig = useAIModelConfig('chapter')
   const dialog = useDialog()
 
@@ -295,6 +310,9 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         requiredContextSources: Array.isArray(payload.requiredContextSources)
           ? payload.requiredContextSources.filter((value): value is string => typeof value === 'string')
           : undefined,
+        requiredPreProposalTools: type.startsWith('chapter.deai')
+          ? ['storyforge.prose.deai.inspect']
+          : undefined,
         deliverableKind: isDraft ? 'chapter-draft' : 'chapter-rewrite',
         sourceTextLength,
         minLengthRatio: isDraft ? undefined : minLengthRatio,
@@ -371,21 +389,51 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
     const ok = await dialog.confirm({
       title: '去 AI 味改写？',
       message: isFull
-        ? `将对整章正文（约 ${countWords(target)} 字）做去 AI 味改写，篇幅与原文保持相近。改写结果会先预览，确认后才替换原文。`
-        : '将对选中的文字做去 AI 味改写。改写结果会先预览，确认后才替换。',
+        ? `将对整章正文（约 ${countWords(target)} 字）执行扫描、诊断、改写和复检。结果会进入 Agent 审批，不会自动替换原文。`
+        : '将对选中文字执行扫描、诊断、改写和复检。结果会进入 Agent 审批，不会自动替换。',
       confirmText: '开始改写',
     })
     if (!ok) return
-    const contextPlan = await buildAgentChapterContextPlan()
+    const [contextPlan, styleContext] = await Promise.all([
+      buildAgentChapterContextPlan(),
+      assembleContext({
+        projectId: project.id!,
+        worldGroupId: chapterWorldGroupId ?? null,
+        outlineNodeId: outlineNode?.id ?? null,
+        chapterId: currentChapter?.id ?? null,
+        provider: aiConfig.provider,
+        model: aiConfig.model,
+        sourceKeys: ['chapterOutline', 'detailedOutline', 'characters', 'creativeRules', 'currentFacts', 'userStyleProfile'],
+      }),
+    ])
+    const deterministicReport = scanDeAIText(target)
+    const protectedTerms = characters
+      .map(character => character.name.trim())
+      .filter(name => name && target.includes(name))
+    const issuesBlock = deterministicReport.issues.length
+      ? deterministicReport.issues.slice(0, 36).map((issue, index) => (
+          `${index + 1}. [${issue.severity}/${issue.category}] 证据：“${issue.evidence}” 原因：${issue.reason} 处理：${issue.suggestion}`
+        )).join('\n')
+      : '本地扫描未发现必须修改的明确证据；不要为了改写而改写。'
     dispatchChapterIntent(
       isFull ? 'chapter.deai.full' : 'chapter.deai.selection',
       isFull ? 'Agent 去除整章 AI 味' : 'Agent 去除选区 AI 味',
-      isFull
-        ? '在不改变剧情事实、人设和篇幅的前提下重写整章，清理模板腔、机械工整和不自然表达，并对当前章节完整 content 生成变更提案。'
-        : '仅重写指定选区以清理 AI 味，保持上下文衔接；读取完整正文后把结果放回原位置，并对当前章节完整 content 生成变更提案。',
+      `严格执行去 AI 味流水线，顺序不得跳过：
+1. 先通过 storyforge.context.read 读取 requiredContextSources，核对章节事实、角色声口、创作规则和作者文风。
+2. 结合 deterministicReport 做带原文证据的结构诊断；不存在于正文的 evidence 必须丢弃，不按词表机械替换。
+3. 按 strength 定点改写；不新增、删除或调换剧情事件，不改变人物关系、立场、视角、时间、地点、因果和设定事实。
+4. 生成完整候选正文后，必须调用 storyforge.prose.deai.inspect，把改写前完整章节、候选完整章节和 protectedTerms 一并传入。若 blocked=true，不得创建提案，必须按警告修正后再次检查。
+5. 只有 inspect 返回 blocked=false 才能调用 storyforge.change.propose。选区任务也必须把改写结果放回原位置并提交完整章节 content。
+6. 不得声称或承诺通过朱雀等第三方检测器，只报告本流水线的文本风险与完整性检查结果。`,
       isFull ? undefined : target,
       {
         fullChapter: isFull,
+        text: target,
+        strength: DE_AI_STRENGTH_LABELS[deAIStrength],
+        styleContext: styleContext.text || '（项目暂无可用文风画像，按原文自身声口处理。）',
+        issuesBlock,
+        deterministicReport: JSON.stringify(deterministicReport),
+        protectedTerms,
         requiredContextSources: contextPlan.sourceKeys,
         sourceTextLength: countWords(plainText),
       },
@@ -812,9 +860,27 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           💎 润色
         </button>
-        <button onClick={handleDeAI}
-          className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
-          🔥 去AI味
+        <div className="flex items-center overflow-hidden rounded-md border border-border bg-bg-elevated">
+          {DE_AI_STRENGTH_OPTIONS.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              title={option.title}
+              aria-pressed={deAIStrength === option.value}
+              onClick={() => setDeAIStrength(option.value)}
+              className={`h-7 border-r border-border px-2 text-[11px] transition-colors last:border-r-0 ${
+                deAIStrength === option.value ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <button onClick={handleDeAI} disabled={!plainText}
+          title="全文扫描、结构诊断、定点改写并安全复检"
+          className="flex items-center gap-1 rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
+          <Flame className="h-3 w-3" />
+          去AI味
         </button>
         <button onClick={handleExtractState} disabled={extracting || !plainText}
           title="AI 分析本章内容，提取角色/地点/物品等状态变更"

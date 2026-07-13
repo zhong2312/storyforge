@@ -486,6 +486,51 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(events.some(event => event.type === 'approval.requested')).toBe(false)
   })
 
+  it('rejects a de-ai proposal until the required safety gate passes', async () => {
+    const registry = chapterProposalRegistry()
+    registry.register({
+      name: 'storyforge.prose.deai.inspect',
+      title: '去 AI 味安全复检',
+      description: 'inspect',
+      inputSchema: { type: 'object' },
+      risk: 'read',
+      availability: 'both',
+      requiredScopes: ['project:read'],
+      async execute() { return { canPropose: true, blocked: false } },
+    })
+    const proposal = {
+      target: 'chapters', mode: 'replace', recordId: 12,
+      data: { content: '林砚推门进屋。'.repeat(30) },
+    }
+    const streamer: AgentLoopStreamer = async function* (request) {
+      try {
+        await request.execute('storyforge.change.propose', proposal)
+        throw new Error('proposal unexpectedly passed without inspection')
+      } catch (error) {
+        expect(String(error)).toContain('提案前质量门尚未通过')
+      }
+      const inspectInput = {
+        originalText: '林砚推门进屋。'.repeat(30),
+        candidateText: proposal.data.content,
+        protectedTerms: ['林砚'],
+      }
+      yield { type: 'tool-call', toolCallId: 'inspect-1', toolName: 'storyforge.prose.deai.inspect', input: inspectInput }
+      const inspectOutput = await request.execute('storyforge.prose.deai.inspect', inspectInput)
+      yield { type: 'tool-result', toolCallId: 'inspect-1', toolName: 'storyforge.prose.deai.inspect', output: inspectOutput }
+      yield { type: 'tool-call', toolCallId: 'proposal-2', toolName: 'storyforge.change.propose', input: proposal }
+      const output = await request.execute('storyforge.change.propose', proposal)
+      yield { type: 'tool-result', toolCallId: 'proposal-2', toolName: 'storyforge.change.propose', output }
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run(chapterRunInput({
+      requiredContextSources: [],
+      requiredPreProposalTools: ['storyforge.prose.deai.inspect'],
+    })))
+
+    expect(events.filter(event => event.type === 'run.failed')).toEqual([])
+    expect(events.some(event => event.type === 'approval.requested')).toBe(true)
+  })
+
   it('cancels an active run through AbortSignal', async () => {
     const streamer: AgentLoopStreamer = async function* (request) {
       if (!request.signal.aborted) {
@@ -900,6 +945,7 @@ function runInput() {
 
 function chapterRunInput(overrides: {
   requiredContextSources?: string[]
+  requiredPreProposalTools?: string[]
   deliverableKind?: 'chapter-draft' | 'chapter-rewrite'
   sourceTextLength?: number
   minLengthRatio?: number
@@ -917,6 +963,7 @@ function chapterRunInput(overrides: {
       requiredFields: ['content'],
       minTextLength: { content: overrides.minTextLength ?? 20 },
       requiredContextSources: overrides.requiredContextSources ?? ['chapterOutline'],
+      requiredPreProposalTools: overrides.requiredPreProposalTools,
       deliverableKind: overrides.deliverableKind ?? 'chapter-draft',
       sourceTextLength: overrides.sourceTextLength,
       minLengthRatio: overrides.minLengthRatio,
