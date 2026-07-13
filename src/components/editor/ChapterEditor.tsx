@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote, History, Flame } from 'lucide-react'
+import { Save, FileText, Eye, ClipboardList, CheckSquare, Square, BookOpenCheck, ShieldCheck, StickyNote, History, Flame, Workflow } from 'lucide-react'
 import { useChapterStore } from '../../stores/chapter'
 import { useOutlineStore } from '../../stores/outline'
 import { useStateCardStore } from '../../stores/state-card'
@@ -44,6 +44,7 @@ import {
   dispatchAgentIntent,
   subscribeAgentProjectCommits,
 } from '../../lib/agent/intents'
+import ChapterWorkshopDialog from './ChapterWorkshopDialog'
 
 const CHAPTER_STATUS_OPTIONS: { value: ChapterStatus; label: string }[] = [
   { value: 'outline', label: '仅大纲' },
@@ -100,6 +101,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
   const [savedContent, setSavedContent] = useState('')
   const [showContext, setShowContext] = useState(false)
   const [showChapterHistory, setShowChapterHistory] = useState(false)
+  const [showChapterWorkshop, setShowChapterWorkshop] = useState(false)
   const [customInstruction, setCustomInstruction] = useState('')
   const [extracting, setExtracting] = useState(false)
   const [extractingFacts, setExtractingFacts] = useState(false)
@@ -339,6 +341,20 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       undefined,
       { requiredContextSources: contextPlan.sourceKeys },
     )
+  }
+
+  const handleWorkshopComplete = async (finalContent: string) => {
+    dispatchChapterIntent(
+      'chapter.content',
+      '正文工坊提交正式正文',
+      '作者已在透明正文流水线中逐阶段确认约束、场景节拍、初稿、连续性质检和正式正文。不要重新生成、改写或缩减 pipelineDraft；直接使用 pipelineDraft 作为 data.content，调用 storyforge.change.propose 创建 chapters/replace 审批方案。只有用户在右侧审批中点击采纳后才能写入。',
+      undefined,
+      {
+        pipelineDraft: finalContent,
+        pipelineStages: ['约束扫描', '方案竞选', '场景节拍', '正文初稿', '连续性质检', '正式正文'],
+      },
+    )
+    setShowChapterWorkshop(false)
   }
 
   const handleContinue = async () => {
@@ -848,6 +864,13 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           className="rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors">
           ✨ 生成正文
         </button>
+        <button
+          onClick={() => setShowChapterWorkshop(true)}
+          className="flex items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 transition-colors"
+          title="五阶段深度生成，每阶段可查看和修改实际提示词"
+        >
+          <Workflow className="h-3.5 w-3.5" /> 正文工坊
+        </button>
         <button onClick={handleContinue} disabled={!plainText}
           className="rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
           📝 续写
@@ -1177,6 +1200,21 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
           chapterId={currentChapter.id}
           chapterTitle={chapterDisplay?.title ?? currentChapter.title}
           onClose={() => setShowChapterHistory(false)}
+        />
+      )}
+      {showChapterWorkshop && currentChapter.id && outlineNode?.id && (
+        <ChapterWorkshopDialog
+          project={project}
+          worldGroupId={chapterWorldGroupId}
+          outlineNodeId={outlineNode.id}
+          chapterId={currentChapter.id}
+          chapterTitle={chapterDisplay?.title ?? currentChapter.title}
+          chapterSummary={outlineNode.summary}
+          userHint={customInstruction}
+          sourceKeys={[...CHAPTER_WRITING_CONTEXT_SOURCES]}
+          aiConfig={aiConfig}
+          onClose={() => setShowChapterWorkshop(false)}
+          onComplete={handleWorkshopComplete}
         />
       )}
     </div>

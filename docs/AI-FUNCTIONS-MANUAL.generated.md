@@ -130,13 +130,14 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 30 个 category。
-未分类调用: 0 个。动态 category 调用: 5 个。
+共 31 个 category。
+未分类调用: 0 个。动态 category 调用: 6 个。
 
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:53` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
+| `chapter.workshop.alternatives` | `src/components/editor/ChapterWorkshopDialog.tsx:195` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:115`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
@@ -168,12 +169,13 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ### 动态 category 调用
 
+- `src/components/editor/ChapterWorkshopDialog.tsx:138 · ai.start`
 - `src/components/editor/FloatingToolbar.tsx:105 · ai.start`
 - `src/components/editor/ReviewPanel.tsx:130 · ai.start`
-- `src/components/outline/OutlineWorkshopDialog.tsx:88 · ai.start`
+- `src/components/outline/OutlineWorkshopDialog.tsx:95 · ai.start`
 - `src/components/settings/NS0EvalPanel.tsx:50 · chat`
 - `src/components/settings/prompt/WorkflowRunner.tsx:273 · ai.start`
 
 ---
 
-生成时间基准:commit `ebbf968`
+生成时间基准:commit `02bae19`

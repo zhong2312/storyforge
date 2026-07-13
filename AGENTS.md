@@ -5,6 +5,18 @@
 
 ---
 
+## Git 分支与远程规则（作者确认，2026-07-13）
+
+> 本节是当前最高优先级的 Git 协作规则。若与本文后续内容、`CLAUDE.md` 或 `docs/COLLAB-WORKFLOW.md` 中的旧分支规则冲突，以本节为准。
+
+- 日常开发只使用一个长期分支：`dev`。不要再为 Phase、任务、修复或 Agent 单独创建分支、worktree。
+- 开发改动提交到 `dev`；验证通过后由 `dev` 合并到 `main`。不要在多个功能分支之间拆分或堆积分支。
+- `origin`（`https://github.com/zhong2312/storyforge.git`）是唯一允许推送和提交 PR 的远程仓库。
+- `upstream`（`https://github.com/yuanbw2025/storyforge.git`）及其他第三方远程仓库只允许读取和 `fetch`，严禁 `push`、创建 PR 或提交任何改动。
+- 清理旧分支前必须先确认其提交已经进入 `main`；不得删除尚未合并的有效工作。
+
+---
+
 ## ⚠️ 第一动作：先读 `CLAUDE.md`
 
 `CLAUDE.md` 是本项目的**宪法**，含：
@@ -42,7 +54,7 @@
 
 ## 关键约束（再强调一次）
 
-- **不允许直接 push main**：所有改动走分支，分支名 `refactor/phase-X-task-Y`
+- **分支统一**：所有开发改动只走长期 `dev`，验证后合并到 `main`
 - **不允许跳过测试**：每个任务的「验证」步骤必跑
 - **不允许散落写代码**：所有 AI 读写必须走注册表（见 CLAUDE.md 四问）
 - **不允许"先这样吧"**：含糊任务立刻停下，开 issue 等决策

@@ -14,6 +14,39 @@ export const OUTLINE_WORKSHOP_NODE_IDS = [
 export type OutlineWorkshopNodeId = typeof OUTLINE_WORKSHOP_NODE_IDS[number]
 export type OutlineWorkshopArtifacts = Partial<Record<OutlineWorkshopNodeId, string>>
 
+export interface ConfirmOutlineWorkshopArtifactResult {
+  artifacts: OutlineWorkshopArtifacts
+  drafts: OutlineWorkshopArtifacts
+  changed: boolean
+}
+
+/**
+ * 回看阶段不应破坏后续结果。只有重新确认的内容发生变化时，才清除依赖该
+ * 阶段的后续产物和草稿，避免旧推演继续参与上下文装配。
+ */
+export function confirmOutlineWorkshopArtifact(
+  artifacts: OutlineWorkshopArtifacts,
+  drafts: OutlineWorkshopArtifacts,
+  currentIndex: number,
+  value: string,
+): ConfirmOutlineWorkshopArtifactResult {
+  const currentId = OUTLINE_WORKSHOP_NODE_IDS[currentIndex]
+  const normalized = value.trim()
+  const changed = (artifacts[currentId] ?? '').trim() !== normalized
+  const nextArtifacts: OutlineWorkshopArtifacts = changed ? {} : { ...artifacts }
+  const nextDrafts: OutlineWorkshopArtifacts = changed ? {} : { ...drafts }
+  const lastIndex = changed ? currentIndex : OUTLINE_WORKSHOP_NODE_IDS.length - 1
+
+  for (let index = 0; index <= lastIndex; index += 1) {
+    const id = OUTLINE_WORKSHOP_NODE_IDS[index]
+    const artifact = id === currentId ? normalized : artifacts[id]
+    const draft = id === currentId ? normalized : drafts[id]
+    if (artifact) nextArtifacts[id] = artifact
+    if (draft) nextDrafts[id] = draft
+  }
+  return { artifacts: nextArtifacts, drafts: nextDrafts, changed }
+}
+
 export interface OutlineWorkshopContext {
   projectId: number
   projectName: string

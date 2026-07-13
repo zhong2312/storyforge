@@ -14,12 +14,13 @@ import { useAIStream } from '../../hooks/useAIStream'
 import type { AIConfig, ChatMessage, OutlineNode, Project } from '../../lib/types'
 import {
   createOutlineWorkshopNodes,
-  OUTLINE_WORKSHOP_NODE_IDS,
+  confirmOutlineWorkshopArtifact,
   runGenerationNode,
   type OutlineWorkshopArtifacts,
   type OutlineWorkshopNodeId,
 } from '../../lib/generation-pipeline'
 import PromptPreviewGate, { type PromptPreviewField } from '../shared/PromptPreviewGate'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
 
 interface OutlineWorkshopDialogProps {
   project: Project
@@ -52,7 +53,9 @@ export default function OutlineWorkshopDialog({
   const ai = useAIStream()
   const nodes = useMemo(() => createOutlineWorkshopNodes(), [])
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [furthestVisitedIndex, setFurthestVisitedIndex] = useState(0)
   const [artifacts, setArtifacts] = useState<OutlineWorkshopArtifacts>({})
+  const [nodeDrafts, setNodeDrafts] = useState<OutlineWorkshopArtifacts>({})
   const [draft, setDraft] = useState('')
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[] | null>(null)
   const [assembling, setAssembling] = useState(false)
@@ -61,11 +64,15 @@ export default function OutlineWorkshopDialog({
   const currentNode = nodes[currentIndex]
 
   useEffect(() => {
-    if (ai.output) setDraft(ai.output)
+    if (!ai.output) return
+    setDraft(ai.output)
+    setNodeDrafts(current => ({ ...current, [currentNode.id]: ai.output }))
+    // 只响应新输出；页签切换时不能把上一节点残留输出写进新节点。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ai.output])
 
   useEffect(() => {
-    setDraft(artifacts[currentNode.id] ?? '')
+    setDraft(nodeDrafts[currentNode.id] ?? artifacts[currentNode.id] ?? '')
     setLocalError(null)
     ai.reset()
     // currentNode.id 是切换阶段的稳定边界；ai.reset 已由 hook memo 化。
@@ -114,11 +121,15 @@ export default function OutlineWorkshopDialog({
     }))
     setPendingMessages(null)
     setDraft('')
+    setNodeDrafts(current => ({ ...current, [currentNode.id]: '' }))
     setLocalError(null)
     ai.reset()
     try {
       const result = await runGenerationNode(currentNode, buildContext(), { preparedInput: editedMessages })
-      if (result) setDraft(result.output)
+      if (result) {
+        setDraft(result.output)
+        setNodeDrafts(current => ({ ...current, [currentNode.id]: result.output }))
+      }
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : '本阶段生成失败')
     }
@@ -127,16 +138,13 @@ export default function OutlineWorkshopDialog({
   const confirmCurrentArtifact = async () => {
     const value = draft.trim()
     if (!value || ai.isStreaming || completing) return
-    setArtifacts(current => {
-      const next: OutlineWorkshopArtifacts = {}
-      for (let index = 0; index <= currentIndex; index += 1) {
-        const id = OUTLINE_WORKSHOP_NODE_IDS[index]
-        const artifact = id === currentNode.id ? value : current[id]
-        if (artifact) next[id] = artifact
-      }
-      return next
-    })
+    const confirmed = confirmOutlineWorkshopArtifact(artifacts, nodeDrafts, currentIndex, value)
+    setArtifacts(confirmed.artifacts)
+    setNodeDrafts(confirmed.drafts)
     if (currentIndex < nodes.length - 1) {
+      setFurthestVisitedIndex(current => confirmed.changed
+        ? currentIndex + 1
+        : Math.max(current, currentIndex + 1))
       setCurrentIndex(current => current + 1)
     } else {
       setCompleting(true)
@@ -148,7 +156,7 @@ export default function OutlineWorkshopDialog({
     }
   }
 
-  const canVisit = (index: number) => index <= currentIndex || Boolean(artifacts[OUTLINE_WORKSHOP_NODE_IDS[index]])
+  const canVisit = (index: number) => index <= furthestVisitedIndex
 
   return (
     <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/65 p-4" role="dialog" aria-modal="true" aria-label="章纲工坊">
@@ -211,14 +219,28 @@ export default function OutlineWorkshopDialog({
             </div>
           )}
 
-          <div className="relative min-h-0 flex-1">
-            <textarea
-              value={draft}
-              onChange={event => setDraft(event.target.value)}
-              disabled={ai.isStreaming}
-              placeholder={ai.isStreaming ? 'AI 正在生成本阶段产物...' : '点击“预览提示词并生成”。生成后可在这里编辑，再确认本阶段。'}
-              className="h-full min-h-[320px] w-full resize-none rounded-md border border-border bg-bg-base px-4 py-3 text-sm leading-6 text-text-primary outline-none focus:border-accent disabled:opacity-80"
-            />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {ai.isStreaming ? (
+              <textarea
+                value={draft}
+                readOnly
+                placeholder="AI 正在生成本阶段产物..."
+                className="h-full min-h-[320px] w-full resize-none rounded-md border border-border bg-bg-base px-4 py-3 text-sm leading-6 text-text-primary outline-none opacity-80"
+              />
+            ) : (
+              <MarkdownFieldEditor
+                key={currentNode.id}
+                value={draft}
+                onChange={value => {
+                  setDraft(value)
+                  setNodeDrafts(current => ({ ...current, [currentNode.id]: value }))
+                }}
+                label={`${currentNode.label} · Markdown 产物`}
+                placeholder="点击“预览提示词并生成”，或在这里直接编写本阶段产物。"
+                fill
+                live
+              />
+            )}
             {ai.isStreaming && (
               <div className="absolute bottom-3 right-3 flex items-center gap-2 rounded bg-bg-elevated px-2 py-1 text-xs text-accent shadow">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在生成

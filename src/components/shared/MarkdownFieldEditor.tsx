@@ -22,6 +22,8 @@ interface Props {
   label?: string
   compact?: boolean
   fill?: boolean
+  /** 输入时立即同步给父组件，适用于点击外部确认按钮的工作流。 */
+  live?: boolean
   headerAction?: ReactNode
 }
 
@@ -34,6 +36,7 @@ export default function MarkdownFieldEditor({
   label = '设定正文',
   compact = false,
   fill = false,
+  live = false,
   headerAction,
 }: Props) {
   const [mode, setMode] = useState<EditorMode>(value.trim() ? 'preview' : 'edit')
@@ -204,11 +207,17 @@ export default function MarkdownFieldEditor({
           <textarea
             ref={textareaRef}
             value={draft}
-            onChange={event => setDraft(event.target.value)}
+            onChange={event => {
+              const next = event.target.value
+              setDraft(next)
+              if (live && !composingRef.current) onChangeRef.current(next)
+            }}
             onCompositionStart={() => { composingRef.current = true }}
             onCompositionEnd={event => {
               composingRef.current = false
-              setDraft(event.currentTarget.value)
+              const next = event.currentTarget.value
+              setDraft(next)
+              if (live) onChangeRef.current(next)
             }}
             onBlur={commit}
             onKeyDown={event => {
