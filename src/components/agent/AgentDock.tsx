@@ -34,7 +34,6 @@ import {
 } from '../../lib/agent/events/agent-events'
 import { AiSdkAgentRuntimeAdapter } from '../../lib/agent/runtime/ai-sdk'
 import { ToolRegistry } from '../../lib/agent/tools/tool-registry'
-import { AdoptionPlanStore, createStoryForgeTools } from '../../lib/agent/tools/internal'
 import {
   createMcpServerConfig,
   loadMcpServerConfigs,
@@ -43,6 +42,7 @@ import {
   type McpServerConfig,
 } from '../../lib/agent/mcp'
 import { DexieProjectStorage } from '../../lib/storage/adapters/dexie'
+import { createProjectAgentRuntime } from '../../lib/agent/runtime/project-agent-runtime'
 import { resolveAIModelConfig, useAIConfigStore } from '../../stores/ai-config'
 import { usePromptStore } from '../../stores/prompt'
 import type {
@@ -81,7 +81,9 @@ import {
   proposalPreviewMarkdown,
 } from '../../lib/agent/presentation/proposal-markdown'
 import { ProposalDiffDialog } from './ProposalDiffDialog'
+import PromptPreviewGate, { type PromptPreviewField } from '../shared/PromptPreviewGate'
 import { modelRefForCategory } from '../../lib/ai/model-scenes'
+import { requestAIConfigSetup } from '../../lib/ai/config-readiness'
 import type { AIModelRef } from '../../lib/types'
 import {
   AGENT_DOCK_DEFAULT_WIDTH,
@@ -130,6 +132,12 @@ interface RunMessageOptions {
 }
 
 const AGENT_DOCK_WIDTH_KEY = 'storyforge-agent-dock-width'
+export const AGENT_TRANSPARENT_PROMPT_PREVIEW_KEY = 'storyforge-transparent-prompt-preview'
+
+interface PendingPromptRun {
+  readonly rawMessage: string
+  readonly options: RunMessageOptions
+}
 
 export default function AgentDock({
   projectId,
@@ -154,6 +162,10 @@ export default function AgentDock({
   const model = selectedModelConfig.model
   const baseUrl = selectedModelConfig.baseUrl
   const [input, setInput] = useState('')
+  const [transparentPromptPreview, setTransparentPromptPreview] = useState(
+    () => localStorage.getItem(AGENT_TRANSPARENT_PROMPT_PREVIEW_KEY) === 'true',
+  )
+  const [pendingPromptRun, setPendingPromptRun] = useState<PendingPromptRun | null>(null)
   const [dockWidth, setDockWidth] = useState(() => {
     const saved = Number(localStorage.getItem(AGENT_DOCK_WIDTH_KEY))
     const width = Number.isFinite(saved) && saved > 0 ? saved : AGENT_DOCK_DEFAULT_WIDTH
@@ -188,6 +200,10 @@ export default function AgentDock({
     configRef.current = mcpServers
     saveMcpServerConfigs(mcpServers)
   }, [mcpServers])
+
+  useEffect(() => {
+    localStorage.setItem(AGENT_TRANSPARENT_PROMPT_PREVIEW_KEY, String(transparentPromptPreview))
+  }, [transparentPromptPreview])
 
   useEffect(() => {
     const restored = ensureConversationState(loadAgentConversationState(projectId), projectId, activeModuleRef.current)
@@ -304,6 +320,12 @@ export default function AgentDock({
   ) => {
     const message = rawMessage.trim()
     if (!message || (!options.ignoreBlock && (busy || hasPendingApproval))) return
+    const modelRef = options.modelRef ?? selectedModelRef
+    const config = useAIConfigStore.getState().resolveConfigForScene('chat', modelRef)
+    if (!requestAIConfigSetup(config)) {
+      onOpenSettings()
+      return
+    }
     const scope = options.scope
     const displayMessage = options.displayMessage ?? rawMessage
     const requestedConversationId = options.conversationId ?? activeConversationId
@@ -328,7 +350,7 @@ export default function AgentDock({
       completionRequirement: options.completionRequirement,
       promptProfile: options.promptProfile,
       originalPrompt: message,
-      modelRef: options.modelRef ?? selectedModelRef,
+      modelRef,
     })
     const turn: AgentConversationTurn = {
       id: turnId, userMessage: displayMessage, assistantMessage: '', events: [],
@@ -365,19 +387,68 @@ export default function AgentDock({
         conversationHistory: buildAgentConversationHistory(targetConversation.turns),
         completionRequirement: options.completionRequirement,
         promptProfile: options.promptProfile,
-        modelProfile: modelRefKey(options.modelRef ?? selectedModelRef),
+        modelProfile: modelRefKey(modelRef),
       })
       await consumeEvents(conversationId, turnId, stream)
     } finally {
       setBusy(false)
       currentRunIdRef.current = null
     }
-  }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, projectId, resources.runtime, selectedModelRef])
+  }, [activeConversationId, activeModule, busy, consumeEvents, conversationState.conversations, hasPendingApproval, onOpenSettings, projectId, resources.runtime, selectedModelRef])
+
+  const submitMessage = useCallback(async (rawMessage: string, options: RunMessageOptions) => {
+    if (transparentPromptPreview) {
+      setPendingPromptRun({ rawMessage, options })
+      return
+    }
+    await runMessage(rawMessage, options)
+  }, [runMessage, transparentPromptPreview])
+
+  const pendingPromptFields = useMemo<PromptPreviewField[]>(() => {
+    if (!pendingPromptRun) return []
+    const fields: PromptPreviewField[] = [{
+      id: 'task',
+      label: '本次任务指令',
+      value: pendingPromptRun.rawMessage,
+      description: 'Agent Runtime 会在此任务之外追加固定安全规则、工具 schema 和对话上下文。',
+    }]
+    if (pendingPromptRun.options.promptProfile) {
+      fields.push(
+        {
+          id: 'profile-system',
+          label: '提示词库 · System 模板',
+          value: pendingPromptRun.options.promptProfile.systemPrompt,
+          description: '来自当前功能绑定的提示词模板，只临时覆盖本次调用。',
+        },
+        {
+          id: 'profile-user',
+          label: '提示词库 · User 模板',
+          value: pendingPromptRun.options.promptProfile.userPromptTemplate,
+          description: '模板变量仍由 Agent Runtime 按当前任务装配。',
+        },
+      )
+    }
+    return fields
+  }, [pendingPromptRun])
+
+  const confirmPromptRun = (fields: PromptPreviewField[]) => {
+    if (!pendingPromptRun) return
+    const task = fields.find(field => field.id === 'task')?.value ?? pendingPromptRun.rawMessage
+    const originalProfile = pendingPromptRun.options.promptProfile
+    const promptProfile = originalProfile ? {
+      ...originalProfile,
+      systemPrompt: fields.find(field => field.id === 'profile-system')?.value ?? originalProfile.systemPrompt,
+      userPromptTemplate: fields.find(field => field.id === 'profile-user')?.value ?? originalProfile.userPromptTemplate,
+    } : undefined
+    const options = { ...pendingPromptRun.options, promptProfile }
+    setPendingPromptRun(null)
+    void runMessage(task, options)
+  }
 
   const send = async () => {
     const completionRequirement = inferChapterChatCompletionRequirement(input)
     const promptModuleKey = inferAgentPromptModuleKey(input)
-    await runMessage(input, {
+    await submitMessage(input, {
       scope: { module: activeModule, worldGroupId },
       intentType: completionRequirement ? 'chapter.chat' : undefined,
       completionRequirement,
@@ -397,7 +468,7 @@ export default function AgentDock({
     setView('chat')
     const intentModelRef = modelRefForCategory(intent.promptModuleKey ?? intent.type, sceneBindings, activeModelRef)
     setSelectedModelRef(intentModelRef)
-    void runMessage(
+    void submitMessage(
       buildAgentIntentPrompt(intent),
       {
         scope: agentScopeFromIntent(intent),
@@ -409,7 +480,7 @@ export default function AgentDock({
         modelRef: intentModelRef,
       },
     )
-  }, [activeModelRef, busy, intent, onIntentConsumed, pendingApproval, runMessage, sceneBindings])
+  }, [activeModelRef, busy, intent, onIntentConsumed, pendingApproval, sceneBindings, submitMessage])
 
   const resolveApproval = async (turn: AgentConversationTurn, decision: 'approved' | 'rejected') => {
     if (!turn.runId || !turn.waitingApproval || busy) return
@@ -557,6 +628,7 @@ export default function AgentDock({
   }
 
   return (
+    <>
     <aside
       style={{ '--agent-dock-width': `${dockWidth}px` } as React.CSSProperties}
       className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px] shrink-0 flex-col border-l border-border bg-bg-surface shadow-2xl lg:relative lg:inset-auto lg:z-auto lg:w-[var(--agent-dock-width)] lg:max-w-[720px] lg:shadow-none"
@@ -733,6 +805,17 @@ export default function AgentDock({
                 ))}
               </select>
             </label>
+            <label className="mb-2 flex cursor-pointer items-center gap-2 text-[11px] text-text-muted" title="发送前可查看并临时修改本次任务提示词；默认关闭">
+              <input
+                type="checkbox"
+                checked={transparentPromptPreview}
+                onChange={event => setTransparentPromptPreview(event.target.checked)}
+                disabled={busy}
+                className="accent-accent"
+              />
+              <span>发送前预览提示词</span>
+              <span className="text-[10px] text-text-muted/70">一次性修改，不写回模板</span>
+            </label>
             <div className="flex items-end gap-2 rounded-md border border-border bg-bg-base p-2 focus-within:border-accent">
               <AutoResizeTextarea
                 minRows={1}
@@ -764,6 +847,15 @@ export default function AgentDock({
         </>
       )}
     </aside>
+    <PromptPreviewGate
+      open={pendingPromptRun != null}
+      title="Agent 任务提示词预览"
+      description="可编辑本次任务和提示词库模板。Agent Runtime 仍会追加固定系统规则、工具 schema、工具结果与对话上下文，因此这里不宣称是完整底层请求。"
+      fields={pendingPromptFields}
+      onCancel={() => setPendingPromptRun(null)}
+      onConfirm={confirmPromptRun}
+    />
+    </>
   )
 }
 
@@ -1494,10 +1586,9 @@ function createResources(
   configRef: React.MutableRefObject<McpServerConfig[]>,
   setMcpStatus: React.Dispatch<React.SetStateAction<Record<string, string>>>,
 ): AgentResources {
-  const storage = new DexieProjectStorage({ backend: 'dexie', projectId })
-  const plans = new AdoptionPlanStore()
   const mcp = new McpToolProvider()
-  const runtime = new AiSdkAgentRuntimeAdapter({
+  const { runtime, storage } = createProjectAgentRuntime({
+    projectId,
     platform: isTauri() ? 'desktop' : 'web',
     getModelConfig: profile => {
       const config = useAIConfigStore.getState().resolveConfigForScene('chat', parseModelRefKey(profile || '') ?? undefined)
@@ -1517,10 +1608,7 @@ function createResources(
       'external:read',
       ...(configRef.current.some(server => server.enabled && server.allowWrite) ? ['external:write' as const] : []),
     ],
-    discardPlan: planId => plans.consume(planId),
-    createToolRegistry: async () => {
-      const registry = new ToolRegistry()
-      for (const tool of createStoryForgeTools({ storage, plans })) registry.register(tool)
+    extendRegistry: async (registry: ToolRegistry) => {
       const external = await mcp.load(configRef.current)
       for (const tool of external.tools) registry.register(tool)
       if (external.errors.length) {
@@ -1529,7 +1617,6 @@ function createResources(
           ...Object.fromEntries(external.errors.map(error => [error.serverId, error.message])),
         }))
       }
-      return registry
     },
   })
   return { runtime, mcp, storage }

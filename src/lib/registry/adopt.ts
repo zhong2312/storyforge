@@ -14,6 +14,14 @@ import { normalizeCharacterAxes } from '../character/character-axes'
 import type { ProjectStoragePort, StorageRecord, StorageTable } from '../storage/ports'
 import { dexieRevisionWriter, recordChapterRevision, storageRevisionWriter } from '../chapters/revisions'
 import type { Chapter, ChapterRevision } from '../types'
+import {
+  createEmptyEntry,
+  getAllPredefinedIds,
+  isEntryEmpty,
+  type ConflictPriority,
+  type CustomWorldRuleNode,
+  type WorldRuleEntry,
+} from '../types/world-rules'
 
 export interface AdoptOptions {
   /** 活动项目存储；未传时保持现有 Dexie 行为。 */
@@ -231,11 +239,14 @@ async function adoptSingleton(
   storage?: ProjectStoragePort,
 ): Promise<AdoptResult> {
   const data = input.data as Record<string, unknown>
-  const patch = normalizeAndValidate(data, fieldSpecs, result)
+  let patch = normalizeAndValidate(data, fieldSpecs, result)
   if (!patch || Object.keys(patch).length === 0) return result
 
   const table = adoptionTable(tableSpec, storage)
   const target = await findSingleton(input, tableSpec, table)
+  if (input.target === 'worldRulesProfiles') {
+    patch = normalizeWorldRulesProfilePatch(patch, target, result)
+  }
   if (input.mode === 'append') {
     for (const [field, val] of Object.entries(patch)) {
       const spec = fieldSpecs.find(f => f.field === field)
@@ -450,7 +461,101 @@ function defaultSingletonRow(target: string): Record<string, unknown> {
       referenceWorks: '[]',
     }
   }
+  if (target === 'worldRulesProfiles') {
+    return { entries: {}, customNodes: [], globalNote: '' }
+  }
   return {}
+}
+
+const WORLD_RULE_PRIORITY_ALIASES: Readonly<Record<string, ConflictPriority>> = {
+  historical: 'historical',
+  balanced: 'balanced',
+  fictional: 'fictional',
+  史实优先: 'historical',
+  均衡: 'balanced',
+  架空优先: 'fictional',
+}
+
+function normalizeWorldRulesProfilePatch(
+  patch: Record<string, unknown>,
+  target: Record<string, unknown> | null,
+  result: AdoptResult,
+): Record<string, unknown> {
+  if (!Object.prototype.hasOwnProperty.call(patch, 'entries')) return patch
+
+  const incoming = patch.entries as Record<string, unknown>
+  const existing = isPlainRecord(target?.entries) ? target.entries : {}
+  const customNodes = Array.isArray(patch.customNodes)
+    ? patch.customNodes
+    : Array.isArray(target?.customNodes) ? target.customNodes : []
+  const knownNodeIds = new Set(getAllPredefinedIds())
+  for (const node of customNodes as CustomWorldRuleNode[]) {
+    if (node && typeof node.id === 'string') knownNodeIds.add(node.id)
+  }
+
+  const entries: Record<string, WorldRuleEntry> = structuredClone(existing) as Record<string, WorldRuleEntry>
+  for (const [nodeId, rawEntry] of Object.entries(incoming)) {
+    if (!knownNodeIds.has(nodeId)) {
+      result.skipped.push({ reason: `真实与幻想节点 ${nodeId} 不存在；请先从能力目录读取 nodeId`, data: rawEntry })
+      continue
+    }
+    if (rawEntry == null) {
+      delete entries[nodeId]
+      continue
+    }
+    if (!isPlainRecord(rawEntry)) {
+      result.typeErrors.push({ field: `entries.${nodeId}`, expected: 'object', got: typeof rawEntry })
+      continue
+    }
+
+    const current = isPlainRecord(entries[nodeId])
+      ? entries[nodeId]
+      : createEmptyEntry()
+    const normalized = normalizeWorldRuleEntry(nodeId, current as WorldRuleEntry, rawEntry, result)
+    if (isEntryEmpty(normalized)) delete entries[nodeId]
+    else entries[nodeId] = normalized
+  }
+
+  return { ...patch, entries }
+}
+
+function normalizeWorldRuleEntry(
+  nodeId: string,
+  current: WorldRuleEntry,
+  raw: Record<string, unknown>,
+  result: AdoptResult,
+): WorldRuleEntry {
+  const aliases: Readonly<Record<string, keyof WorldRuleEntry>> = {
+    historicalAnchors: 'historicalAnchors',
+    取自真实: 'historicalAnchors',
+    史实锚点: 'historicalAnchors',
+    fictionalAdaptations: 'fictionalAdaptations',
+    架空改造: 'fictionalAdaptations',
+    虚构设定: 'fictionalAdaptations',
+    priority: 'priority',
+    冲突优先级: 'priority',
+    冲突时优先: 'priority',
+  }
+  const next = { ...createEmptyEntry(), ...current }
+  for (const [field, value] of Object.entries(raw)) {
+    const canonical = aliases[field]
+    if (!canonical) {
+      result.unknown.push(`entries.${nodeId}.${field}`)
+      continue
+    }
+    if (canonical === 'priority') {
+      const priority = WORLD_RULE_PRIORITY_ALIASES[String(value).trim()]
+      if (priority) next.priority = priority
+      else result.typeErrors.push({ field: `entries.${nodeId}.priority`, expected: 'historical|balanced|fictional', got: String(value) })
+      continue
+    }
+    next[canonical] = String(value ?? '').trim()
+  }
+  return next
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function applyRequired(

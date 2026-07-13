@@ -141,6 +141,11 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   longtext('worldviews', 'internalConflicts', ['conflicts', '内部矛盾']),
   longtext('worldviews', 'itemDesign', ['items', 'artifactDesign', '道具设计']),
 
+  // worldRulesProfiles:「真实与幻想」按 nodeId 存储的维度规则。
+  { ...object('worldRulesProfiles', 'entries', ['真实与幻想', '维度规则']), label: '维度规则' },
+  { ...arr('worldRulesProfiles', 'customNodes', ['自定义维度', '自定义节点']), label: '自定义维度' },
+  { ...longtext('worldRulesProfiles', 'globalNote', ['全局补充说明', '全局约束']), label: '全局补充说明' },
+
   // storyCores: storyLines 作为旧字段别名归一到 mainPlot。
   longtext('storyCores', 'theme', ['主题']),
   longtext('storyCores', 'centralConflict', ['conflict', '核心冲突']),
@@ -337,6 +342,50 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   num('codexEntries', 'importance', ['重要度']),
   num('codexEntries', 'order'),
   num('codexEntries', 'worldGroupId'),
+
+  // historicalTimelineEvents / historicalKeywords: 历史双 Agent 定点写回。
+  text('historicalTimelineEvents', 'era', ['历史时期']),
+  num('historicalTimelineEvents', 'year', ['年份']),
+  text('historicalTimelineEvents', 'date', ['时间描述']),
+  text('historicalTimelineEvents', 'title', ['事件名称']),
+  longtext('historicalTimelineEvents', 'description', ['条目定稿']),
+  longtext('historicalTimelineEvents', 'conceptNote', ['概念与创作思路']),
+  longtext('historicalTimelineEvents', 'impact', ['影响']),
+  bool('historicalTimelineEvents', 'isHistorical', ['真实史实']),
+  longtext('historicalTimelineEvents', 'source', ['史料来源']),
+  longtext('historicalTimelineEvents', 'aiBrainstorm', ['头脑风暴结果']),
+  longtext('historicalTimelineEvents', 'aiConsult', ['历史考据结果']),
+  longtext('historicalTimelineEvents', 'consultPrompt', ['考据补充说明']),
+  longtext('historicalTimelineEvents', 'stormPrompt', ['头脑风暴补充说明']),
+  arr('historicalTimelineEvents', 'relatedChapterIds', ['关联章节']),
+  text('historicalTimelineEvents', 'customTimeRange', ['时间范围']),
+  text('historicalTimelineEvents', 'location', ['地点']),
+  num('historicalTimelineEvents', 'worldGroupId'),
+
+  text('historicalKeywords', 'keyword', ['关键词']),
+  enumeration('historicalKeywords', 'category', ['technology', 'institution', 'culture', 'economy', 'architecture']),
+  text('historicalKeywords', 'era', ['历史时期']),
+  longtext('historicalKeywords', 'description', ['条目定稿']),
+  longtext('historicalKeywords', 'conceptNote', ['概念与创作思路']),
+  longtext('historicalKeywords', 'aiBrainstorm', ['头脑风暴结果']),
+  longtext('historicalKeywords', 'aiConsult', ['历史考据结果']),
+  longtext('historicalKeywords', 'consultPrompt', ['考据补充说明']),
+  longtext('historicalKeywords', 'stormPrompt', ['头脑风暴补充说明']),
+  arr('historicalKeywords', 'relatedChapterIds', ['关联章节']),
+  text('historicalKeywords', 'customTimeRange', ['时间范围']),
+  text('historicalKeywords', 'location', ['地点']),
+  num('historicalKeywords', 'worldGroupId'),
+
+  // worldNodes: 世界地图 Agent 只定点替换当前世界节点的地图配置。
+  num('worldNodes', 'parentId'),
+  text('worldNodes', 'name', ['世界名称']),
+  longtext('worldNodes', 'description', ['世界描述']),
+  json('worldNodes', 'mapConfigJSON', ['地图配置']),
+  json('worldNodes', 'mapCacheJSON', ['地图缓存']),
+  json('worldNodes', 'portalsJSON', ['传送门']),
+  num('worldNodes', 'sortOrder'),
+  text('worldNodes', 'icon'),
+  num('worldNodes', 'worldGroupId'),
 
   // importantLocations / downstream extraction products
   text('importantLocations', 'name', ['地点名']),

@@ -1,4 +1,5 @@
 import type { AIProvider } from '../types'
+import { storyForgeDesktopProxyOrigin } from '../desktop-runtime'
 
 export interface NormalizedOpenAIBaseUrl {
   baseUrl: string
@@ -48,7 +49,8 @@ function isAbsoluteHttpUrl(url: string): boolean {
 export function shouldUseGenericDevProxy(provider: AIProvider | undefined, rawBaseUrl: string): boolean {
   void provider
   if (typeof window === 'undefined') return false
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) return false
+  const desktopProxyOrigin = storyForgeDesktopProxyOrigin(window.location)
+  if (!desktopProxyOrigin && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) return false
   const normalized = normalizeOpenAIBaseUrl(rawBaseUrl).baseUrl
   return isAbsoluteHttpUrl(normalized)
 }
@@ -58,7 +60,8 @@ export function buildGenericDevProxyEndpoint(
   endpoint: 'chat/completions' | 'models' | 'embeddings',
 ): string {
   const normalized = normalizeOpenAIBaseUrl(rawBaseUrl)
-  return `${GENERIC_DEV_PROXY_PREFIX}/${endpoint}?baseUrl=${encodeURIComponent(normalized.baseUrl)}`
+  const proxyOrigin = typeof window === 'undefined' ? '' : storyForgeDesktopProxyOrigin(window.location)
+  return `${proxyOrigin}${GENERIC_DEV_PROXY_PREFIX}/${endpoint}?baseUrl=${encodeURIComponent(normalized.baseUrl)}`
 }
 
 export function buildOpenAIEndpoint(

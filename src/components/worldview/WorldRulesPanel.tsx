@@ -5,7 +5,7 @@
  * 底部：规则预览 + Token 估算
  */
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Trash2, Eye, EyeOff, X, Check } from 'lucide-react'
+import { Plus, Trash2, Eye, EyeOff, X, Check, Sparkles } from 'lucide-react'
 import { useWorldRulesStore } from '../../stores/world-rules'
 import { useWorldGroupStore } from '../../stores/world-group'
 import {
@@ -28,6 +28,8 @@ import type { Project } from '../../lib/types'
 import type { HistoricalTimelineEvent, HistoricalKeyword } from '../../lib/types/history'
 import { db } from '../../lib/db/schema'
 import { useDialog } from '../shared/Dialog'
+import MarkdownFieldEditor from '../shared/MarkdownFieldEditor'
+import { dispatchAgentIntent } from '../../lib/agent/intents'
 
 interface Props {
   project: Project
@@ -232,6 +234,65 @@ export default function WorldRulesPanel({ project }: Props) {
     if (!selectedNode) return
     await updateEntry(selectedNode, field, value)
   }, [selectedNode, updateEntry])
+
+  const handleAgentAssist = useCallback((field: keyof WorldRuleEntry | 'globalNote') => {
+    const worldGroupId = project.enableMultiWorld ? worldTab : null
+    const isGlobal = field === 'globalNote'
+    if (!isGlobal && !selectedNode) return
+
+    const fieldLabels: Record<keyof WorldRuleEntry | 'globalNote', string> = {
+      historicalAnchors: '取自真实',
+      fictionalAdaptations: '架空改造',
+      priority: '冲突优先级',
+      globalNote: '全局补充说明',
+    }
+    const fieldLabel = fieldLabels[field]
+    const nodeId = selectedNode ?? undefined
+    const currentValue = isGlobal ? profile?.globalNote || '' : currentEntry[field as keyof WorldRuleEntry]
+    const proposalValue = field === 'priority' ? 'balanced' : '生成结果'
+    const proposalShape = isGlobal
+      ? '{ "globalNote": "完整的全局约束 Markdown" }'
+      : `{ "entries": { "${nodeId}": { "${field}": "${proposalValue}" } } }`
+    const fieldRule = field === 'priority'
+      ? 'priority 只能取 historical、balanced、fictional 之一。'
+      : '输出可直接采纳的正式 Markdown 内容，不要输出分析过程、问题或占位说明。'
+
+    dispatchAgentIntent({
+      type: `worldRules.${field}`,
+      title: `AI 完善${isGlobal ? '' : ` · ${currentLabel}`} · ${fieldLabel}`,
+      promptModuleKey: 'worldview.dimension',
+      source: {
+        project: { backend: 'dexie', projectId: project.id! },
+        module: 'world-rules',
+        field,
+        worldGroupId,
+      },
+      instruction: [
+        `完善“真实与幻想”面板中的${isGlobal ? '全局补充说明' : `“${currentLabel}”（nodeId=${nodeId}）的“${fieldLabel}”栏目`}。`,
+        '先读取 worldRules、worldview、storyCore、creativeRules 和 historical，结合项目已有设定生成正式候选。',
+        `调用 storyforge.change.propose，必须使用 target=worldRulesProfiles、mode=replace、data=${proposalShape}。`,
+        isGlobal ? '只提交 globalNote，不得改动 entries 或 customNodes。' : `只提交 entries.${nodeId}.${field}，不得修改该节点其他字段，也不得修改其他节点。`,
+        fieldRule,
+      ].join('\n'),
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        requiredFields: [isGlobal ? 'globalNote' : 'entries'],
+        requiredDataPaths: isGlobal
+          ? [['globalNote']]
+          : [['entries', nodeId!, field]],
+        requiredContextSources: ['worldRules', 'worldview', 'storyCore', 'creativeRules', 'historical'],
+      },
+      payload: {
+        nodeId,
+        nodeLabel: isGlobal ? undefined : currentLabel,
+        targetField: field,
+        currentValue,
+        currentEntry: isGlobal ? undefined : currentEntry,
+      },
+    })
+  }, [currentEntry, currentLabel, profile?.globalNote, project.enableMultiWorld, project.id, selectedNode, worldTab])
 
   const handleDeleteCustomNode = useCallback(async (nodeId: string, label: string) => {
     const ok = await dialog.confirm({
@@ -516,38 +577,33 @@ export default function WorldRulesPanel({ project }: Props) {
               )}
 
               {/* 📜 取自真实 */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  📜 取自真实（历史考据 / 现实原型）
-                </label>
-                <textarea
-                  value={currentEntry.historicalAnchors}
-                  onChange={e => handleFieldChange('historicalAnchors', e.target.value)}
-                  placeholder="这个维度中有哪些内容是取自真实历史或现实的？例如：使用唐朝开元年间真实官制三省六部"
-                  rows={5}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-                />
-              </div>
+              <MarkdownFieldEditor
+                value={currentEntry.historicalAnchors}
+                onChange={value => { void handleFieldChange('historicalAnchors', value) }}
+                placeholder="这个维度中有哪些内容是取自真实历史或现实的？例如：使用唐朝开元年间真实官制三省六部"
+                label="📜 取自真实（历史考据 / 现实原型）"
+                compact
+                headerAction={<AgentFieldButton label="AI 完善取自真实" onClick={() => handleAgentAssist('historicalAnchors')} />}
+              />
 
               {/* ✨ 架空改造 */}
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  ✨ 架空改造（虚构 / 改编 / 原创设定）
-                </label>
-                <textarea
-                  value={currentEntry.fictionalAdaptations}
-                  onChange={e => handleFieldChange('fictionalAdaptations', e.target.value)}
-                  placeholder="这个维度中有哪些内容是虚构或改编的？例如：在真实官制基础上增设灵修院，专管修士事务"
-                  rows={5}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-                />
-              </div>
+              <MarkdownFieldEditor
+                value={currentEntry.fictionalAdaptations}
+                onChange={value => { void handleFieldChange('fictionalAdaptations', value) }}
+                placeholder="这个维度中有哪些内容是虚构或改编的？例如：在真实官制基础上增设灵修院，专管修士事务"
+                label="✨ 架空改造（虚构 / 改编 / 原创设定）"
+                compact
+                headerAction={<AgentFieldButton label="AI 完善架空改造" onClick={() => handleAgentAssist('fictionalAdaptations')} />}
+              />
 
               {/* ⚖️ 冲突优先级 */}
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  ⚖️ 当真实与架空冲突时
-                </label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="text-sm font-medium text-text-secondary">
+                    ⚖️ 当真实与架空冲突时
+                  </label>
+                  <AgentFieldButton label="AI 判断冲突优先级" onClick={() => handleAgentAssist('priority')} />
+                </div>
                 <div className="flex gap-2">
                   {(Object.entries(CONFLICT_PRIORITY_LABELS) as [ConflictPriority, string][]).map(([value, label]) => (
                     <button
@@ -581,18 +637,14 @@ export default function WorldRulesPanel({ project }: Props) {
       </div>
 
       {/* 全局补充说明 */}
-      <div className="border border-border rounded-xl p-4 bg-bg-base">
-        <label className="block text-sm font-medium text-text-secondary mb-1.5">
-          📝 全局补充说明（对 AI 的额外约束，适用于所有维度）
-        </label>
-        <textarea
-          value={profile.globalNote || ''}
-          onChange={e => updateGlobalNote(e.target.value)}
-          placeholder="例如：本作以唐代为蓝本但加入仙侠元素，凡是涉及朝堂制度的一律遵循史实，力量体系完全虚构。"
-          rows={3}
-          className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-base text-text-primary placeholder:text-text-muted/50 focus:ring-1 focus:ring-accent focus:border-accent resize-y"
-        />
-      </div>
+      <MarkdownFieldEditor
+        value={profile.globalNote || ''}
+        onChange={value => { void updateGlobalNote(value) }}
+        placeholder="例如：本作以唐代为蓝本但加入仙侠元素，凡是涉及朝堂制度的一律遵循史实，力量体系完全虚构。"
+        label="📝 全局补充说明（对 AI 的额外约束，适用于所有维度）"
+        compact
+        headerAction={<AgentFieldButton label="AI 完善全局补充说明" onClick={() => handleAgentAssist('globalNote')} />}
+      />
 
       {/* 预览面板 */}
       {showPreview && (
@@ -615,5 +667,20 @@ export default function WorldRulesPanel({ project }: Props) {
         </div>
       )}
     </div>
+  )
+}
+
+function AgentFieldButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-7 items-center gap-1 rounded-md border border-accent/30 bg-accent/8 px-2 text-[11px] font-medium text-accent transition-colors hover:bg-accent/15"
+      title={label}
+      aria-label={label}
+    >
+      <Sparkles className="h-3.5 w-3.5" />
+      <span>AI</span>
+    </button>
   )
 }

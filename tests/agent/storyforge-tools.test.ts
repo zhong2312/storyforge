@@ -92,6 +92,43 @@ describe('registry-driven StoryForge tools', () => {
     expect(output.text).toContain('封存潮汐神印')
   })
 
+  it('rag.search exact mode paginates every full-project match instead of truncating at topK', async () => {
+    for (let index = 1; index <= 25; index += 1) {
+      await db.characters.add({
+        projectId: 1,
+        name: `巡夜人${index}`,
+        role: 'supporting',
+        roleWeight: 'secondary',
+        moralAxis: 'neutral',
+        orderAxis: 'lawful',
+        ending: `共同持有精确检索暗号-赤潮-${index}`,
+        createdAt: 100 + index,
+        updatedAt: 100 + index,
+      } as never)
+    }
+
+    const first = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: 0, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+    const second = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: first.nextOffset, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+    const third = await registry.execute(
+      'storyforge.rag.search',
+      context(['project:read']),
+      { query: '精确检索暗号-赤潮', matchMode: 'exact', sourceTables: ['characters'], offset: second.nextOffset, limit: 10 },
+    ) as { hitCount: number; totalHits: number; offset: number; nextOffset: number | null; text: string }
+
+    expect(first).toMatchObject({ hitCount: 10, totalHits: 25, offset: 0, nextOffset: 10 })
+    expect(second).toMatchObject({ hitCount: 10, totalHits: 25, offset: 10, nextOffset: 20 })
+    expect(third).toMatchObject({ hitCount: 5, totalHits: 25, offset: 20, nextOffset: null })
+    expect(`${first.text}\n${second.text}\n${third.text}`).toContain('[characters#')
+  })
+
   it('catalog derives readable sources and writable settings from registries', async () => {
     const output = await registry.execute(
       'storyforge.settings.catalog',
@@ -99,7 +136,11 @@ describe('registry-driven StoryForge tools', () => {
       {},
     ) as {
       readSources: Array<{ key: string }>
-      writeTargets: Array<{ target: string; fields: Array<{ field: string }> }>
+      writeTargets: Array<{
+        target: string
+        fields: Array<{ field: string }>
+        writeContract?: { readSource: string; nodes: Array<{ nodeId: string; path: string }> }
+      }>
     }
 
     expect(output.readSources.some(source => source.key === 'worldview')).toBe(true)
@@ -109,6 +150,109 @@ describe('registry-driven StoryForge tools', () => {
     expect(output.readSources.some(source => source.key === 'chapterIndex')).toBe(true)
     expect(output.writeTargets.find(target => target.target === 'worldviews')?.fields)
       .toContainEqual(expect.objectContaining({ field: 'worldOrigin' }))
+    const worldRules = output.writeTargets.find(target => target.target === 'worldRulesProfiles')
+    expect(worldRules?.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'entries' }),
+      expect.objectContaining({ field: 'globalNote' }),
+    ]))
+    expect(worldRules?.writeContract?.readSource).toBe('worldRules')
+    expect(worldRules?.writeContract?.nodes).toContainEqual(expect.objectContaining({
+      nodeId: 'era',
+      path: '时代背景 / 总览',
+    }))
+    expect(worldRules?.writeContract?.nodes).toContainEqual(expect.objectContaining({
+      nodeId: 'era.period',
+      path: '时代背景 / 历史时期',
+    }))
+  })
+
+  it('proposes and commits a world-rules node patch without overwriting sibling nodes', async () => {
+    await db.worldRulesProfiles.add({
+      projectId: 1,
+      worldGroupId: null,
+      entries: {
+        'era.period': {
+          historicalAnchors: '沿用旧历法。',
+          fictionalAdaptations: '',
+          priority: 'historical',
+        },
+      },
+      customNodes: [],
+      globalNote: '原全局说明',
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const plan = await registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: {
+          entries: {
+            era: {
+              取自真实: '参考唐代三省六部。',
+              架空改造: '增设灵修院。',
+              冲突优先级: '均衡',
+            },
+          },
+        },
+      },
+    ) as { planId: string; approvalId: string; planHash: string }
+
+    await registry.execute(
+      'storyforge.change.commit',
+      context(['project:write'], {
+        approval: { approvalId: plan.approvalId, planHash: plan.planHash },
+      }),
+      { planId: plan.planId },
+    )
+
+    const profile = await db.worldRulesProfiles.where('projectId').equals(1).first()
+    expect(profile?.entries['era.period']).toMatchObject({ historicalAnchors: '沿用旧历法。' })
+    expect(profile?.entries.era).toEqual({
+      historicalAnchors: '参考唐代三省六部。',
+      fictionalAdaptations: '增设灵修院。',
+      priority: 'balanced',
+    })
+    expect(profile?.globalNote).toBe('原全局说明')
+
+    const contextOutput = await registry.execute(
+      'storyforge.context.read',
+      context(['project:read']),
+      { sourceKeys: ['worldRules'] },
+    ) as { text: string }
+    expect(contextOutput.text).toContain('时代背景 [nodeId=era]')
+    expect(contextOutput.text).toContain('历史时期 [nodeId=era.period]')
+  })
+
+  it('rejects an unknown world-rules node before asking the user to approve', async () => {
+    await expect(registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: {
+          entries: {
+            '时代背景/总览': {
+              historicalAnchors: '错误地把界面路径当成 nodeId',
+            },
+          },
+        },
+      },
+    )).rejects.toThrow('writeContract.nodes')
+
+    await expect(registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: { entries: { era: { priority: '随便处理' } } },
+      },
+    )).rejects.toThrow('historical、balanced 或 fictional')
   })
 
   it('context.read delegates to CONTEXT_SOURCES and assembleContext', async () => {
@@ -281,6 +425,7 @@ describe('registry-driven StoryForge tools', () => {
       createdAt: now,
       updatedAt: now,
     }) as number
+    const proposedContent = '<p>雨夜 山门</p><p><br></p><p>追兵将至</p>'
     const content = '<p>雨夜 山门</p><p>追兵将至</p>'
 
     const plan = await registry.execute(
@@ -290,18 +435,19 @@ describe('registry-driven StoryForge tools', () => {
         target: 'chapters',
         mode: 'replace',
         recordId: chapterId,
-        data: { content, wordCount: 1, status: 'draft' },
+        data: { content: proposedContent, wordCount: 1, status: 'draft' },
       },
     ) as {
       planId: string
       approvalId: string
       planHash: string
-      input: { data: { wordCount: number } }
+      input: { data: { content: string; wordCount: number } }
       preview: { canonicalFields: string[] }
       beforeData: { content: string }
     }
 
     expect(plan.input.data.wordCount).toBe(8)
+    expect(plan.input.data.content).toBe(content)
     expect(plan.preview.canonicalFields).toContain('wordCount')
     expect(plan.beforeData.content).toBe('')
 

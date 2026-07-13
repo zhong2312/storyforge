@@ -54,6 +54,21 @@ describe('StoryForge tools with local-folder storage', () => {
       createdAt: 100,
       updatedAt: 100,
     })
+    await storage.table('worldRulesProfiles').add({
+      projectId: 41,
+      worldGroupId: null,
+      entries: {
+        'era.period': {
+          historicalAnchors: '旧历法',
+          fictionalAdaptations: '',
+          priority: 'historical',
+        },
+      },
+      customNodes: [],
+      globalNote: '',
+      createdAt: 100,
+      updatedAt: 100,
+    })
     const registry = new ToolRegistry()
     for (const tool of createStoryForgeTools({ storage })) registry.register(tool)
 
@@ -91,6 +106,35 @@ describe('StoryForge tools with local-folder storage', () => {
       .toMatchObject({ worldOrigin: '星河已被重新锻造' })
     expect(await db.worldviews.count()).toBe(0)
     expect(fileSystem.files.get('.storyforge/project-store.json')).toContain('星河已被重新锻造')
+
+    const rulesPlan = await registry.execute(
+      'storyforge.change.propose',
+      context(['project:read']),
+      {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: {
+          entries: {
+            era: {
+              historicalAnchors: '参考唐制',
+              fictionalAdaptations: '增设星官署',
+              priority: 'balanced',
+            },
+          },
+        },
+      },
+    ) as { planId: string; approvalId: string; planHash: string }
+    await registry.execute(
+      'storyforge.change.commit',
+      context(['project:write'], { approval: { approvalId: rulesPlan.approvalId, planHash: rulesPlan.planHash } }),
+      { planId: rulesPlan.planId },
+    )
+    const rules = await storage.table<{
+      projectId: number
+      entries: Record<string, { historicalAnchors: string }>
+    }>('worldRulesProfiles').findOne({ where: { projectId: 41 } })
+    expect(rules?.entries['era.period'].historicalAnchors).toBe('旧历法')
+    expect(rules?.entries.era.historicalAnchors).toBe('参考唐制')
     await storage.close()
   })
 })

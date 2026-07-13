@@ -488,6 +488,7 @@ function buildInstructions(descriptors: readonly ToolDescriptor[], input: AgentR
   return [
     '你是 StoryForge 项目副驾。优先使用工具获取事实，不得猜测项目设定。',
     '每轮最多调用一次 storyforge.settings.catalog；目录返回后立即执行下一工具，不要重复复述“先查看”或再次查询目录。',
+    '“真实与幻想”及其大类、子类、总览属于 worldRulesProfiles，不属于 worldviews.rules。先从能力目录取得 nodeId，读取 worldRules，再用 storyforge.change.propose 对 worldRulesProfiles.entries 做节点级修改。',
     '用户按“第 N 章”指代章节且宿主未提供章节 ID 时，先调用 storyforge.context.read 读取 chapterIndex，并传 chapterOrdinal=N；再把返回的 outlineNodeId/chapterId 传给后续 context.read。',
     '写章节时：chapterId=未创建则对 chapters 使用 mode=add，并携带索引返回的 outlineNodeId、标题、正文、字数、draft 状态和章序；已有 chapterId 则使用 recordId 定点 replace，禁止新建重复章节。',
     '找到目标章节后立即读取写作所需上下文并产出变更提案；不得只描述下一步、不得用反复读取代替执行。',
@@ -580,6 +581,14 @@ function assertCompletionProposalInput(
       }
     }
   }
+  for (const path of requirement.requiredDataPaths ?? []) {
+    for (const item of dataItems) {
+      const value = valueAtPath(item, path)
+      if (value == null || (typeof value === 'string' && value.trim() === '')) {
+        throw new Error(`[agent-runtime] 完成条件未满足：提案缺少精确路径 ${path.join(' → ')}`)
+      }
+    }
+  }
 
   assertDeliverableContent(requirement, dataItems)
 }
@@ -662,9 +671,12 @@ function completionRequirementReminder(
   requirement: AgentChangeProposalCompletionRequirement,
 ): string {
   const record = requirement.recordId != null ? `，recordId=${requirement.recordId}` : ''
+  const paths = requirement.requiredDataPaths?.length
+    ? `\n必须包含精确数据路径：${requirement.requiredDataPaths.map(path => path.join(' → ')).join('、')}。`
+    : ''
   return [
     `提案参数必须为 target=${requirement.target}，mode=${requirement.mode}${record}。`,
-    `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。`,
+    `data 必须直接包含正式结果对象，不要包在 plan、proposal 或 character 等额外层级中；必填字段：${requirement.requiredFields.join('、')}。${paths}`,
     requirement.requiredPreProposalTools?.length
       ? `提案前必须调用并通过质量门：${requirement.requiredPreProposalTools.join('、')}；工具必须返回 canPropose=true。`
       : '',
@@ -679,6 +691,15 @@ function assertPreProposalToolsPassed(
   if (missing.length) {
     throw new Error(`提案前质量门尚未通过：${missing.join('、')}。请先调用工具并修正到 canPropose=true。`)
   }
+}
+
+function valueAtPath(root: Readonly<Record<string, unknown>>, path: readonly string[]): unknown {
+  let current: unknown = root
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined
+    current = current[segment]
+  }
+  return current
 }
 
 function textContentLength(value: unknown): number {

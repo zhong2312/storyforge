@@ -73,7 +73,7 @@ const LINE_HEIGHT_OPTIONS = [
   { label: '3.0', value: '3' },
 ] as const
 const PARAGRAPH_SPACING_OPTIONS = [
-  { label: '默认段距', value: '' },
+  { label: '无段距（默认）', value: '' },
   { label: '无段距', value: '0' },
   { label: '0.5行', value: '0.5em' },
   { label: '1行', value: '1em' },

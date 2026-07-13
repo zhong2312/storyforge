@@ -331,6 +331,40 @@ describe('AiSdkAgentRuntimeAdapter', () => {
     expect(events.some(event => event.type === 'run.completed')).toBe(false)
   })
 
+  it('rejects a proposal that misses the exact nested field required by a panel action', async () => {
+    const registry = chapterProposalRegistry()
+    const streamer: AgentLoopStreamer = async function* (request) {
+      const invalid = {
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        data: { entries: { 'era.period': { fictionalAdaptations: '改错了栏目' } } },
+      }
+      yield { type: 'tool-call', toolCallId: 'proposal-world-rules', toolName: 'storyforge.change.propose', input: invalid }
+      try {
+        await request.execute('storyforge.change.propose', invalid)
+        throw new Error('invalid nested proposal unexpectedly passed')
+      } catch (error) {
+        expect(String(error)).toContain('entries → era.period → historicalAnchors')
+        yield { type: 'tool-error', toolCallId: 'proposal-world-rules', toolName: 'storyforge.change.propose', error }
+      }
+    }
+
+    const events = await collect(createRuntime(registry, streamer).run({
+      ...runInput(),
+      completionRequirement: {
+        kind: 'change-proposal',
+        target: 'worldRulesProfiles',
+        mode: 'replace',
+        requiredFields: ['entries'],
+        requiredDataPaths: [['entries', 'era.period', 'historicalAnchors']],
+        requiredContextSources: [],
+      },
+    }))
+
+    expect(events.some(event => event.type === 'tool.failed')).toBe(true)
+    expect(events.some(event => event.type === 'approval.requested')).toBe(false)
+  })
+
   it('rejects permission requests and placeholder explanations as chapter deliverables', async () => {
     const registry = chapterProposalRegistry()
     const streamer: AgentLoopStreamer = async function* (request) {

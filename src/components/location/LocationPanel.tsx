@@ -15,7 +15,7 @@ import LocationTreeView from './LocationTreeView'
 import { useChapterStore } from '../../stores/chapter'
 import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { chat } from '../../lib/ai/client'
-import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
+import { requestAIConfigSetup } from '../../lib/ai/config-readiness'
 import {
   buildLocationExtractPrompt, parseLocations, splitExtractionText, type ExtractedLocation,
 } from '../../lib/ai/adapters/structured-extract-adapter'
@@ -81,10 +81,7 @@ export default function LocationPanel({ project }: Props) {
   }
 
   const handleExtractLocations = async () => {
-    if (!isAIConfigReady(aiConfig)) {
-      setExtractError(getAIConfigRequiredMessage(aiConfig))
-      return
-    }
+    if (!requestAIConfigSetup(aiConfig)) return
     const written = chapters.filter(chapter => htmlToPlainText(chapter.content || '').trim().length > 50)
     if (written.length === 0) {
       setExtractError('还没有已写正文的章节')

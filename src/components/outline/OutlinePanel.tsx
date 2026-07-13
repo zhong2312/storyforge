@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Check, X, LayoutList, Layers, Loader2, GripVertical, CornerDownRight } from 'lucide-react'
+import { Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Check, X, LayoutList, Layers, Loader2, GripVertical, CornerDownRight, Workflow } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useDragReorder, type ItemDnD } from './useDragReorder'
 import { useWorldGroupStore } from '../../stores/world-group'
@@ -30,6 +30,7 @@ import { useToast } from '../shared/Toast'
 import type { Project, StoryStructure } from '../../lib/types'
 import { STORY_STRUCTURES } from '../../lib/types/outline'
 import { dispatchAgentIntent } from '../../lib/agent/intents'
+import OutlineWorkshopDialog from './OutlineWorkshopDialog'
 
 interface Props {
   project: Project
@@ -75,6 +76,7 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const [activeModuleKey, setActiveModuleKey] = useState<'outline.volume' | 'outline.chapter'>('outline.volume')
   const [pendingGeneration, setPendingGeneration] = useState<OutlineGenerationRequest | null>(null)
   const [promptPanelOpen, setPromptPanelOpen] = useState(false)
+  const [workshopVolumeId, setWorkshopVolumeId] = useState<number | null>(null)
 
   const [previewVolumes, setPreviewVolumes] = useState<ParsedVolume[] | null>(null)
   const [previewChapters, setPreviewChapters] = useState<ParsedChapter[] | null>(null)
@@ -427,6 +429,24 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
   const handleAIChapters = () => {
     if (selectedVol?.id) prepareGeneration({ kind: 'chapters', volumeId: selectedVol.id })
   }
+  const handleWorkshopComplete = async (rawOutput: string, volumeId: number) => {
+    setRestructuring(true)
+    try {
+      const parsed = await parseChapterOutlineSmart(rawOutput, aiConfig)
+      if (parsed.length === 0) {
+        toast.error('正式章纲无法解析为章节列表，请返回工坊调整最后阶段输出。')
+        return
+      }
+      ai.reset()
+      ai.setOperation(encodeGenerationOperation({ kind: 'chapters', volumeId }))
+      setPreviewTargetId(null)
+      setPreviewChapters(parsed)
+      setWorkshopVolumeId(null)
+      toast.info('正式章纲已生成，请检查预览后确认写入。')
+    } finally {
+      setRestructuring(false)
+    }
+  }
   const handleAgentBatchChapters = () => {
     if (!volumes.length) return
     dispatchAgentIntent({
@@ -702,7 +722,18 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
 
   // ── 右侧编辑区 ──
 
+  const workshopVolume = volumes.find(volume => volume.id === workshopVolumeId) ?? null
+  const workshopChapterCount = Math.max(
+    1,
+    Math.round(Number(parameterValues.chaptersPerVolume) || estimateChaptersPerVolume(
+      project.targetWordCount,
+      Math.max(1, volumes.length),
+      Number(parameterValues.wordsPerChapter) || DEFAULT_WORDS_PER_CHAPTER,
+    )),
+  )
+
   return (
+    <>
     <PanelLayout
       sidebar={sidebarContent}
       sidebarTitle="📖 大纲"
@@ -819,6 +850,13 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent text-white rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors">
                   <Sparkles className="w-3.5 h-3.5" /> Agent 生成本卷章节
                 </button>
+                <button
+                  onClick={() => setWorkshopVolumeId(selectedVol.id!)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-bg-elevated text-accent rounded-md hover:bg-accent/10 border border-accent/30 transition-colors"
+                  title="分五阶段推演并生成正式章纲"
+                >
+                  <Workflow className="w-3.5 h-3.5" /> 章纲工坊
+                </button>
                 <button onClick={() => handleAddChapter()}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-bg-elevated text-text-secondary rounded-md hover:text-text-primary border border-border transition-colors">
                   <Plus className="w-3.5 h-3.5" /> 添加章节
@@ -928,6 +966,18 @@ export default function OutlinePanel({ project, onOpenChapter }: Props) {
         )}
       </div>
     </PanelLayout>
+    {workshopVolume && (
+      <OutlineWorkshopDialog
+        project={project}
+        volume={workshopVolume}
+        chapterCount={workshopChapterCount}
+        userHint={hint}
+        aiConfig={aiConfig}
+        onClose={() => setWorkshopVolumeId(null)}
+        onComplete={rawOutput => handleWorkshopComplete(rawOutput, workshopVolume.id!)}
+      />
+    )}
+    </>
   )
 }
 

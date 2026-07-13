@@ -174,6 +174,9 @@ export function buildAgentIntentPrompt(intent: AgentIntent): string {
     ? [
         '本任务只有在生成可供用户审阅的变更方案后才算完成。',
         `方案必须使用 storyforge.change.propose：target=${intent.completionRequirement.target}，mode=${intent.completionRequirement.mode}${intent.completionRequirement.recordId != null ? `，recordId=${intent.completionRequirement.recordId}` : ''}，必填字段=${intent.completionRequirement.requiredFields.join('、')}。`,
+        intent.completionRequirement.requiredDataPaths?.length
+          ? `必须包含精确数据路径：${intent.completionRequirement.requiredDataPaths.map(path => path.join(' → ')).join('、')}。`
+          : '',
       ].join('\n')
     : ''
 
@@ -196,6 +199,9 @@ function freezeCompletionRequirement(
   return Object.freeze({
     ...structuredClone(requirement),
     requiredFields: Object.freeze([...requirement.requiredFields]),
+    requiredDataPaths: requirement.requiredDataPaths
+      ? Object.freeze(requirement.requiredDataPaths.map(path => Object.freeze([...path])))
+      : undefined,
     minTextLength: requirement.minTextLength
       ? Object.freeze({ ...requirement.minTextLength })
       : undefined,

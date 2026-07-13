@@ -46,4 +46,31 @@ describe('Agent proposal Markdown', () => {
     expect(proposalApprovalTitle(preview)).toBe('正文已生成，是否采纳？')
     expect(proposalPreviewMarkdown(preview)).toBe('')
   })
+
+  it('renders world rules as readable dimension Markdown instead of raw JSON', () => {
+    const preview = {
+      target: 'worldRulesProfiles',
+      mode: 'replace',
+      data: {
+        entries: {
+          era: {
+            historicalAnchors: '参考唐代三省六部。',
+            fictionalAdaptations: '增设灵修院。',
+            priority: 'balanced',
+          },
+        },
+        globalNote: '制度冲突以参考资料为准。',
+      },
+    } as const
+
+    const markdown = proposalPreviewMarkdown(preview)
+    expect(proposalApprovalTitle(preview)).toBe('真实与幻想内容已生成，是否采纳？')
+    expect(markdown).toContain('## 真实与幻想')
+    expect(markdown).toContain('### 时代背景 / 总览（era）')
+    expect(markdown).toContain('- **取自真实**：参考唐代三省六部。')
+    expect(markdown).toContain('- **架空改造**：增设灵修院。')
+    expect(markdown).toContain('- **冲突时优先**：均衡')
+    expect(markdown).toContain('### 全局补充说明')
+    expect(markdown).not.toContain('historicalAnchors')
+  })
 })

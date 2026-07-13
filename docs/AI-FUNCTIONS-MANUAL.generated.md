@@ -8,7 +8,7 @@
 
 ## 一、Prompt 模板清单（PromptModuleKey 事实源）
 
-共 41 个 moduleKey。
+共 43 个 moduleKey。
 
 | moduleKey | 名称 | 说明 | 读取变量 |
 |---|---|---|---|
@@ -24,8 +24,10 @@
 | `chapter.expand` | 内置-文本扩写 | 将文本扩展丰富，增加细节、心理与环境，情节走向不变。 | `userHint` `text` |
 | `chapter.de-ai` | 内置-去 AI 味改写 | 依据全文扫描和结构诊断定点改写，并保护原文事实、格式与作者文风。 | `text` `styleContext` `issuesBlock` `deterministicReport` `strength` `protectedTerms` |
 | `chapter.de-ai.detect` | 内置-去 AI 味结构诊断 | 结合全文确定性扫描，对正文做带原文证据的结构化诊断；改写前后共用。 | `phase` `originalText` `deterministicReport` `text` |
+| `book.edit` | 内置-全书编辑 | 扫描全项目数据，生成可核对的命中报告，并按审批逐批调整。 | `instruction` `modeLabel` `scopeLabel` `exactQuery` `replacement` `constraints` |
 | `foreshadow.generate` | 内置-伏笔建议 | 基于世界观、角色和已有伏笔，建议 3-5 个新伏笔。 | `projectName` `genres` `worldContext` `characters` `existingForeshadows` `hasNoForeshadows` |
 | `geography.concept-map` | 内置-概念地图 SVG | 基于地点列表生成奇幻风格的 SVG 概念地图。 | `overview` `locationList` |
+| `geography.world-map` | 内置-世界地图参数 | 根据世界观、历史、地点和词条生成 Voronoi 世界地图配置。 | `worldName` `userHint` |
 | `geography.image-map-prompt` | 内置-地图图像 Prompt | 生成 Midjourney/DALL-E/SD 的世界地图绘图 prompt。 | `imageStyle` `projectName` `locationNames` `locationTypes` |
 | `worldview.generate` | — | — | — |
 | `story.generate` | 内置-故事核心生成 | 基于已有世界观和用户提示，生成故事的某个维度（一句话/概念/主题/核心冲突等）。 | `projectName` `genres` `dimension` `worldContext` `userHint` |
@@ -111,6 +113,8 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `creativeRules` | `atmosphere` `citedInsightIds` `citedReferenceIds` `consistencyRules` `narrativePOV` `prohibitions` `referenceWorksV2` `specialRequirements` `writingStyle` |
 | `detailedOutlines` | `appearingCharacterIds` `emotionArc` `endingCliffhanger` `foreshadowIds` `lastUsedSummary` `openingHook` `outlineNodeId` `sceneLocation` `scenes` |
 | `foreshadows` | `description` `echoChapterIds` `expectedResolveChapterId` `importance` `name` `notes` `plantChapterId` `resolveChapterId` `status` `timelinePosition` `type` `urgency` |
+| `historicalKeywords` | `aiBrainstorm` `aiConsult` `category` `conceptNote` `consultPrompt` `customTimeRange` `description` `era` `keyword` `location` `relatedChapterIds` `stormPrompt` `worldGroupId` |
+| `historicalTimelineEvents` | `aiBrainstorm` `aiConsult` `conceptNote` `consultPrompt` `customTimeRange` `date` `description` `era` `impact` `isHistorical` `location` `relatedChapterIds` `source` `stormPrompt` `title` `worldGroupId` `year` |
 | `importantLocations` | `description` `name` `parentId` `significance` `sortOrder` `tags` |
 | `itemLedger` | `action` `chapterId` `chapterTitle` `itemName` `note` `quantity` |
 | `outlineNodes` | `order` `parentId` `summary` `title` `type` `worldGroupId` |
@@ -120,30 +124,31 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `storyArcs` | `description` `name` `stages` `type` |
 | `storyCores` | `centralConflict` `concept` `logline` `mainPlot` `plotPattern` `subPlots` `theme` |
 | `storyTimelineEvents` | `chapterId` `chapterTitle` `description` `importance` `order` `storyTime` `title` |
+| `worldNodes` | `description` `icon` `mapCacheJSON` `mapConfigJSON` `name` `parentId` `portalsJSON` `sortOrder` `worldGroupId` |
+| `worldRulesProfiles` | `customNodes` `entries` `globalNote` |
 | `worldviews` | `climateByRegion` `continentLayout` `culture` `divineDesign` `economy` `factionLayout` `geography` `history` `historyLine` `internalConflicts` `itemDesign` `mountainsRivers` `naturalResourceOverview` `naturalResources` `politicsEconomyCulture` `powerHierarchy` `races` `regionDimensions` `rules` `society` `worldDimensions` `worldEvents` `worldOrigin` `worldStructure` |
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 35 个 category。
-未分类调用: 0 个。动态 category 调用: 4 个。
+共 31 个 category。
+未分类调用: 0 个。动态 category 调用: 6 个。
 
 | category | 触发文件 |
 |---|---|
 | `ai.restructure` | `src/lib/ai/restructure.ts:53` |
 | `chapter.content.batch` | `src/lib/ai/batch-detail-runner.ts:256` |
+| `chapter.workshop.alternatives` | `src/components/editor/ChapterWorkshopDialog.tsx:195` |
 | `character.structure` | `src/lib/ai/parse-character-output.ts:80` |
-| `codex.extract` | `src/components/codex/CodexPanel.tsx:206` |
 | `detail.scene` | `src/components/outline/DetailedOutlinePanel.tsx:163`<br/>`src/components/outline/ScenePanel.tsx:115`<br/>`src/lib/ai/batch-detail-runner.ts:109` |
 | `emotion.beat` | `src/components/editor/EmotionBeatCard.tsx:66` |
 | `foreshadow.structure` | `src/components/foreshadow/ForeshadowPanel.tsx:67` |
 | `foreshadow.suggest` | `src/components/foreshadow/ForeshadowPanel.tsx:216` |
 | `geography.concept-map` | `src/components/geography/GeographyPanel.tsx:127` |
-| `geography.world-map` | `src/components/geography/WorldMapPanel.tsx:103` |
-| `inventory.extract` | `src/components/items/InventoryPanel.tsx:85` |
-| `location.extract` | `src/components/location/LocationPanel.tsx:105` |
-| `outline.chapter` | `src/components/outline/OutlinePanel.tsx:423`<br/>`src/lib/ai/batch-outline-runner.ts:123` |
-| `outline.volume` | `src/components/outline/OutlinePanel.tsx:375` |
-| `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:106` |
+| `inventory.extract` | `src/components/items/InventoryPanel.tsx:82` |
+| `location.extract` | `src/components/location/LocationPanel.tsx:102` |
+| `outline.chapter` | `src/components/outline/OutlinePanel.tsx:425`<br/>`src/lib/ai/batch-outline-runner.ts:123` |
+| `outline.volume` | `src/components/outline/OutlinePanel.tsx:377` |
+| `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:103` |
 | `reference.characters` | `src/components/project/AnalysisReportViewer.tsx:139` |
 | `reference.summary` | `src/components/project/AnalysisReportViewer.tsx:110` |
 | `relation.extract` | `src/components/relations/CharacterRelationPanel.tsx:74` |
@@ -158,20 +163,19 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `story-arc.generate` | `src/components/outline/StoryArcPanel.tsx:84` |
 | `story.generate` | `src/components/worldview/StoryCorePanel.tsx:193` |
 | `story.timeline` | `src/components/timeline/StoryTimelinePanel.tsx:84` |
-| `style.learn` | `src/components/style/StyleLearningPanel.tsx:77` |
+| `style.learn` | `src/components/style/StyleLearningPanel.tsx:74` |
 | `world-group.expand` | `src/components/world-group/WorldGroupDetail.tsx:98` |
 | `world-group.suggest` | `src/components/world-group/WorldGroupOverview.tsx:57` |
-| `worldview.dimension` | `src/components/worldview/WorldviewHumanityPanel.tsx:255`<br/>`src/components/worldview/WorldviewNaturalPanel.tsx:288`<br/>`src/components/worldview/WorldviewOriginPanel.tsx:296` |
-| `worldview.divine` | `src/components/worldview/WorldviewOriginPanel.tsx:405` |
-| `worldview.divine.split` | `src/components/worldview/WorldviewOriginPanel.tsx:429` |
 
 ### 动态 category 调用
 
+- `src/components/editor/ChapterWorkshopDialog.tsx:138 · ai.start`
 - `src/components/editor/FloatingToolbar.tsx:105 · ai.start`
 - `src/components/editor/ReviewPanel.tsx:130 · ai.start`
+- `src/components/outline/OutlineWorkshopDialog.tsx:95 · ai.start`
 - `src/components/settings/NS0EvalPanel.tsx:50 · chat`
 - `src/components/settings/prompt/WorkflowRunner.tsx:273 · ai.start`
 
 ---
 
-生成时间基准:commit `c868077`
+生成时间基准:commit `02bae19`

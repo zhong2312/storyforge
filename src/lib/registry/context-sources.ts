@@ -10,10 +10,12 @@ import { pickBestChapterForOutline } from '../chapters/selectors'
 import { getFactPredicate } from './fact-predicate-registry'
 import {
   embedQuery,
+  formatProjectExactHits,
   formatProjectRagHits,
   readNarrativeSummaryContext,
   retrieveChunks,
   searchProjectRag,
+  searchProjectRagExact,
 } from '../retrieval/retrieval'
 import { isEmbeddingReady, embeddingModelTag } from '../ai/adapters/embedding-adapter'
 import { useAIConfigStore } from '../../stores/ai-config'
@@ -509,6 +511,18 @@ async function readRetrievedPassages(projectId: number, chapterId?: number | nul
 async function readProjectRag(input: AssembleContextInput): Promise<string> {
   const query = input.retrievalQuery?.trim()
   if (!query) return ''
+  if (input.retrievalMatchMode === 'exact') {
+    const result = await searchProjectRagExact({
+      projectId: input.projectId,
+      storage: input.storage,
+      query,
+      sourceTables: input.retrievalSourceTables,
+      worldGroupId: input.worldGroupId,
+      offset: input.retrievalOffset,
+      limit: input.retrievalLimit,
+    })
+    return formatProjectExactHits(result)
+  }
   const embedding = useAIConfigStore.getState().embedding
   const queryEmbedding = isEmbeddingReady(embedding)
     ? await embedQuery(query.slice(0, 1000), embedding, input.projectId)

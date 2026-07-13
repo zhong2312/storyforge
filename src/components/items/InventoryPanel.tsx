@@ -10,7 +10,7 @@ import { useItemLedgerStore } from '../../stores/item-ledger'
 import { useChapterStore } from '../../stores/chapter'
 import { useAIModelConfig } from '../../hooks/useAIModelConfig'
 import { chat } from '../../lib/ai/client'
-import { getAIConfigRequiredMessage, isAIConfigReady } from '../../lib/ai/config-readiness'
+import { requestAIConfigSetup } from '../../lib/ai/config-readiness'
 import {
   buildInventoryExtractPrompt, parseInventoryEvents, type ExtractedItemEvent,
 } from '../../lib/ai/adapters/inventory-extract-adapter'
@@ -54,10 +54,7 @@ export default function InventoryPanel({ project }: Props) {
   )
 
   const handleExtract = async () => {
-    if (!isAIConfigReady(aiConfig)) {
-      setExtractError(getAIConfigRequiredMessage(aiConfig))
-      return
-    }
+    if (!requestAIConfigSetup(aiConfig)) return
     if (writtenChapters.length === 0) {
       setExtractError('还没有已写正文的章节，先去写作再提取')
       return

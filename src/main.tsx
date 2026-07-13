@@ -13,7 +13,13 @@ import { db } from './lib/db/schema'
 import { finalizeCharacterAxesMigrationSnapshots } from './lib/migrations/finalize-character-axes-snapshots'
 import { applyStoryForgeTheme, resolveStoryForgeTheme } from './lib/theme'
 import { registerStoryForgeServiceWorker } from './lib/pwa/register-service-worker'
+import { storyForgeRouterBasename } from './lib/desktop-runtime'
 import './index.css'
+
+const routerBasename = storyForgeRouterBasename()
+if (routerBasename === '/') {
+  document.documentElement.dataset.storyforgeRuntime = 'desktop'
+}
 
 // 从 localStorage 恢复主题（兼容旧主题名迁移）
 applyStoryForgeTheme(resolveStoryForgeTheme(localStorage.getItem('storyforge-theme')))
@@ -76,7 +82,7 @@ async function bootstrap() {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <BrowserRouter basename="/storyforge">
+        <BrowserRouter basename={routerBasename}>
           <ToastProvider>
             <DialogProvider>
               <App />

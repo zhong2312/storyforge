@@ -286,7 +286,7 @@ export default function WorldMapVoronoi({ config, onMapGenerated }: Props) {
             <Map className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm mb-1">还没有地图数据</p>
             <p className="text-xs opacity-60">
-              点击右上角「AI 生成地图」，系统会根据世界观设定自动生成。
+              点击右上角「Agent 生成地图」，系统会根据世界观设定自动生成。
               <br />先在「世界起源」「自然环境」中填写内容，效果更好。
             </p>
           </div>

@@ -72,6 +72,15 @@ export interface ProjectRagSearchHit extends ProjectRagDocument {
   score: number
 }
 
+export interface ProjectExactSearchResult {
+  query: string
+  totalHits: number
+  offset: number
+  limit: number
+  nextOffset: number | null
+  hits: ProjectRagDocument[]
+}
+
 /** RAG 覆盖范围直接从 PROJECT_TABLES 派生，不维护第二份业务表清单。 */
 export function projectRagSourceTables(): string[] {
   return PROJECT_TABLES
@@ -175,6 +184,67 @@ export async function searchProjectRag(args: {
       || left.sourceRecordId - right.sourceRecordId
       || left.chunkIndex - right.chunkIndex)
     .slice(0, topK)
+}
+
+/**
+ * 精确全库扫描。与相关性 RAG 不同，它不会按分数丢弃低排名命中；调用方通过
+ * offset 逐页读取，直到 nextOffset=null，才能声称已经扫描完整个项目。
+ */
+export async function searchProjectRagExact(args: {
+  projectId: number
+  storage?: ProjectStoragePort
+  query: string
+  sourceTables?: readonly string[]
+  worldGroupId?: number | null
+  offset?: number
+  limit?: number
+}): Promise<ProjectExactSearchResult> {
+  const query = args.query.trim()
+  const offset = Math.max(0, Math.trunc(args.offset ?? 0))
+  const limit = Math.min(20, Math.max(1, Math.trunc(args.limit ?? 20)))
+  if (!query) return { query, totalHits: 0, offset, limit, nextOffset: null, hits: [] }
+
+  const documents = await buildProjectRagDocuments({
+    projectId: args.projectId,
+    storage: args.storage,
+    sourceTables: args.sourceTables,
+  })
+  const normalizedQuery = normalizeSearchText(query)
+  const matched = documents
+    .filter(document => {
+      if (args.worldGroupId !== undefined
+        && document.worldGroupId != null
+        && document.worldGroupId !== (args.worldGroupId ?? null)) return false
+      return normalizeSearchText(`${document.sourceTitle}\n${document.text}`).includes(normalizedQuery)
+    })
+    .sort((left, right) => left.sourceTable.localeCompare(right.sourceTable)
+      || left.sourceRecordId - right.sourceRecordId
+      || left.chunkIndex - right.chunkIndex)
+  const hits = matched.slice(offset, offset + limit)
+  const nextOffset = offset + hits.length < matched.length ? offset + hits.length : null
+  return { query, totalHits: matched.length, offset, limit, nextOffset, hits }
+}
+
+export function formatProjectExactHits(result: ProjectExactSearchResult): string {
+  const next = result.nextOffset == null ? 'end' : String(result.nextOffset)
+  const header = `【全项目精确检索｜total=${result.totalHits}｜offset=${result.offset}｜returned=${result.hits.length}｜next=${next}】`
+  if (!result.hits.length) return `${header}\n未找到“${result.query}”的精确命中。`
+  return [
+    header,
+    ...result.hits.map(hit => [
+      `- [${hit.sourceTable}#${hit.sourceRecordId}/chunk=${hit.chunkIndex}] ${hit.sourceTitle}`,
+      `  ${exactMatchSnippet(hit.text, result.query)}`,
+    ].join('\n')),
+  ].join('\n')
+}
+
+function exactMatchSnippet(text: string, query: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  const index = compact.toLocaleLowerCase().indexOf(query.trim().toLocaleLowerCase())
+  if (index < 0) return compact.slice(0, 180)
+  const start = Math.max(0, index - 70)
+  const end = Math.min(compact.length, index + query.length + 90)
+  return `${start > 0 ? '…' : ''}${compact.slice(start, end)}${end < compact.length ? '…' : ''}`
 }
 
 export function formatProjectRagHits(query: string, hits: readonly ProjectRagSearchHit[]): string {
@@ -329,7 +399,7 @@ function normalizeSearchText(value: string): string {
 
 function extractSearchTerms(value: string): string[] {
   const terms = new Set<string>()
-  const runs = value.toLocaleLowerCase().match(/[a-z0-9_\-]{2,}|[\u3400-\u9fff]{2,}/g) ?? []
+  const runs = value.toLocaleLowerCase().match(/[a-z0-9_-]{2,}|[\u3400-\u9fff]{2,}/g) ?? []
   for (const run of runs) {
     terms.add(run)
     if (/^[\u3400-\u9fff]+$/.test(run)) {

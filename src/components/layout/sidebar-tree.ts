@@ -5,7 +5,7 @@ import {
   Ruler, BookOpen, FilePen, Eye,
   FileCog, History, Upload, Download, Settings,
   Map, ClipboardList, GitBranch, Clock, MapPin, Scale,
-  Drama, Package, CalendarClock, ScanSearch, Coins, Feather, Database,
+  Drama, Package, CalendarClock, ScanSearch, Coins, Feather, Database, FileSearch2,
 } from 'lucide-react'
 
 /**
@@ -40,6 +40,7 @@ export type SidebarModule =
   | 'rules'
   | 'outline'
   | 'character-driven-plot'  // Phase 27 — 剧情自动推演
+  | 'book-editor'            // 全书全库查找与调整
   | 'detailed-outline'      // 占位 (P8)
   | 'chapters-list'         // 占位 (P8)
   | 'editor'
@@ -173,6 +174,7 @@ export const NAV_TREE: TreeSection[] = [
       leaf('rules',            '创作规则', Ruler),
       leaf('outline',          '大纲',     BookOpen),
       leaf('character-driven-plot', '剧情推演', Drama),
+      leaf('book-editor',      '全书编辑', FileSearch2),
       leaf('story-arc',        '故事线',   GitBranch),
       leaf('chapters-list',    '章节',     FilePen),
       leaf('foreshadow',       '伏笔',     Eye),

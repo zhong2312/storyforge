@@ -28,6 +28,16 @@ describe('R-PORTABLE-PROXY · 本地生产包模型代理', () => {
       .toBe('https://api.example.com/v1/models')
   })
 
+  it('Wails 桌面端通过同进程流式代理访问模型服务', () => {
+    vi.stubGlobal('window', { location: { hostname: 'wails.localhost', protocol: 'wails:' } })
+
+    expect(buildOpenAIEndpoint('https://api.example.com/v1', 'chat/completions'))
+      .toBe(
+        'http://127.0.0.1:17831/openai-compatible-proxy/chat/completions?' +
+        'baseUrl=https%3A%2F%2Fapi.example.com%2Fv1',
+      )
+  })
+
   it('继续修正常见的重复端点和重复 v1', () => {
     expect(normalizeOpenAIBaseUrl('https://api.example.com/v1/v1/chat/completions').baseUrl)
       .toBe('https://api.example.com/v1')
